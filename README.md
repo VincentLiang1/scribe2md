@@ -2,9 +2,9 @@
 
 把**文字、圖像、聲音**都轉成**適合 AI 閱讀的 Markdown 檔案格式**:會議錄音或錄影變成「**誰說了什麼**」的**繁體中文逐字稿**,Word、PowerPoint、Excel、PDF、掃描件等文件轉成 Markdown。所有處理都在本機電腦完成,**錄音檔、文件和逐字稿都不會上傳到任何地方**。(只有兩種情況會連網:第一次使用時下載 AI 模型、以及轉舊版 Office 檔而電腦上沒有 LibreOffice 時下載它。)
 
-![聲音→MD:現場收音或轉現成的錄音錄影,做成含講者分離的繁體中文逐字稿](docs/screenshot-audio.jpg)
+![聲音→MD:現場收音或轉現成的錄音錄影,做成含講者分離的繁體中文逐字稿](docs/screenshot-audio.png)
 
-![文字、圖像→MD:Word、PowerPoint、Excel、PDF、網頁、掃描件、照片與郵件批次轉成 Markdown](docs/screenshot-doc.jpg)
+![文字、圖像→MD:Word、PowerPoint、Excel、PDF、網頁、掃描件、照片與郵件批次轉成 Markdown](docs/screenshot-doc.png)
 
 > 有問題先看第四章「常見問題與故障排除」;還是解決不了,就聯絡把這個工具給你的人,或到專案的 GitHub 頁面[開一個 issue](https://github.com/VincentLiang1/scribe2md/issues)。
 
