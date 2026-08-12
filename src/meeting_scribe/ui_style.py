@@ -104,6 +104,26 @@ def apple_theme() -> gr.themes.Base:
 # .secondary)排除。若日後 gradio 改內部結構,這些規則只會失效回預設樣式,
 # 不影響任何功能。
 APPLE_CSS = """
+/* 捲軸的位置永遠留著,不管當下需不需要(2026-08-12 使用者回報「點『重設
+   講者』整個頁面會移位,感覺像抖一下」)。成因與分段控制項無關:三種模式的
+   內容高度差很多,而「重設講者」最短(一個路徑欄 + 一顆按鈕),撐不出一頁
+   → 垂直捲軸消失 → 可用寬度多出捲軸那 15px → 1240px 的置中版面重算,
+   整頁橫移約 7px。**只有那一個模式會**,所以它看起來像那顆按鈕的毛病。
+   `scrollbar-gutter: stable` 是為此而生的標準屬性(Chrome 94+):永遠保留
+   那道槽、但不畫軌道。⚠️ 不要改用 `overflow-y: scroll` 達成同樣效果——
+   那會讓 Windows 上的灰色捲軸軌道**一直**顯示在畫面右緣。
+   ⚠️ 必須下在 `html` 上:捲的是文件本身(.gradio-container 另有一條把
+   overflow 改成 clip 的規則,那是 sticky 目錄用的,與這裡無關)。
+   實測(Playwright,1600x900,切四次模式量 .gradio-container 的 left):
+   修正前 left 在 **180 ↔ 173** 之間跳(捲軸 15px、橫移 7px),修正後恆為 173;
+   而該有捲軸的模式仍然是 15px——沒有變成「永遠畫一條軌道」。
+   ⚠️ **這條規則在 headless 瀏覽器下驗不出來**:headless chromium 用的是不佔
+   寬度的 overlay 捲軸,拿掉這條規則也照樣不橫移(對照組實測),`--disable-
+   features=OverlayScrollbar` 與 `::-webkit-scrollbar{width}` 兩種強制法都無效
+   ——**只有真視窗(headless=False)重現得出來**。要改動這一帶時記得這件事,
+   否則會拿到一個「怎麼測都是綠的」的結論。 */
+html { scrollbar-gutter: stable; }
+
 /* 版面「固定寬度」1240px、置中(視窗更窄才跟著縮)。gradio 6 的容器是
    .fillable,原生上限是響應式階梯(1280/1536/1920px 隨視窗跳級)——寬螢幕上
    版面會突然變寬,使用者回報「被撐大」的感覺即來自於此;鎖定值蓋過階梯 */
@@ -172,6 +192,40 @@ APPLE_CSS = """
   box-shadow: 0 1px 3px rgba(0,0,0,0.12) !important; font-weight: 600;
 }
 .seg-radio input[type="radio"] { display: none; }
+
+/* 「要做什麼」與「收音情境」撐滿卡片寬、每段等分(2026-08-12 設計稿方案 A)。
+   起因是使用者圈出兩排灰槽的右緣對不齊:`.seg-radio .wrap` 是 inline-flex,
+   寬度由內容決定,而「只錄電腦聲音」比「重設講者」多兩個字,那兩個字就是
+   落差。等分之後齊頭是**自然結果**——沒有任何寫死的寬度要維護,換字型、
+   改瀏覽器縮放、Windows 顯示比例變動都不會再歪(當時的 C 案是硬編
+   min-width,那條路歪掉時沒有任何測試會紅)。
+   ⚠️ **錨在這兩個 elem_id 上,不是 .seg-radio**:第三顆同樣掛 .seg-radio 的
+   是「進階參數設定」裡的模型 快速/精準,它只有兩段,撐滿整張卡會空得離譜。
+   日後新增的 seg-radio 也不該被這條無聲波及。
+   ⚠️ **`justify-content` 與 `text-align` 兩個都要寫**:gradio 6.20 的 radio
+   label 是不是 flex 容器隨版本而異,寫錯那個文字就會靠左而不是置中——兩條
+   互不干擾,兩種結構都蓋得到。
+   ⚠️ **`white-space: nowrap` 少不得**(2026-08-12 使用者當場截圖回報「只錄
+   電腦聲音」折成兩行):`flex: 1` 是 `flex-grow:1 flex-shrink:1 flex-basis:0`,
+   而 flex item 的 `min-width: auto` 只保得住 **min-content** 寬度——中文
+   **可以在任意字元之間斷行**,所以它的 min-content 只有一個字寬,那一段就被
+   壓到 1/3 卡片寬並折行。加上 nowrap 之後 min-content = 整行寬,三段各自
+   保住自己的內容寬、只平分**剩餘**空間:字數相同的那排仍是等分,「只錄電腦
+   聲音」那排則是它稍寬一些——齊頭不受影響(灰槽仍撐滿卡片),而那正是要的。
+   ⚠️ **`:has(label)` 是必要的**:`#source-mode .wrap` 會命中**兩個**元素
+   (Playwright 實測 `wraps: 2`)——gradio 的進度追蹤器
+   (`div.wrap[data-testid=status-tracker]`)也叫 .wrap,而且排在 radio 容器
+   **前面**,所以不加條件時 `querySelector` 與 CSS 都會先抓到它。**這次它
+   剛好沒出事**(它自己被 gradio 設成 flex + opacity:0 + position:absolute,
+   我們寫什麼都看不出來),但把版面屬性套在一個不相干的絕對定位元素上沒有
+   任何理由,而那種錯誤浮現時會長得跟這兩排完全無關。同 id/同 class 兩層是
+   gradio 的常態,見 docs/dev/ui.md 第 1 節的 DOM 實勘。
+   實測(最小重現 + Playwright,視窗 520~1400px 逐段掃):兩排右緣永遠相等、
+   零溢出、無折行;1400px 下每段各 370px(真的等分)。 */
+#source-mode .wrap:has(label), #rec-scenario .wrap:has(label) { display: flex; }
+#source-mode label, #rec-scenario label {
+  flex: 1; text-align: center; justify-content: center; white-space: nowrap;
+}
 
 /* 「使用說明」的目錄(2026-08-08 設計稿方案 A):.seg-radio 的直排版本,
    同一套語彙(灰底槽、選中那條浮起成白卡)換個方向,使用者才不必再學一種。
