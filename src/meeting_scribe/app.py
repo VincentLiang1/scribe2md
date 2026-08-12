@@ -3455,6 +3455,32 @@ def _launch(port: int) -> None:
     # 改由我們自己印:網址是瀏覽器沒自動開起來時唯一的退路,而黑視窗不得
     # 有裸英文(spec §8)
     print(f"網頁介面網址:http://127.0.0.1:{port}(瀏覽器會自動開啟)")
+    try:
+        _launch_ui(port)
+    except Exception as exc:  # noqa: BLE001
+        # gradio 的 launch() 收尾有一道自我健檢(用 httpx 打自己的
+        # `gradio_api/startup-events`)。它失敗時原訊息是一長串英文 traceback,
+        # 收在「Check your network or proxy settings」——而「啟動.bat」接著印的是
+        # 「請先執行安裝.bat」,對一個安裝明明成功的人**純屬誤導**(2026-08-12
+        # 同仁實際遇到:公司代理攔截 127.0.0.1、回 403)。
+        # 登錄檔設的代理已由 `_bypass_proxy_for_localhost` 擋掉,這裡兜底剩下的
+        # ——PAC 自動組態、資安軟體攔截 localhost、防火牆擋本機埠——那幾種我們
+        # 無從自動處理,只能讓他看懂發生什麼事、知道找誰(spec §8)。
+        # 原例外照樣往上冒:traceback 有回報問題要用的資訊,而它會進紀錄檔
+        if "startup-events" in str(exc):
+            print(
+                "\n[錯誤] 網頁介面啟動失敗:這台電腦有東西把「連自己」擋掉了"
+                "(常見是公司的代理伺服器 Proxy,或資安軟體)。\n"
+                "        工具只在你自己的電腦上跑、不會連到外面,"
+                "但那些設定連 127.0.0.1 也一起攔了。\n"
+                "        請洽貴單位 IT,把 localhost 與 127.0.0.1 "
+                "加進代理的例外清單(或防火牆白名單)。"
+            )
+        raise
+
+
+def _launch_ui(port: int) -> None:
+    """gradio 的 launch 參數。與 `_launch` 分開只為讓錯誤翻譯那層讀得清楚。"""
     build_ui().launch(
         server_name="127.0.0.1",  # 隱私規格:僅本機可連,絕不可改 0.0.0.0
         server_port=port,

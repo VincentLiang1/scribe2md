@@ -30,6 +30,46 @@ os.environ.setdefault(
 )
 
 
+# 本機一律不經代理的主機名(httpx / requests 都認 NO_PROXY 這三個寫法)
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+def _bypass_proxy_for_localhost() -> None:
+    """把 localhost 排除在系統代理之外——公司電腦不這樣做會連不上自己。
+
+    gradio 的 `launch()` 收尾有一道自我健檢:用 httpx 打自己一槍
+    `http://127.0.0.1:<port>/gradio_api/startup-events`(blocks.py)。而 httpx
+    預設 `trust_env=True` → `urllib.request.getproxies()`,**那在 Windows 上
+    會讀登錄檔的系統/IE 代理設定**(`HKCU\\...\\Internet Settings`);偏偏 httpx
+    只認 `NO_PROXY`,**完全不理會**代理設定裡「近端網址不使用 Proxy 伺服器」
+    那個勾(`ProxyOverride` 的 `<local>`)。於是打給 127.0.0.1 的請求被送去
+    公司代理,代理不幫你連別人的 localhost、回 **403**,gradio 當場拋例外、
+    整個工具啟動失敗(2026-08-12 同仁的公司電腦實際回報;開發機沒有代理設定,
+    所以這條路永遠測不出來)。所以我們自己補上那個勾的效果。
+
+    ⚠️ **不能只設 `NO_PROXY` 了事**:`getproxies()` 是
+    `getproxies_environment() or getproxies_registry()`——只要環境變數裡出現
+    **任何一個** `*_proxy`,登錄檔就整個不讀了。公司電腦要靠代理才連得出去,
+    只設 `NO_PROXY` 會把首次下載 AI 模型(2-3 GB)一起弄死,而症狀會變成
+    「模型下載失敗」這個看不出真因的樣子。所以先把登錄檔讀到的代理**明確
+    搬進環境變數**,再排除本機:本機自檢直連、對外下載照走公司代理,兩邊都保住。
+
+    純本機的環境變數操作,不連任何網路。
+    """
+    from urllib.request import getproxies
+
+    proxies = getproxies()  # 環境變數優先,其次(Windows)登錄檔
+    for scheme in ("http", "https"):
+        url = proxies.get(scheme)
+        # 已由使用者/IT 明設的不覆蓋,只補登錄檔那一份
+        if url and not os.environ.get(f"{scheme.upper()}_PROXY"):
+            os.environ[f"{scheme.upper()}_PROXY"] = url
+    # 保留原本的例外清單(公司可能已列了內網主機),只補上缺的本機寫法
+    listed = [h.strip() for h in os.environ.get("NO_PROXY", "").split(",") if h.strip()]
+    lowered = {h.lower() for h in listed}
+    os.environ["NO_PROXY"] = ",".join(listed + [h for h in _LOCAL_HOSTS if h not in lowered])
+
+
 def _disable_openvino_telemetry() -> None:
     # OpenVINO consent 檔(Windows):%LOCALAPPDATA%\Intel Corporation\openvino_telemetry
     # 內容 "0" = 拒絕(不送任何遙測)、"1" = 同意。不存在才會觸發 GA ping。
@@ -46,4 +86,5 @@ def _disable_openvino_telemetry() -> None:
         pass  # best-effort:寫入失敗不影響轉檔
 
 
+_bypass_proxy_for_localhost()
 _disable_openvino_telemetry()
