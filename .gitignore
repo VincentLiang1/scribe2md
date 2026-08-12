@@ -1,0 +1,26 @@
+# 公開 repo 專用的 .gitignore(由「打包.bat」複製成 dist\meeting-scribe\.gitignore)。
+#
+# ⚠️ **不能直接抄主 repo 那一份**,差別有兩處而且都會出事:
+#
+# 1. `data/` 主 repo 是**刻意版控**的(聲紋與名單跟著走),公開版必須**忽略**
+#    ——那是使用者在自己機器上累積出來的東西,不忽略的話他 `git pull` 更新
+#    程式時會跟自己的資料打架,而「更新不影響使用者資料」正是這個交付方式
+#    的前提。
+# 2. `VERSION` 是打包當下戳進去的(見 filelog.code_version);`git clone` 來的
+#    人版本從 `.git` 取得,這一份對他只會過期誤導。
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+
+# 使用者自己的東西:聲紋、名單、詞表、逐字稿、紀錄檔
+data/
+output/
+logs/
+diag/
+
+# 打包產物與打包當下的版本戳
+*.zip
+dist/
+VERSION
