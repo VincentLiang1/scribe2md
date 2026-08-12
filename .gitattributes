@@ -1,4 +1,4 @@
-# 公開 repo 專用的 .gitattributes(由「打包.bat」複製成 dist\meeting-scribe\.gitattributes)。
+# 公開 repo 專用的 .gitattributes(由 scripts\package.py 複製成 dist\meeting-scribe\.gitattributes)。
 #
 # 只留這一條。⚠️ **主 repo 那份的 `export-ignore` 幾行不可以抄過來**:它們會讓
 # 公開 repo 的「Download ZIP」少掉 `docs\` 與 `scripts\`,而 `scripts\install_skill.py`

@@ -1,4 +1,4 @@
-# 公開 repo 專用的 .gitignore(由「打包.bat」複製成 dist\meeting-scribe\.gitignore)。
+# 公開 repo 專用的 .gitignore(由 scripts\package.py 複製成 dist\meeting-scribe\.gitignore)。
 #
 # ⚠️ **不能直接抄主 repo 那一份**,差別有兩處而且都會出事:
 #
