@@ -255,7 +255,8 @@ def _download_and_install() -> Path:
     url = _resolve_msi_url()
     msi = root / url.rsplit("/", 1)[-1]
     print(  # noqa: T201 - 黑視窗的進度回饋,同 models.download
-        "首次轉換舊版 Office 檔需要下載 LibreOffice(約 370MB,只需一次),"
+        "首次轉換舊版 Office 檔(副檔名沒有 x 的 doc/xls/ppt 等舊格式)需要下載 "
+        "LibreOffice(約 370MB,只需一次);docx/xlsx/pptx 這類新格式不必下載。"
         "進度如下:", flush=True,
     )
     root.mkdir(parents=True, exist_ok=True)
