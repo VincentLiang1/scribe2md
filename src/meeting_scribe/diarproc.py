@@ -164,8 +164,13 @@ class DiarProcess:
         self, msg: dict,
     ) -> tuple[list[SpeakerTurn], dict, list[SpeakerQuality]]:
         reply = self._request(msg)
-        turns = [SpeakerTurn(float(a), float(b), int(s))
-                 for a, b, s in reply.get("turns", [])]
+        # 舊回應只有三欄(起, 訖, 講者):conf 給 0 = 核對表顯示空白,
+        # 而不是讓整場收尾因為一個欄位炸掉(同下面 quality 的取捨)
+        turns = [
+            SpeakerTurn(float(row[0]), float(row[1]), int(row[2]),
+                        float(row[3]) if len(row) > 3 else 0.0)
+            for row in reply.get("turns", [])
+        ]
         vps = {
             int(lab): np.frombuffer(base64.b64decode(blob), dtype=np.float32)
             for lab, blob in reply.get("vp", [])

@@ -162,6 +162,50 @@ _ABSORB_SIM = 0.30
 # 真實 2 人訪談(recording 27)校準:好段落 ~0.5+,模糊碎段 <0.1。
 _UNKNOWN_SIM = 0.10
 
+# ---- 「短插話群」:整群都是零星應答的,標未知而不是當成一位講者 ----
+# 2026-08-12 資訊月會實跡:同一個人各出現兩列,使用者得為同一個人命名兩次。
+# 逐段稽核之後發現那兩個「第二群」根本不是同一個人——其中一群 38 段裡
+# 有 13 段(20 秒)分屬另外**七個人**,而群質心對「它被當成的那位」只有
+# 0.184、對別人 0.483。門檻那條路已經走完(`docs/dev/pipeline.md` 有整張消融表:60→70 就
+# 讓 0807 的「自營二處 ≠ 經理事業部」退回去;推到 120 則把 71 秒併進別人
+# 名下,而成品上看不出來)。
+#
+# ⚠️ **判準用段長,不用一致性**:一致性對「這群是不是一個人」無鑑別力
+# (三種統計量都試過,見 types.SpeakerQuality)。段長則分得很開——那兩群
+# 的中位段長 0.9 / 1.6 秒、短段佔比 86% / 61%;同一場其他 17 群是 2.2~6.0
+# 秒、12~46%。三份真實錄音實測:0812 只打中那兩群、其餘 17 群不動,
+# 0807(25 群、20+ 人)與對照組(6 群)**一群都沒打中**。
+#
+# ⚠️ 這**不是**「這群混了多人」的判定(那個判不出來)。判的是更弱、但
+# 實測分得開的一件事:整群都由 1~2 秒的應答組成時,那個質心沒有身分資訊,
+# 不該被拿去命名、更不該登記進聲紋庫。標未知是誠實的做法——現行「未知」
+# 那條路本來就不登記聲紋(見 app 的未知命名框)。
+_FRAGMENT_MEDIAN_SEC = 2.0
+_FRAGMENT_SHORT_SEC = 2.0
+_FRAGMENT_SHORT_RATIO = 0.60
+# 安全網,不是判準:佔全場比例超過這個數的群一律不標未知。真正的大群
+# 不可能是「插話群」,而萬一某場的主要講者中位段長掉到 2 秒以下(0812 最
+# 接近的兩群是 2.2 / 2.3 秒),這一條擋住整段發言被抹成未知的災難。
+_FRAGMENT_MAX_SHARE = 0.05
+
+
+def _fragmentary_labels(est: np.ndarray, labels: np.ndarray) -> set[int]:
+    """整群都是零星短插話的標籤(見上面那段常數說明)。est = 有抽聲紋那些
+    區段的 [起, 迄];labels 與它同長。"""
+    dur = est[:, 1] - est[:, 0]
+    total = float(dur.sum())
+    out: set[int] = set()
+    for lab in {int(x) for x in labels}:
+        if lab == UNKNOWN_SPEAKER:
+            continue
+        d = dur[labels == lab]
+        if d.size == 0 or float(d.sum()) > total * _FRAGMENT_MAX_SHARE:
+            continue
+        if (float(np.median(d)) < _FRAGMENT_MEDIAN_SEC
+                or float(np.mean(d < _FRAGMENT_SHORT_SEC)) > _FRAGMENT_SHORT_RATIO):
+            out.add(lab)
+    return out
+
 
 # 單例快取:diarizer/embedder 建構要重讀 onnx(實測 ~0.45 秒),批次多檔
 # 重用;設定不再依講者人數而變(重聚在本模組做),永遠只需一份
@@ -693,6 +737,13 @@ def _labels_and_voiceprints(
     # 都不夠像)不硬塞給某講者。指定人數時尊重使用者、全數歸給指定的講者。
     if num_speakers == 0:
         labels_emb[conf_emb < _UNKNOWN_SIM] = UNKNOWN_SPEAKER
+        # 整群都是短插話的,一併標未知(見 _fragmentary_labels)。⚠️ **留兩位
+        # 的底線**:剩不到兩位具名講者就整條不套用——那種場面代表判準在這
+        # 份錄音上失準,而把一場會議抹成「未知講者獨白」比留著假講者更糟。
+        frag = _fragmentary_labels(est, labels_emb)
+        named = {int(x) for x in labels_emb if int(x) != UNKNOWN_SPEAKER}
+        if frag and len(named - frag) >= 2:
+            labels_emb[np.isin(labels_emb, list(frag))] = UNKNOWN_SPEAKER
 
     # 未抽聲紋的短區段:繼承時間中點最近的已分群區段的講者(可能是未知)
     mids_emb = np.array([(all_spans[i][0] + all_spans[i][1]) / 2 for i in emb_idx])
@@ -711,7 +762,21 @@ def _labels_and_voiceprints(
     emb_labels = [labels[i] for i in emb_idx]
 
     voiceprints = _speaker_voiceprints(emb_idx, vecs, labels)
-    turns = [SpeakerTurn(s, e, lab) for (s, e), lab in zip(all_spans, labels)]
+    # 每一段的 conf(對所屬群質心的相似度)一路帶到 turn 上:分群當下就
+    # 算出來了,丟掉太可惜——「🔍 核對」要靠它讓使用者看出哪幾段可疑。
+    # 沒抽聲紋的短碎段繼承時間中點最近鄰的 conf(與標籤同一套繼承規則)
+    conf_by_idx = {idx: float(c) for idx, c in zip(emb_idx, conf_emb)}
+    confs = []
+    for i in range(len(all_spans)):
+        if i in conf_by_idx:
+            confs.append(conf_by_idx[i])
+        else:
+            mid = (all_spans[i][0] + all_spans[i][1]) / 2
+            confs.append(float(conf_emb[int(np.argmin(np.abs(mids_emb - mid)))]))
+    turns = [
+        SpeakerTurn(s, e, lab, c)
+        for (s, e), lab, c in zip(all_spans, labels, confs)
+    ]
     return turns, voiceprints, _quality(turns, conf_emb, emb_labels)
 
 

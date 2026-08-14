@@ -33,6 +33,11 @@ class SpeakerTurn:
     start: float
     end: float
     speaker: int
+    # 這一段的聲紋與所屬講者群質心的相似度(分群當下就算出來的,見
+    # diarize._cluster 的 conf)。⚠️ **只在同一份錄音之內比才有意義**
+    # ——同 SpeakerQuality 的警告。0.0 = 沒有這個資訊(例如「重設講者」
+    # 那條路,分群早在當初就做完了)
+    conf: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -43,6 +48,30 @@ class SpokenSegment:
     end: float
     speaker: int
     text: str
+
+
+@dataclass(frozen=True)
+class SpeechBlock:
+    """逐字稿上的**一輪發言**:同一位講者的連續句子合併後的那一段。
+
+    ⚠️ **這是「使用者看得到的單位」,與講者分離的原始區段不同**:一輪
+    發言可能由十幾個區段組成,而 md 是以它為單位跑標點模型的——所以
+    區塊內部的句界在成品裡已經不存在。任何「改掛給別人」的功能只能以
+    它為單位(見 audit.py 的模組說明)。"""
+
+    speaker: int
+    start: float
+    end: float
+    text: str
+    is_marker: bool = False     # 跳針標記段(自成區塊、不跑標點)
+    # 這一輪發言的聲紋一致性(組成它的區段 conf 的加權平均;0 = 沒資訊)。
+    # 「🔍 核對」把它列出來,讓使用者一眼看出**哪幾列比較可疑**——
+    # ⚠️ 它是**同一群之內的相對值**,不是「這一段是不是他」的判定
+    cohesion: float = 0.0
+
+    @property
+    def seconds(self) -> float:
+        return max(self.end - self.start, 0.0)
 
 
 @dataclass(frozen=True)

@@ -130,6 +130,10 @@ class PipelineResult:
     # 每位講者的分群品質(types.SpeakerQuality):段數、時長、群內一致性。
     # 寫進逐字稿檔尾的診斷區塊(export._speaker_diagnostics)
     quality: list | None = None
+    # 逐字稿上的每一輪發言(types.SpeechBlock),供「🔍 核對」把某一位的
+    # 發言接成一個音檔一次聽完(audit.py)。⚠️ **單位是區塊不是講者分離的
+    # 區段**:md 以區塊為單位跑標點,區塊內的句界在成品裡已經不存在
+    blocks: list | None = None
 
 
 def _speaker_hints(spoken) -> dict[int, tuple[int, str, float, float]]:
@@ -451,6 +455,27 @@ def transcribe_to_markdown(
     return rendered
 
 
+def _blocks_with_cohesion(spoken, turns) -> list:
+    """每一輪發言 + 它的聲紋一致性(給「🔍 核對」列出來)。
+
+    一輪發言由好幾個講者分離的區段組成,所以取**時間加權平均**:一段
+    10 秒的 0.7 與一段 0.5 秒的 0.2,平均起來不該各算一半。
+
+    ⚠️ **算不出來就留 0**(沒有重疊的區段、或那條路根本沒跑分群):
+    介面上顯示成空白,而不是假裝有一個數字——那正是本專案對「不下假判定」
+    的一貫要求。"""
+    out = []
+    for b in export.speech_blocks(spoken):
+        num = den = 0.0
+        for t in turns:
+            overlap = min(b.end, t.end) - max(b.start, t.start)
+            if overlap > 0 and t.conf:
+                num += t.conf * overlap
+                den += overlap
+        out.append(replace(b, cohesion=(num / den) if den else 0.0))
+    return out
+
+
 def finalize(
     spoken,
     turns,
@@ -518,4 +543,5 @@ def finalize(
         outputs=outputs, device=device, preview=md_text,
         speakers=n_speakers, voiceprints=voiceprints, speaker_hints=hints,
         speaker_sources=speaker_sources, quality=quality,
+        blocks=_blocks_with_cohesion(spoken, turns),
     )

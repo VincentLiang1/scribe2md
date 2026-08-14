@@ -651,6 +651,110 @@ body:has(#name-box .name-row .block) #adv-params { display: none !important; }
    button.primary 上會只推下套用鈕,同列的次要鈕不動,兩顆一高一低
    (使用者截圖回報 2026-07-24) */
 #name-box .apply-row { margin-top: 14px; align-items: center; }
+/* 核對面板的那一列(改掛下拉 + 兩顆鈕)。⚠️ **置中規則要自己寫一份**:
+   上面那條錨在 #name-box 底下,而核對面板在右欄、不在那棵樹裡——只掛
+   同一個 class 不會生效,按鈕就會貼著下拉的頂端(使用者 2026-08-13 截圖
+   圈出的第二處)。下拉有標籤、比按鈕高,不置中會歪得很明顯 */
+#audit-panel .apply-row { margin-top: 4px; align-items: center; gap: 10px; }
+/* 核對面板下半部收成一張卡(使用者 2026-08-14:「現在是分好幾塊,合起來,
+   行距跟旁邊卡片一樣」)。做法同命名區的 .name-row:**內部的 block 透明、
+   外框由這一層給**——每個元件各自帶白底圓角時,看起來就是散開的好幾塊。 */
+.audit-actions {
+  background: var(--block-background-fill);
+  border-radius: 18px; padding: 12px 16px; gap: 4px !important;
+}
+.audit-actions :is(.block, .form, .styler) {
+  background: transparent !important; box-shadow: none !important;
+  border: none !important; padding: 2px 6px !important;
+}
+/* 元件的標籤首字被左上圓角切掉(使用者 2026-08-13 截圖:「逐段對照」的
+   「逐」缺一角)——與 .name-row 那條**同一個坑**:水平內距歸零時,標籤
+   就貼在圓角上,而圓角會把那個角落的像素切掉(那次是「講」剩半邊)。
+   留 8px 水平內距即可,不必去動圓角本身 */
+#audit-panel .block { padding-left: 8px; padding-right: 8px; }
+/* 核對的出聲載體:與 #audition-player 同一套——移出畫面但保持渲染
+   (gradio 對 visible=False 整個不渲染,前端沒有元件就不會出聲) */
+#audit-player {
+  position: absolute !important; left: -9999px !important; top: 0;
+  width: 480px !important; opacity: 0; pointer-events: none;
+}
+/* 逐段對照表:字級調小一級(使用者 2026-08-13:「內容欄字體小一點,
+   可以看到更多內容,也不用一直捲動」)。時間與長度用等寬數字對齊,
+   一整欄掃過去才不會跳 */
+#audit-panel :is(td, th, .body-cell, .header-cell) { font-size: 12.5px; padding: 5px 8px; }
+/* 點下某一格時 gradio 會畫一個藍框、還冒出一顆小三角選單鈕(使用者
+   2026-08-13 截圖:「那個藍色框框無法接受」)。核對表是拿來聽與勾的,
+   不是試算表——那兩個都只是干擾。
+   ⚠️ **第一版寫 `box-shadow: none` 沒有中**(使用者回報照樣有框):那些框
+   是**用 `--ring-color` 這個變數**畫出來的,而且畫在不只一層元素上,
+   逐條蓋永遠會漏。**把變數本身改成透明**才一次到位——五案並排的最小
+   重現頁上使用者選的就是這一案(2026-08-14)。
+   `.selection-button` 是那顆小三角旁邊的選取把手,一起收掉。 */
+/* 前四欄(聽、#、相似度、長度)置中——內容那一欄照舊靠左(使用者
+   2026-08-14)。⚠️ **兩次沒中的原因**:① 只設 td 的 text-align 不夠,
+   gradio 把儲存格內容包在 .cell-wrap 裡而它是 flex;② **少了
+   `!important`**,自己的規則被 gradio 的蓋掉。所以這裡連同所有子元素
+   一起指定,而且兩種對齊(text-align 給文字流、justify-content 給 flex)
+   都給。 */
+/* ⚠️ **選擇器不要求 `table` 這個祖先**(2026-08-14 第三次才修對):gradio
+   6.20 的表格是**虛擬化**的(捲動時才產生列),資料列不一定掛在那個
+   `<table>` 底下——我先前的診斷量到的是**表頭**那一格(它確實置中了),
+   而使用者看到沒置中的是資料列。兩種渲染的類名也不同(`td.svelte-…` 與
+   `.body-cell`),所以兩套都列進來。 */
+#audit-panel :is(td, th, .body-cell, .header-cell),
+#audit-panel :is(td, th, .body-cell, .header-cell) * {
+  text-align: center !important;
+  justify-content: center !important;
+}
+/* 只有最後一欄(內容)靠左——**不數欄位**:用 :nth-child(-n+4) 就得跟著
+   欄數改,而欄位這幾天已經改過三次(拿掉核對檔位置、拿掉勾選、換相似度)。
+   「除了最後一欄以外都置中」與欄數無關,改欄位時不必回來動它。 */
+#audit-panel :is(td, th, .body-cell, .header-cell):last-child,
+#audit-panel :is(td, th, .body-cell, .header-cell):last-child * {
+  text-align: left !important;
+  justify-content: flex-start !important;
+}
+#audit-panel :is(td, .body-cell):first-child { cursor: pointer; font-size: 15px; }
+/* 播放中的那一格改顯示 ■。⚠️ **不去改文字**:那一格的內容是 svelte 管的
+   (診斷實測「字樣節點 = DIV.cell-wrap」),直接寫 textContent 會被它在下
+   一次渲染蓋回去——第一版就是這樣沒作用。改成加一個 class、用 ::after
+   疊上去,原本的 ▶ 藏起來即可,完全不碰它的資料。 */
+#audit-panel :is(td, .body-cell).ms-playing { position: relative; }
+#audit-panel :is(td, .body-cell).ms-playing > * { visibility: hidden; }
+#audit-panel :is(td, .body-cell).ms-playing::after {
+  content: "■"; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; color: var(--body-text-color);
+}
+#audit-panel { --ring-color: transparent !important; }
+/* ⚠️ **變數要設在儲存格自己身上**(2026-08-14 使用者截圖:點某一格還是有
+   藍框):gradio 的 `.body-cell` **自己就宣告了 `--ring-color`**,而元素上
+   的宣告贏過從祖先繼承來的——所以只在面板層設透明是沒有用的。
+   ⚠️ **只中和變數、不要碰 box-shadow**:那些格線本身也是 box-shadow 畫的
+   (`inset 1px 0 0 var(--border-color-primary)`),一起關掉會讓整張表的
+   直線消失。 */
+#audit-panel :is(td, th, .body-cell, .header-cell, .cell-wrap) {
+  --ring-color: transparent !important;
+}
+/* ⚠️ **選取框有好幾種畫法**(2026-08-14,第三次才收乾淨):`--ring-color`
+   合成的 box-shadow、`.selected td` 的 border-color、還有 focus 的 outline
+   ——一條一條追太慢,而且每追一條就要使用者再截一次圖。改成**在表格容器
+   上把 accent 那組顏色整個中和**:不論哪一條規則畫的,顏色都是透明的。
+   ⚠️ **只在表格容器內**,不要下在整個面板上——面板裡的下拉還需要 focus
+   時的顏色回饋(那是鍵盤操作唯一的線索)。 */
+#audit-panel :is(.table-wrap, .virtual-table-viewport, .header-table, table) {
+  --ring-color: transparent !important;
+  --border-color-accent: transparent !important;
+  --color-accent: transparent !important;
+}
+#audit-panel :is(td, th, .body-cell, .header-cell) :is(:focus, :focus-visible) {
+  outline: none !important;
+}
+#audit-panel :is(.cell-menu-button, .selection-button) { display: none !important; }
+#audit-panel :is(td, .body-cell) { font-variant-numeric: tabular-nums; }
+/* 面板頂端那句說明:比內文小一級、顏色收斂——它是操作說明不是內容,
+   不該跟逐段對照表搶注意力 */
+.audit-note p { font-size: 13px; color: var(--body-text-color-subdued); margin: 0; }
 .name-row { padding: 10px 2px; }
 .name-row + .name-row { border-top: 1px solid var(--input-border-color); }
 .name-row .form, .name-row .block {
@@ -660,10 +764,20 @@ body:has(#name-box .name-row .block) #adv-params { display: none !important; }
 }
 
 /* 試聽鈕:比一般膠囊再小一號,像設計稿的 chip;不隨 Row 伸縮 */
-.aud-btn {
+/* 命名列右側的按鈕欄(試聽在上、核對在下)。⚠️ **不能讓它有自己的白底**
+   ——它在命名卡片裡面,多一層底色看起來就是「卡中卡」 */
+.name-btns { gap: 4px !important; background: transparent !important; }
+.name-btns :is(.block, .form, .styler) {
+  background: transparent !important; box-shadow: none !important;
+  border: none !important; padding: 0 !important;
+}
+.aud-btn, .audit-btn {
   flex: 0 0 auto !important; align-self: center;
   font-size: 13px !important; padding: 4px 14px !important;
 }
+/* 「🔍 核對」只亮在該核對的那幾列(未知＋診斷點名的前三名),所以它天生
+   稀疏——樣式與試聽鈕一致,靠字樣區分,不另外給顏色:整排鈕五顏六色
+   會讓人以為那是三種不同性質的操作 */
 
 /* 轉檔進度文字(「XXX.m4a:轉錄與講者分析 - 5.0%」,gradio 畫在預覽框上
    的 .progress-level-inner)原生只有 12px,使用者反映太小;先放 16px
@@ -1139,4 +1253,43 @@ APPLY_DOWNLOAD_JS = """
     a.remove();
   }
 }
+"""
+
+
+# 「聽」那一欄的播放/停止字樣切換。⚠️ **純前端**:切字樣本來要把整張表送回
+# 伺服器再送回來重畫,而那正是「勾選改掛很慢」的成因(見 app._audit_play_row)
+# ——所以改成點下去當場在 DOM 上換,零往返。
+# 對不到節點就什麼都不做(字樣不變,但播放照樣正常):這是錦上添花的回饋,
+# 不能因為 gradio 改版就讓核對壞掉。
+AUDIT_PLAYING_HEAD = """
+<script>
+(function () {
+  var MARK = "ms-playing";
+  function cellOf(e) {
+    return e.target && e.target.closest
+      ? e.target.closest("#audit-panel :is(td, .body-cell):first-child") : null;
+  }
+  function clearAll() {
+    document.querySelectorAll("#audit-panel ." + MARK).forEach(function (td) {
+      td.classList.remove(MARK);
+    });
+  }
+  document.addEventListener("click", function (e) {
+    var td = cellOf(e);
+    if (!td) { return; }
+    var was = td.classList.contains(MARK);
+    clearAll();
+    if (!was) { td.classList.add(MARK); }
+  }, true);
+  // 播完自然結束就還原成 ▶。⚠️ **三種事件都收**(2026-08-14 使用者回報
+  // 「播完沒有還原」):這些事件都**不冒泡**,一律用捕獲階段;而且不能只
+  // 收 ended——換播另一段時舊的載體是被換掉/清空的,那時只會有 pause
+  // 或 emptied
+  ["ended", "pause", "emptied"].forEach(function (evt) {
+    document.addEventListener(evt, function (e) {
+      if (e.target && e.target.tagName === "AUDIO") { clearAll(); }
+    }, true);
+  });
+})();
+</script>
 """

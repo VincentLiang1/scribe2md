@@ -612,7 +612,7 @@ def combine_tracks(
         for t in r.turns:
             new = mapping.get((r.kind, t.speaker))
             if new is not None:
-                turns_all.append(SpeakerTurn(t.start, t.end, new))
+                turns_all.append(SpeakerTurn(t.start, t.end, new, t.conf))
             elif t.speaker == UNKNOWN_SPEAKER:
                 turns_all.append(t)
         for lab, vec in (r.voiceprints or {}).items():

@@ -29,7 +29,8 @@ def pending_dir() -> Path:
     return paths.appdata_root() / "pending"
 
 
-def persist(outputs, preview, count, voiceprints, hints, clips, names) -> dict:
+def persist(outputs, preview, count, voiceprints, hints, clips, names,
+            audit=None) -> dict:
     """把命名所需的一切寫進 pending 目錄;回傳(改指落地副本的)clips。
 
     落地是輔助功能:任何失敗只記 log,絕不讓剛跑完 30 分鐘的轉檔在最後
@@ -68,6 +69,11 @@ def persist(outputs, preview, count, voiceprints, hints, clips, names) -> dict:
             "hints": {str(k): list(v) for k, v in (hints or {}).items()},
             "names": {str(k): v for k, v in (names or {}).items()},
             "clips": {str(k): v for k, v in stored_clips.items()},
+            # 核對資料(每一輪發言 + 音檔來源 + 哪幾列該亮鈕)。⚠️ **一定要
+            # 一起落地**:第一版沒存,重新整理之後核對鈕照樣亮著(它只看
+            # 「有沒有未知」),按下去卻是「沒有可核對的段落」——使用者
+            # 2026-08-13 實機踩到。純 JSON,不必另外存檔案
+            "audit": audit or {},
         }
         (d / "meta.json").write_text(
             json.dumps(meta, ensure_ascii=False), encoding="utf-8",
@@ -76,6 +82,16 @@ def persist(outputs, preview, count, voiceprints, hints, clips, names) -> dict:
     except Exception:
         logger.exception("命名進度落地失敗(不影響本次結果,但重新整理後無法接續命名)")
         return dict(clips or {})
+
+
+def _usable_audit(audit) -> dict:
+    """落地的核對資料還能不能用:要有區塊,而且音檔來源還在。"""
+    if not isinstance(audit, dict) or not audit.get("blocks"):
+        return {}
+    src = audit.get("src") or ""
+    if not src or not Path(src).exists():
+        return {}
+    return audit
 
 
 def load() -> dict | None:
@@ -106,6 +122,9 @@ def load() -> dict | None:
             "clips": {
                 int(k): p for k, p in meta.get("clips", {}).items() if Path(p).exists()
             },
+            # 音檔來源不在了(使用者搬走原檔)就整包不給:核對是「聽」的
+            # 功能,沒有音檔時鈕不該亮
+            "audit": _usable_audit(meta.get("audit")),
         }
     except Exception:
         logger.warning("未完成命名的落地資料無法使用(過期或輸出檔被移走),已清除")

@@ -23,7 +23,7 @@ DLL 不進主行程、崩潰只殺子行程、ORT arena 隨行程歸還。
   {"cmd":"poll","kind":"mic","wav":"<軌檔>","avail":300.0,"progress":false}
       → {"ok":true,"done":285.0}          錄音中逐塊推進
   {"cmd":"finish","kind":"mic","wav":"<軌檔>","total":600.0,"speakers":0}
-      → {"ok":true,"turns":[[起,訖,講者],...],"vp":[[講者,base64],...],
+      → {"ok":true,"turns":[[起,訖,講者,相似度],...],"vp":[[講者,base64],...],
          "quality":[[講者,段數,秒數,群內一致],...]}
   EOF → 退出(不必掃孤兒,同 ocr_worker)
 """
@@ -55,7 +55,10 @@ def _result(turns, vps, quality) -> dict:
     的症狀是「診斷區塊時有時無」——最難查的那種。"""
     return {
         "ok": True,
-        "turns": [[t.start, t.end, t.speaker] for t in turns],
+        # ⚠️ **conf 一定要一起送**(2026-08-14 實機抓到):它是「這一段有多像
+        # 所屬講者群」,核對表的相似度就靠它。少送這一個欄位的症狀是
+        # 「重新轉檔了,相似度還是空的」——而父行程那邊完全看不出哪裡漏
+        "turns": [[t.start, t.end, t.speaker, t.conf] for t in turns],
         "vp": [[int(k), _encode(v)] for k, v in (vps or {}).items()],
         "quality": [
             [q.speaker, q.segments, q.seconds, q.cohesion]

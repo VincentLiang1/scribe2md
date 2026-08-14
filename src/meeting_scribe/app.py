@@ -51,6 +51,8 @@ from datetime import datetime
 import gradio as gr
 
 from meeting_scribe import (
+    export,
+    audit as audit_mod,
     attendees,
     audio,
     cancel,
@@ -81,7 +83,7 @@ from meeting_scribe import record
 from meeting_scribe import voiceprints as voiceprints_store
 from meeting_scribe.errors import UserFacingError
 from meeting_scribe.pipeline import cleanup_stale_temp, run_pipeline
-from meeting_scribe.types import MAX_SPEAKERS, UNKNOWN_SPEAKER
+from meeting_scribe.types import MAX_SPEAKERS, UNKNOWN_SPEAKER, SpeechBlock
 
 logger = logging.getLogger(__name__)
 
@@ -667,8 +669,13 @@ def _hint_text(hint) -> str | None:
 # ---- 試聽(無播放器介面:按「試聽」即從頭播、再按即停、換人直接切)----
 
 # 試聽鈕字樣:播放中的那顆變「停止」,其餘維持「試聽」
-_AUD_PLAY_LABEL = "▶ 試聽"
-_AUD_STOP_LABEL = "■ 停止"
+# ⚠️ **兩個圖示都用 emoji 版**(使用者 2026-08-14 指定):試聽與核對上下疊,
+# 而「▶」「■」是窄的文字符號、「🔍」是全寬 emoji——寬度不同,後面的中文
+# 就對不齊。先前試過用 ::first-letter 補間距,實機上仍然不準(不同字型的
+# 幾何符號寬度不一樣);改用 emoji 表示形式(加 U+FE0F)才是**同一種東西
+# 比同一種東西**,不必調任何數字
+_AUD_PLAY_LABEL = "▶️ 試聽"
+_AUD_STOP_LABEL = "⏹️ 停止"
 
 
 def _aud_btn_updates(playing) -> list:
@@ -691,6 +698,240 @@ def _audition_reset_updates() -> tuple:
         for _ in range(MAX_SPEAKERS + 1)
     ]
     return ({}, None, gr.update(value=None), *hidden)
+
+
+# 「🔍 核對」的鈕字樣。與試聽鈕一樣走「字樣即狀態」,不另開狀態元件
+_AUDIT_LABEL = "🔍 核對"
+
+
+def _audit_reset_updates() -> tuple:
+    """核對整組復位:清狀態、關面板、藏所有核對鈕(轉完新檔/套用/復位共用)。
+
+    形狀 = audit_state + 面板 4 件(播放器/表格/改掛下拉/整個面板)
+    + 30+1 顆鈕,與 _audit_panel_updates 對齊。"""
+    hidden = [gr.update(visible=False) for _ in range(MAX_SPEAKERS + 1)]
+    return (
+        {}, gr.update(value=None), gr.update(value=None),
+        gr.update(value=[], choices=[]), gr.update(value="", choices=[]),
+        gr.update(visible=False), *hidden,
+    )
+
+
+def _audit_dir() -> Path:
+    r"""核對音檔放哪:與試聽片段同一個暫存目錄底下。
+
+    那個目錄已經有鎖檔、換一批就整個汰換,而且被 `cleanup_stale_temp`
+    納管(當機殘留下次啟動自動清)。⚠️ **絕不能放
+    `%LOCALAPPDATA%\meeting-scribe
+ecordings`**——那裡是錄音的地盤,
+    規矩相反(錄音不能被當孤兒掃掉,核對音檔則是用完即丟)。"""
+    if _clips_dir is None:
+        _new_clips_dir()
+    d = _clips_dir / "audit"
+    d.mkdir(exist_ok=True)
+    return d
+
+
+def _audit_blocks(audit, spk) -> list:
+    """audit_state(純 dict,State 只放得下可序列化的東西)→ 該講者的區塊。"""
+    blocks = [
+        SpeechBlock(speaker=int(b["speaker"]), start=float(b["start"]),
+                    end=float(b["end"]), text=str(b.get("text", "")),
+                    cohesion=float(b.get("cohesion") or 0.0))
+        for b in (audit or {}).get("blocks", [])
+    ]
+    return audit_mod.blocks_of(blocks, spk)
+
+
+# 逐列播放鈕的字樣(**字樣即狀態**,不另開狀態元件;同命名區的試聽鈕)
+# 核對表最多列幾列。⚠️ **這是效能上限,不是「該聽多少」**:幾百列的
+# Dataframe 光前端重排就卡得有感(使用者 2026-08-13 回報「勾選改掛很慢」)。
+# 超過就抽樣(最長的那些 + 全場均勻),而抽樣本來就夠回答「這一群純不純」
+_AUDIT_MAX_ROWS = 100
+_ROW_PLAY = "▶"
+
+
+def _audit_table(rows, blocks=None) -> list[list]:
+    """核對表的表格值:[播放鈕, 序號, 相似度, 長度, 內容]。
+
+    ⚠️ **播放鈕在最前面、每一列一顆**(使用者 2026-08-13 實際用過後指定):
+    原本是上面一個整批播放器,他說「我直接在那列上按下播放比較好操作,
+    不用點下面又去點上面」。連帶**拿掉「核對檔位置」那一欄**——那一欄
+    是用來在整批音檔裡定位的,整批播放器沒了它就沒有意義,寬度讓給內容。"""
+    coh = [b.cohesion for b in (blocks or [])]
+    return [
+        [_ROW_PLAY, r.index,
+         f"{coh[n]:.2f}" if n < len(coh) and coh[n] else "—",
+         f"{r.seconds:.1f}", r.text]
+        for n, r in enumerate(rows)
+    ]
+
+
+def _audit_choices(rows, blocks=None) -> list[tuple[str, int]]:
+    """「要改掛哪幾段」的下拉選項:(顯示字串, 列序號)。
+
+    ⚠️ **勾選搬出表格是效能決定**(使用者 2026-08-14 第四次回報,而且
+    19 列也卡):可編輯的 Dataframe 每勾一次就整張表重繪——延遲發生在
+    「勾下去的瞬間」,那是純前端成本,伺服器再快也沒用。多選下拉是原生
+    元件,勾幾百個都不卡,而且**可以打字搜尋**。"""
+    # ⚠️ **選項裡不放時間**(使用者 2026-08-14 截圖:「0:00:01·0.75」擠在
+    # 一起很難讀):時間在表格上看得到,這裡要的是「哪幾段可疑」——
+    # 留序號對得回表格、留相似度當判準就夠了
+    coh = [b.cohesion for b in (blocks or [])]
+    out = []
+    for n, r in enumerate(rows):
+        mark = f"{coh[n]:.2f}" if n < len(coh) and coh[n] else "—"
+        out.append((f"{r.index}. {mark}  {r.text[:22]}", n))
+    return out
+
+
+def _audit_open(spk, audit):
+    """「🔍 核對」:把這一位的發言抽樣接成一個音檔 + 對照表,開面板。
+
+    ⚠️ **核對是輔助功能,失敗只提示、不影響命名**(同 _audition_clips):
+    音檔剪不出來時關掉面板即可,使用者照樣填名字、照樣套用。"""
+    mine = _audit_blocks(audit, spk)
+    if not mine:
+        gr.Warning("這個標籤沒有可核對的段落。", title="無法核對")
+        return gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip()
+    src = (audit.get("sources") or {}).get(str(spk)) or audit.get("src") or ""
+    try:
+        # ⚠️ **不再接成一個整批音檔**(使用者 2026-08-13 指定改成逐列播放):
+        # 這裡只要「這一位有哪些輪發言」與一份 16k 快取,逐列播放時才從
+        # 快取剪出那一段(隨機存取,實測 0.01 秒)。
+        # 連帶**不再抽樣**:上限 3 分鐘的意義是「不要讓人坐著聽 20 分鐘」,
+        # 而逐列播放一次只聽一段——限制列數反而是把東西藏起來
+        audit_mod.ensure_wav16k(Path(src), _audit_dir())
+    except UserFacingError as e:
+        gr.Warning(str(e), title="無法核對")
+        return gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip()
+    picks = audit_mod.plan(mine, cap_sec=float("inf"), max_rows=_AUDIT_MAX_ROWS)
+    rows = audit_mod.rows_for(mine, picks)
+    picked_blocks = [mine[i] for i in picks]
+    state = dict(audit)
+    state["open"] = spk
+    state["playing"] = None
+    state["rows"] = [
+        {"start": r.start, "end": r.end, "speaker": spk} for r in rows
+    ]
+    label = "未知" if spk == UNKNOWN_SPEAKER else f"講者 {spk + 1}"
+    # ⚠️ **不跳提示**(使用者 2026-08-14 指定):面板一打開就在眼前,右上角
+    # 再彈一個 toast 只是擋住畫面;真正該講的(抽了幾段、怎麼操作)寫在
+    # 面板頂端那一行,看得到、也不會自己消失
+    logger.info(
+        "核對「%s」:共 %d 段,列出 %d 段", label, len(mine), len(rows),
+    )
+    return (
+        state,
+        gr.update(value=None),
+        gr.update(value=_audit_table(rows, picked_blocks)),
+        gr.update(choices=_audit_choices(rows, picked_blocks), value=[]),
+        gr.update(choices=attendees.load(), value=""),
+        gr.update(visible=True),
+        gr.update(visible=False),          # 右欄的預覽讓位給面板
+    )
+
+
+def _audit_play_row(audit, evt: gr.SelectData):
+    """點某一列最左邊那一格 → 播那一段;再點一次 → 停。
+
+    ⚠️ **這支刻意不吃、也不回那張表**(2026-08-13~14 使用者三次回報「勾選
+    改掛很慢」,19 列也有感):Dataframe 的 select 在**每一格**都觸發,而只要
+    把表格列進 inputs/outputs,gradio 每點一下就得把**整張表**序列化送去
+    伺服器、再送回來重畫。前幾輪修的「別剪音檔」「少列一點 + 關 wrap」
+    「queue=False」都真的有幫助,但**這一條才是每次都會發生的那個成本**。
+    代價:沒有 ▶/■ 的字樣切換——播放中的回饋就是聲音本身。
+
+    ⚠️ 出聲載體沒有介面(CSS 移出畫面,同 #audition-player);整格都可以按,
+    不必點準那個三角形(使用者 2026-08-14 指定)。"""
+    rows = (audit or {}).get("rows") or []
+    idx = evt.index if isinstance(evt.index, (list, tuple)) else (evt.index, 0)
+    i, col = (int(idx[0]), int(idx[1]) if len(idx) > 1 else 0)
+    # 只有點第 0 欄(聽)才播:別的欄是勾選與資料,點它們不該有任何動作
+    if col != 0 or not 0 <= i < len(rows):
+        return gr.skip(), gr.skip()
+    state = dict(audit or {})
+    if state.get("playing") == i:                    # 再點一次 = 停
+        state["playing"] = None
+        return gr.update(value=None), state
+    r = rows[i]
+    src = (audit.get("sources") or {}).get(str(r["speaker"])) or audit.get("src") or ""
+    try:
+        row = audit_mod.AuditRow(
+            index=i + 1, start=float(r["start"]), end=float(r["end"]), text="",
+        )
+        dest = audit_mod.cut_one(Path(src), row, _audit_dir() / "one.wav")
+    except Exception:
+        logger.exception("單段重播剪輯失敗")
+        gr.Warning("這一段剪不出來,請看紀錄檔。", title="無法播放")
+        return gr.skip(), gr.skip()
+    state["playing"] = i
+    return gr.update(value=str(dest)), state
+
+
+def _audit_row_ended(audit):
+    """播完自然結束:讓「再點一次 = 停」的判斷歸零(不動表格,見上)。"""
+    state = dict(audit or {})
+    state["playing"] = None
+    return state
+
+
+def _audit_apply(files, audit, picked, new_name, preview_text):
+    """把選中的那幾段改掛給 `new_name`:改檔案、改預覽。
+
+    picked 是多選下拉的值(列序號清單)——**不再從表格讀勾選**
+    (2026-08-14:可編輯的表格每勾一次就整張重繪,那是延遲的來源)。
+
+    ⚠️ **改的是「逐字稿上的一輪發言」**(見 audit.reassign 的錨):那正是
+    表格上看到的一列。沒選任何段落或沒填名字就什麼都不做——寧可沒反應,
+    也不要在使用者還沒決定時動到成品。"""
+    rows = (audit or {}).get("rows") or []
+    name = (new_name or "").strip()
+    picked = [int(i) for i in (picked or []) if isinstance(i, (int, float))]
+    chosen = [rows[i] for i in picked if 0 <= i < len(rows)]
+    if not chosen or not name:
+        gr.Warning("請先選要改掛的段落,並選一個名字。", title="還沒完成")
+        return gr.skip(), gr.skip(), gr.skip()
+    blocks = [
+        SpeechBlock(speaker=int(r["speaker"]), start=float(r["start"]),
+                    end=float(r["end"]), text="")
+        for r in chosen
+    ]
+    changed = 0
+    for path in files or []:
+        pth = Path(path)
+        try:
+            before = pth.read_text(encoding="utf-8")
+            after, n = audit_mod.reassign(before, blocks, name)
+            if n:
+                pth.write_text(after, encoding="utf-8")
+            changed += n
+        except OSError:
+            logger.exception("改掛寫回失敗:%s", pth)
+    if not changed:
+        # 改不到就要出聲:錨定的是 md 的講者行格式,改不到多半是格式對不上
+        # ——那是工具的 bug,不是使用者的(同 _apply_names 的同一條規矩)
+        logger.warning("改掛沒有改到任何一行(%d 段、名字「%s」)", len(blocks), name)
+        gr.Warning("沒有改到任何一行,請把紀錄檔提供給維護者。", title="改掛失敗")
+        return gr.skip(), gr.skip(), gr.skip()
+    # ⚠️ **記下「這一群被改掛過」**:改掛這個動作本身就是使用者親口說
+    # 「這一群不純」,而那是**他給的證據**,不是工具的猜測。套用名字時
+    # 據此跳過聲紋登記(見 _apply_names)
+    state = dict(audit or {})
+    moved = {int(r["speaker"]) for r in chosen}
+    state["reassigned"] = sorted(set(state.get("reassigned") or []) | moved)
+    gr.Info(
+        f"已把 {changed} 段改掛給「{name}」。"
+        "⚠️ 這一位這次不會被登記進聲紋庫——你改掛過,表示這一群不只一個人。",
+        title="改掛完成",
+    )
+    new_preview, _ = audit_mod.reassign(preview_text or "", blocks, name)
+    return gr.update(value=new_preview), gr.update(value=[]), state
+
+
+def _audit_close():
+    """關面板、把預覽切回來。"""
+    return gr.update(visible=False), gr.update(value=None), gr.update(visible=True)
 
 
 def _servable(files) -> list:
@@ -751,8 +992,13 @@ def _page_reset_updates(downloads_files) -> tuple:
     return (
         # None = 清空,原樣傳下去(gr.Files 的空值語意,不要順手改成 [])
         None if downloads_files is None else _servable(downloads_files),
-        "", *cleared, {}, [],
+        # ⚠️ **預覽要一起「顯示回來」**(2026-08-14 使用者實機踩到):
+        # 核對面板打開時預覽是被藏起來讓位的,而套用名字/跳過命名這條路
+        # 不會經過「完成核對」——只清值不改 visible 的話,收工之後右半邊
+        # 就一直是空的,而且**再也回不來**(下一次轉檔也只清值)
+        gr.update(value="", visible=True), *cleared, {}, [],
         *_audition_reset_updates(),
+        *_audit_reset_updates(),
     )
 
 
@@ -786,11 +1032,15 @@ def _audition_ended():
 # ---- 轉檔成果 → 整組 UI 更新(形狀契約見 PAGE_UPDATE_LEN)----
 
 # 「成品/命名區」一批更新的值數量:下載區+預覽+30 命名框+「未知」框
-# +vp/paths 兩個 state+試聽整組(clips/playing/播放器+30+1 顆鈕)。
+# +vp/paths 兩個 state+試聽整組(clips/playing/播放器+30+1 顆鈕)
+# +核對整組(audit_state+面板 4 件+30+1 顆核對鈕,見 _audit_reset_updates)。
 # 這是 _present_result / _restore_pending / _page_reset_updates 共同的
 # 回傳長度,也等於 build_ui 裡 page_outputs 的元件數——公開給測試引用,
 # 免得同一串算式在 src/tests 各抄一份(增減元件時漏改一處就靜默失準)
-PAGE_UPDATE_LEN = 2 + MAX_SPEAKERS + 1 + 2 + 3 + MAX_SPEAKERS + 1
+PAGE_UPDATE_LEN = (
+    2 + MAX_SPEAKERS + 1 + 2 + 3 + MAX_SPEAKERS + 1
+    + 1 + 5 + MAX_SPEAKERS + 1
+)
 
 def _run(src_text, model_label, num_speakers, cpu_cores=None, recursive=False,
          mode=None, progress=gr.Progress()):
@@ -882,6 +1132,8 @@ def _run(src_text, model_label, num_speakers, cpu_cores=None, recursive=False,
             [str(p) for p in result.outputs],
             f"(執行裝置:{device_name})\n\n{result.preview}",
             result.speakers, result.voiceprints or {}, hints, clips,
+            audit=_audit_payload(result, src),
+            audit_flags=_audit_flags(result.quality),
         ), None)
     finally:
         # 完成/停止/報錯三條路都要放掉:留著的話下一次轉檔會被自己的
@@ -889,7 +1141,8 @@ def _run(src_text, model_label, num_speakers, cpu_cores=None, recursive=False,
         runstate.end()
 
 
-def _name_section_updates(count, hints, clips, names):
+def _name_section_updates(count, hints, clips, names, audit_flags=(),
+                          has_audit=True):
     """命名框/「未知」框/試聽鈕的整組更新(_present_result 與
     _restore_pending 共用)。names={講者標籤: 欄位值}:轉檔完成時是
     自動辨識預填、開頁還原時是落地草稿;缺鍵留白。
@@ -915,8 +1168,19 @@ def _name_section_updates(count, hints, clips, names):
     # 「未知」命名框:逐字稿有未知段落(自動偵測時與每位講者都不夠像的
     # 零碎語音)才顯示。此框只改逐字稿文字、絕不登記聲紋(未知常是多人
     # 重疊的混合,質心混雜,登記會污染聲紋庫)——info 明示,免使用者疑慮
+    # ⚠️ **有核對可用時,「未知」那一列只留核對鈕**(使用者 2026-08-13 指定,
+    # 理由是他自己的使用經驗:「未知我常聽,裡面通常都混著好幾個人」):
+    # - **命名框拿掉**:給整批未知一個名字,正是檔尾診斷明文勸阻的事
+    #   (它常是多人混合)。工具一邊勸阻、一邊提供那個框,是自相矛盾的;
+    #   真的想統一叫「其他」也做得到——打開核對、在清單裡選起來、指定
+    #   名字,那條路至少逼你看過每一段。
+    # - **試聽鈕拿掉**:它只播「最長一句」,而混合群裡那一句是誰的都不知道
+    #   ——聽了只會**給錯誤的信心**,那正是 0812 那次的病因(試聽播到本人
+    #   那一句,聽完更確信,而整群其實混了七個人)。
+    # ⚠️ **沒有核對可用時(沒有音檔)仍保留舊的框**:那時它是唯一能處理
+    # 未知的路,收掉等於什麼都不能做。
     unknown_hint = hints.get(UNKNOWN_SPEAKER)
-    if unknown_hint:
+    if unknown_hint and not has_audit:
         unknown_update = gr.update(
             visible=True, choices=known, value=names.get(UNKNOWN_SPEAKER, ""),
             info=f"只改逐字稿文字、不會登記聲紋・{_hint_text(unknown_hint)}",
@@ -933,9 +1197,27 @@ def _name_section_updates(count, hints, clips, names):
     ]
     unknown_aud_update = (
         gr.update(visible=True, value=_AUD_PLAY_LABEL)
-        if (unknown_hint is not None and UNKNOWN_SPEAKER in clips) else gr.skip()
+        if (unknown_hint is not None and UNKNOWN_SPEAKER in clips and not has_audit)
+        else gr.skip()
     )
-    return updates, unknown_update, aud_updates, unknown_aud_update
+    # 「🔍 核對」只亮在**該核對的那幾列**(使用者 2026-08-13 選案 B):
+    # 「未知」一定亮(那一批本來就常是多人混合),其餘只有被檔尾診斷點名
+    # 「建議優先核對」的才亮。版面因此零新增——其他列一個像素都沒變,
+    # 而力氣被導到最該花的地方(與 export.check_first 同一套哲學)
+    # ⚠️ **沒有核對資料就一顆都不亮**:顯示與資料必須是同一個判準。第一版
+    # 只看「有沒有未知」,於是重新整理之後鈕還在、按下去卻是空的
+    # (使用者 2026-08-13 實機踩到)
+    flagged = set(audit_flags or ()) if has_audit else set()
+    audit_updates = [
+        gr.update(visible=True) if i in flagged else gr.skip()
+        for i in range(MAX_SPEAKERS)
+    ]
+    unknown_audit_update = (
+        gr.update(visible=True)
+        if (has_audit and unknown_hint is not None) else gr.skip()
+    )
+    return (updates, unknown_update, aud_updates, unknown_aud_update,
+            audit_updates, unknown_audit_update)
 
 
 def _run_batch(src_text, model_label, num_speakers, cpu_cores, recursive, progress):
@@ -1009,7 +1291,7 @@ def _run_relabel(src_text, cpu_cores, progress):
 
     - 同一層沒有同名媒體檔 → 只有命名欄位(照樣看得到「共 N 段發言・
       最長一句摘錄」,那全部解析自 md 本身);
-    - 有 → 多出 ▶ 試聽,而且**抽聲紋登記**,下次開會自動認人
+    - 有 → 多出 ▶️ 試聽,而且**抽聲紋登記**,下次開會自動認人
       ——與轉檔後的命名流程完全一致。
 
     共用的是收尾那一整套:_present_result 建命名欄位、_apply_names 改寫並
@@ -1037,11 +1319,15 @@ def _run_relabel(src_text, cpu_cores, progress):
     media = relabel.find_media(md_path)
     voiceprints: dict = {}
     clips: dict = {}
+    audit = _audit_payload_from_transcript(transcript, named, media)
     if media is not None:
         try:
-            voiceprints, clips = _analyse_for_relabel(
+            voiceprints, clips, cohesion = _analyse_for_relabel(
                 md_path, media, transcript, named, progress,
+                blocks=audit.get("blocks"),
             )
+            for b, c in zip(audit.get("blocks") or [], cohesion):
+                b["cohesion"] = float(c)
         except cancel.Cancelled:
             raise
         except Exception:
@@ -1061,17 +1347,61 @@ def _run_relabel(src_text, cpu_cores, progress):
     return (*_present_result(
         [str(md_path)], f"{note}\n\n{relabel.read(md_path)}",
         len(named), voiceprints, hints, clips,
+        # 核對在這條路一樣可用(使用者 2026-08-13 問起):既有逐字稿 +
+        # 同層的錄音檔就夠了,不必重轉一支兩小時的檔。⚠️ **哪幾列亮**
+        # 在這裡沒有分群品質可依據(那是轉檔當下才算得出來的),所以
+        # 只亮「未知」——真正常需要核對的也是它
+        audit=audit,
     ), None)
 
 
-def _analyse_for_relabel(md_path, media, transcript, named, progress):
-    """媒體檔 → (每位講者的聲紋質心, 試聽片段)。
+def _relabel_cohesion(wav, blocks, progress) -> list[float]:
+    """每一輪發言對「**自己那一群**的質心」的相似度。
+
+    ⚠️ **要分群算,不能全部混在一起比**:每一位講者各有自己的聲音,拿全場
+    共同的平均當基準的話,聲音特別的人整排都會偏低——那個數字就變成
+    「你像不像平均值」,不是「這一段像不像同一位講者」。
+
+    算不出來就整排 0(顯示空白):相似度是輔助,聽與改掛不靠它。"""
+    import numpy as np
+
+    spans = [(b["start"], b["end"]) for b in blocks]
+    try:
+        samples = audio.read_wav16k(wav)
+        vecs = diarize._extract_embeddings(
+            samples, spans,
+            progress=lambda f: progress(0.75 + 0.18 * f, desc="計算每段的相似度"),
+        )
+    except Exception:
+        logger.exception("重設講者:相似度算不出來(不影響聽與改掛)")
+        return []
+    out = [0.0] * len(blocks)
+    by_speaker: dict[int, list[int]] = {}
+    for i, b in enumerate(blocks):
+        by_speaker.setdefault(int(b["speaker"]), []).append(i)
+    for idxs in by_speaker.values():
+        weights = np.array([spans[i][1] - spans[i][0] for i in idxs], dtype=float)
+        centroid = diarize._wcentroid(vecs[idxs], np.maximum(weights, 0.01))
+        for i in idxs:
+            out[i] = float(vecs[i] @ centroid)
+    return out
+
+
+def _analyse_for_relabel(md_path, media, transcript, named, progress, blocks=None):
+    """媒體檔 → (每位講者的聲紋質心, 試聽片段, 每一輪發言的相似度)。
 
     先轉 16k 單聲道再抽聲紋(`diarize.voiceprints_for_spans` 吃的就是那個
     格式);試聽片段則從**原始檔**剪,與轉檔後的流程同一個作法
-    (_cut_speaker_clips:長錄音免全檔解碼)。"""
+    (_cut_speaker_clips:長錄音免全檔解碼)。
+
+    ⚠️ **相似度在這裡一併算掉**(使用者 2026-08-14 指定):這條路本來就已經
+    讀了整份音訊、也已經在抽聲紋,順手把每一輪發言各抽一次(實測 78ms/段,
+    一場 2.7 小時的會議約多一分鐘),核對表才有「哪幾段可疑」的數字。
+    ⚠️ **算完只留這一份**——它跟著命名進度落地(pending),中途關掉程式、
+    重開之後還在;不做「每轉一次留一份」的快取,那是使用者明確不要的。"""
     hints = transcript.hints()
     spans = transcript.spans()
+    cohesion: list[float] = []
     with tempfile.TemporaryDirectory(prefix=pipeline.TMP_PREFIX) as tmp:
         progress(0.05, desc=f"{media.name}:準備音訊")
         wav = audio.to_wav16k(media, Path(tmp))
@@ -1080,8 +1410,12 @@ def _analyse_for_relabel(md_path, media, transcript, named, progress):
         vp = diarize.voiceprints_for_spans(
             wav,
             {named.index(n): s for n, s in spans.items() if n != "未知"},
-            progress=lambda f: progress(0.15 + 0.75 * f, desc="抽取聲紋"),
+            progress=lambda f: progress(0.15 + 0.60 * f, desc="抽取聲紋"),
         )
+        cancel.check()
+        if blocks:
+            progress(0.75, desc="計算每段的相似度")
+            cohesion = _relabel_cohesion(wav, blocks, progress)
     progress(0.95, desc="剪試聽片段")
     # 線索的鍵在呼叫端已改成哨兵/序號,這裡要的是同一組;直接照 named 重建
     clip_hints = {
@@ -1089,10 +1423,11 @@ def _analyse_for_relabel(md_path, media, transcript, named, progress):
          else named.index(transcript.order[i])): h
         for i, h in hints.items()
     }
-    return vp, _cut_speaker_clips(media, clip_hints)
+    return vp, _cut_speaker_clips(media, clip_hints), cohesion
 
 
-def _naming_page_updates(outputs, preview, voiceprints, clips, section) -> tuple:
+def _naming_page_updates(outputs, preview, voiceprints, clips, section,
+                         audit=None) -> tuple:
     """「成品/命名區」那一批更新(PAGE_UPDATE_LEN 個值)的**唯一**組法。
 
     轉檔收尾(_present_result)與開頁還原(_restore_pending)送的是同一
@@ -1102,19 +1437,79 @@ def _naming_page_updates(outputs, preview, voiceprints, clips, section) -> tuple
     的四元組原樣傳進來。
 
     下載區的值只在這裡與 `_page_reset_updates` 產生,見那裡的註解。"""
-    updates, unknown_update, aud_updates, unknown_aud_update = section
+    (updates, unknown_update, aud_updates, unknown_aud_update,
+     audit_updates, unknown_audit_update) = section
     return (
         # 下載區只放 gradio 供應得了的(見 _servable);paths_state 拿完整
         # 清單——套用名字寫回的是它,「重設講者」的 md 在使用者自己的
         # 資料夾裡,下載不了但照樣改得到
-        _servable(outputs), preview, *updates, unknown_update,
+        _servable(outputs), gr.update(value=preview, visible=True),
+        *updates, unknown_update,
         voiceprints, outputs,
         clips, None, gr.update(value=None),
         *aud_updates, unknown_aud_update,
+        # 核對:狀態帶著「這一份的區塊與音檔來源」,面板關著等使用者點
+        audit, gr.update(value=None), gr.update(value=None),
+        gr.update(value=[], choices=[]),
+        gr.update(value="", choices=attendees.load()), gr.update(visible=False),
+        *audit_updates, unknown_audit_update,
     )
 
 
-def _present_result(outputs, preview, count, voiceprints, hints, clips):
+def _audit_payload(result, src_path) -> dict:
+    """核對面板要的東西:每一輪發言 + 從哪個音檔剪。
+
+    ⚠️ **音檔來源優先用管線留下的 16k wav**:從原始 m4a/mp4 剪要先整檔
+    解碼(長錄音數十秒),而 16k wav 是隨機存取、實測 0.01 秒
+    (見 audit._cut_and_join)。沒有就退回原始檔,慢但仍可用。"""
+    blocks = getattr(result, "blocks", None) or []
+    if not blocks:
+        return {}
+    return {
+        "blocks": [
+            {"speaker": b.speaker, "start": b.start, "end": b.end,
+             "text": b.text, "cohesion": getattr(b, "cohesion", 0.0)}
+            for b in blocks
+        ],
+        "src": str(src_path or ""),
+        "sources": {int(k): str(v) for k, v in (result.speaker_sources or {}).items()},
+    }
+
+
+def _audit_payload_from_transcript(transcript, named, media) -> dict:
+    """「🔄 重設講者」那條路的核對資料:從既有逐字稿的區塊組。
+
+    ⚠️ **迄秒是估的**:md 只有每一輪的**起點**,終點只能拿下一輪的起點頂
+    上去,中間的靜默全被算進來(`relabel.Transcript.spans` 的同一個坑)。
+    所以這裡跟試聽一樣壓上限——不壓的話,一段 3 秒的插話後面接了 5 分鐘
+    的沉默,核對音檔就會播 5 分鐘的空白,而使用者以為是程式壞了。
+
+    沒有媒體檔就回空的:核對是「聽」的功能,沒有音檔時連面板都不該開。"""
+    if media is None:
+        return {}
+    blocks, order = [], transcript.blocks
+    for i, b in enumerate(order):
+        nxt = order[i + 1].start if i + 1 < len(order) else b.start + relabel._TAIL_SEC
+        end = min(nxt, b.start + relabel._CLIP_MAX_SEC)
+        spk = UNKNOWN_SPEAKER if b.name == "未知" else (
+            named.index(b.name) if b.name in named else None
+        )
+        if spk is None:
+            continue
+        blocks.append({"speaker": spk, "start": float(b.start),
+                       "end": float(max(end, b.start + 0.3)), "text": b.text[:40]})
+    # 相似度由 _analyse_for_relabel 現場算完之後填進來(那條路本來就在讀
+    # 整份音訊);沒有音檔就沒有數字,核對表顯示空白
+    return {"blocks": blocks, "src": str(media), "sources": {}}
+
+
+def _audit_flags(quality) -> set:
+    """哪幾列要亮「🔍 核對」= 檔尾診斷點名「建議優先核對」的那幾位。"""
+    return {q.speaker for q in export.check_first(quality or [])}
+
+
+def _present_result(outputs, preview, count, voiceprints, hints, clips,
+                    audit=None, audit_flags=()):
     """轉檔成果 → 命名區/試聽/下載/落地的整組 UI 更新(PAGE_UPDATE_LEN 個值)。
 
     檔案轉檔(_run)與現場收音收尾(_finish_recording)共用;回傳形狀
@@ -1136,12 +1531,18 @@ def _present_result(outputs, preview, count, voiceprints, hints, clips):
     # 命名進度落地:睡眠/斷線/關瀏覽器後重新整理即可接續,不必重轉
     # (demo.load → _restore_pending)。clips 改指落地副本——暫存副本會被
     # 下次啟動清掃,落地副本活到套用完成
-    clips = pending.persist(outputs, preview, count, voiceprints, hints, clips, prefill)
+    audit = dict(audit or {})
+    if audit:
+        audit["flags"] = sorted(audit_flags or ())
+    clips = pending.persist(outputs, preview, count, voiceprints, hints, clips,
+                            prefill, audit=audit)
     # outputs 也回傳給 paths_state:套用名字時要寫回「真正的 output/ 檔案」,
     # 不能靠下載元件(gr.Files 當輸入時給的是 Gradio 快取副本,改了不會存回原檔)
     return _naming_page_updates(
         outputs, preview, voiceprints, clips,
-        _name_section_updates(count, hints, clips, prefill),
+        _name_section_updates(count, hints, clips, prefill, audit_flags,
+                              has_audit=bool(audit)),
+        audit=audit,
     )
 
 
@@ -1160,9 +1561,16 @@ def _restore_pending():
     # gr.Error 的 title 是另一條路徑才有效),違反繁中訊息原則(spec §8)
     note = "(已還原上次未完成的講者命名,可直接接續;不需要重新轉檔。)"
     preview = f"{note}\n\n" + data["preview"]
+    # 核對也要還原(2026-08-13 使用者實機踩到):第一版刻意不帶,結果核對鈕
+    # **照樣亮著**(它只看「有沒有未知」),按下去卻是「沒有可核對的段落」
+    # ——比不還原更糟。現在區塊與音檔來源跟著命名進度一起落地
+    audit = data.get("audit") or {}
     return _naming_page_updates(
         data["outputs"], preview, data["voiceprints"], clips,
-        _name_section_updates(data["count"], hints, clips, names),
+        _name_section_updates(data["count"], hints, clips, names,
+                              audit_flags=audit.get("flags") or (),
+                              has_audit=bool(audit)),
+        audit=audit,
     )
 
 
@@ -1194,7 +1602,7 @@ def _labels_in(text: str) -> dict[int, str]:
     return labels
 
 
-def _apply_names(files, voiceprints, *name_values):
+def _apply_names(files, voiceprints, audit=None, *name_values):
     """把使用者填的名字套用到逐字稿檔案,並把「名字↔聲紋」登記到聲紋庫
     供下次自動辨識。留白的講者維持「講者 N」、不登記。
 
@@ -1245,11 +1653,21 @@ def _apply_names(files, voiceprints, *name_values):
                 p.write_text(after, encoding="utf-8")
             except Exception:
                 logger.exception("套用名稱失敗:%s", path)
+        # ⚠️ **在「🔍 核對」裡改掛過的講者不登記聲紋**(使用者 2026-08-13 選定):
+        # 改掛等於他親口說「這一群不只一個人」,而那是**他給的證據**,不是
+        # 工具的猜測(工具明確拒絕判定「這群有幾個人」,見 types.SpeakerQuality)。
+        # 不純的群一旦登記,聲紋庫就把別人的聲音學進這個人名下——下次會認得
+        # 更錯,而使用者看不出來。逐字稿照樣改名:那是他確認過的事實。
+        # ⚠️ 代價要知道:那個人這次不會被學起來(下次不會因此變準),但也
+        # 不會學錯;他在別場乾淨的錄音裡照樣登記得到。
+        impure = {int(i) for i in (audit or {}).get("reassigned") or []}
         for spk_num, name in name_map.items():
             attendees.add(name)  # 輸入的新名字自動加入與會名單(下次下拉可選)
             vec = (voiceprints or {}).get(spk_num - 1)  # 0-based 講者標籤
-            if vec is not None:
+            if vec is not None and (spk_num - 1) not in impure:
                 voiceprints_store.enroll(name, vec)  # 記住名字↔聲紋,下次自動辨識
+            elif vec is not None:
+                logger.info("「%s」核對時改掛過段落,這次不登記聲紋", name)
     # 套用 = 這份檔案的工作完成:清掉落地的命名進度(含全留白套用——
     # 那是使用者明確表示「維持講者 N」收工)
     pending.clear()
@@ -1494,10 +1912,17 @@ def _discard_naming(paths):
     _stale_click_guard(paths)
     pending.clear()
     updates = list(_page_reset_updates(None))
-    updates[1] = (
-        "已跳過講者命名,畫面已清空。\n"
-        "已完成的逐字稿(講者以「講者 1、講者 2…」標示,現場收音含錄音檔)"
-        "仍在 output 資料夾。"
+    # ⚠️ **要連 visible 一起送**(2026-08-14 使用者實機踩到第二次):這裡覆蓋
+    # 的是整頁復位的「預覽」那一格,而那一格帶著 visible=True——只塞字串
+    # 等於把那個意圖丟掉,核對面板藏起來的預覽就再也回不來。
+    # ⚠️ 通則:**凡是覆蓋整頁復位任何一格的地方,都要保留原本那一格的意圖**
+    updates[1] = gr.update(
+        value=(
+            "已跳過講者命名,畫面已清空。\n"
+            "已完成的逐字稿(講者以「講者 1、講者 2…」標示,現場收音含錄音檔)"
+            "仍在 output 資料夾。"
+        ),
+        visible=True,
     )
     return (*updates, *_end_of_job_updates())
 
@@ -2100,6 +2525,10 @@ def build_ui() -> gr.Blocks:
                                     # _audition 系列統一管理
                                     name_inputs = []
                                     audition_btns = []
+                                    # 「🔍 核對」只亮在該核對的那幾列(設計稿方案 B,
+                                    # 使用者 2026-08-13 選定):未知 + 檔尾診斷點名的
+                                    # 前三名。其餘列與原本完全一樣,版面零新增
+                                    audit_btns = []
                                     for i in range(MAX_SPEAKERS):
                                         with gr.Row(elem_classes=["name-row"]):
                                             name_inputs.append(gr.Dropdown(
@@ -2107,11 +2536,25 @@ def build_ui() -> gr.Blocks:
                                                 visible=False, scale=1,
                                                 label=f"講者 {i + 1} 的名字",
                                             ))
-                                            audition_btns.append(gr.Button(
-                                                _AUD_PLAY_LABEL, visible=False, size="sm",
-                                                scale=0, min_width=92,
-                                                elem_classes=["aud-btn"],
-                                            ))
+                                            # ⚠️ **兩顆鈕上下疊**(使用者 2026-08-14
+                                            # 第二次修正):放左邊雖然讓試聽齊頭,
+                                            # 卻讓「有核對」那幾列的名字欄與摘錄
+                                            # 變窄——同一份摘錄在不同列折行不同,
+                                            # 讀起來更亂。改成疊在試聽下面:名字欄
+                                            # 的寬度從此與有沒有核對鈕無關,而試聽
+                                            # 永遠在同一個位置
+                                            with gr.Column(
+                                                scale=0, min_width=100,
+                                                elem_classes=["name-btns"],
+                                            ):
+                                                audition_btns.append(gr.Button(
+                                                    _AUD_PLAY_LABEL, visible=False,
+                                                    size="sm", elem_classes=["aud-btn"],
+                                                ))
+                                                audit_btns.append(gr.Button(
+                                                    _AUDIT_LABEL, visible=False,
+                                                    size="sm", elem_classes=["audit-btn"],
+                                                ))
                                     # 「未知」命名框:排在所有講者框之後,逐字稿有未知
                                     # 段落才顯示(_run 決定)。只改文字、絕不登記聲紋
                                     # (理由見 _apply_names docstring);info 由 _run
@@ -2122,11 +2565,21 @@ def build_ui() -> gr.Blocks:
                                             visible=False, scale=1,
                                             label="「未知」的名字",
                                         )
-                                        unknown_aud_btn = gr.Button(
-                                            _AUD_PLAY_LABEL, visible=False, size="sm",
-                                            scale=0, min_width=92,
-                                            elem_classes=["aud-btn"],
-                                        )
+                                        # 「未知」一定有核對鈕:那一批本來就常是
+                                        # 好幾個人的插話混在一起(檔尾診斷也這樣寫);
+                                        # 同樣疊在試聽下面(見上面那條寬度的理由)
+                                        with gr.Column(
+                                            scale=0, min_width=100,
+                                            elem_classes=["name-btns"],
+                                        ):
+                                            unknown_aud_btn = gr.Button(
+                                                _AUD_PLAY_LABEL, visible=False,
+                                                size="sm", elem_classes=["aud-btn"],
+                                            )
+                                            unknown_audit_btn = gr.Button(
+                                                _AUDIT_LABEL, visible=False,
+                                                size="sm", elem_classes=["audit-btn"],
+                                            )
                                     # 套用/放棄同列:有時不想改名也不想下載(使用者
                                     # 指定 2026-07-24),「跳過命名」走 _discard_naming
                                     # 整頁復位;成品不刪、預覽留一行指路。字樣要短:
@@ -2327,6 +2780,84 @@ def build_ui() -> gr.Blocks:
                                 # 高度固定 20 行:整份逐字稿很長,框內捲動即可,
                                 # 不讓預覽把頁面撐滿;進度條也畫在這裡(show_progress_on)
                                 # elem_id 是進度文字放大的 CSS 錨點(#preview-box)
+                                # 核對面板:按「🔍 核對」時取代預覽(聽的時候本來
+                                # 就不必看預覽,按「完成核對」再切回來)。**零新增
+                                # 版面**——它佔的是預覽原本的位置
+                                # ⚠️ **用 Column 不用 Group**(2026-08-13 使用者截圖):
+                                # Group 會把相鄰的按鈕併成一條「分段控制」——
+                                # 圓角被吃掉、兩顆黏在一起,而且播放器自己的圓角
+                                # 會跟 Group 的圓角在上緣互咬出缺口
+                                with gr.Column(visible=False, elem_id="audit-panel") as audit_panel:
+                                    gr.Markdown(
+                                        "點每一列**最左邊那一格**聽那一段(再點一次停),整格都可以按、不必點準三角形;播放中會變成 ■。"
+                                        "聽出某幾段其實是別人,就在下面的清單裡選起來、"
+                                        "選個名字按「套用改掛」。"
+                                        "⚠️ **只要你在這裡改掛過,這一位就不會被登記進"
+                                        "聲紋庫**——你改掛了,表示這一群不只一個人,"
+                                        "學進去只會讓下次認得更錯。",
+                                        elem_classes=["audit-note"],
+                                    )
+                                    # 出聲載體:**沒有介面**,由 CSS 移出畫面
+                                    # (同 #audition-player)。使用者看到的只有
+                                    # 每一列前面那顆 ▶/■——2026-08-13 他用過
+                                    # 整批播放器之後指定的:「我直接在那列上按
+                                    # 播放比較好操作,不用點下面又去點上面」。
+                                    # ⚠️ 絕不可改成 visible=False:gradio 對它
+                                    # 整個不渲染,前端沒有元件就不會出聲
+                                    audit_player = gr.Audio(
+                                        label="核對播放", interactive=False,
+                                        autoplay=True, elem_id="audit-player",
+                                    )
+                                    # 第一欄是勾選框:改掛只動勾起來的列。
+                                    # ⚠️ 內容欄要夠寬才認得出是哪一句,所以
+                                    # 「長度」用純數字(不加單位)省一點寬度
+                                    # ⚠️ **整張表唯讀**(2026-08-14 使用者第四次
+                                    # 回報延遲,而且 19 列也卡):可編輯的
+                                    # Dataframe 每勾一次就整張重繪,延遲發生在
+                                    # 「勾下去的瞬間」——那是純前端成本,伺服器
+                                    # 再快也沒用。勾選因此搬到下面的多選下拉,
+                                    # 表格只剩「看」與「點左欄聽」
+                                    audit_table = gr.Dataframe(
+                                        headers=["聽", "#", "相似度", "長度", "內容"],
+                                        datatype=["str", "number", "str", "str", "str"],
+                                        column_count=5, interactive=False,
+                                        wrap=False, max_height=420,
+                                        # ⚠️ **右上角兩顆內建鈕用參數關掉**(使用者
+                                        # 2026-08-14 圈掉):`[]` 與不給不同義——
+                                        # 沒給就是兩顆全開(見 ui.md 名單表格那條)。
+                                        # 這張表是拿來聽與選的,「複製」給的 TSV
+                                        # 沒有去處、「全螢幕」把它攤滿整個視窗也
+                                        # 沒有意義
+                                        buttons=[],
+                                        label="逐段對照(點左邊那一格聽那一段,再點一次停)",
+                                    )
+                                    # 要改掛哪幾段:原生多選,勾幾百個都不卡,
+                                    # 而且可以打字搜尋(「相似度」也印在選項上,
+                                    # 低的那幾段一眼看得到)
+                                    # 下半部(選段落 + 指定名字 + 兩顆鈕)收成
+                                    # **一張卡**(使用者 2026-08-14:「現在是
+                                    # 分好幾塊,合起來、行距跟旁邊卡片一樣」)。
+                                    # ⚠️ 用 CSS 讓內部的 block 透明、外框由這一層
+                                    # 給——**不用 gr.Group**:Group 會把相鄰的兩顆
+                                    # 鈕併成分段控制(圓角被吃掉),那是 2026-08-13
+                                    # 才踩過的坑
+                                    with gr.Column(elem_classes=["audit-actions"]):
+                                        audit_pick = gr.Dropdown(
+                                            choices=[], value=[], multiselect=True,
+                                            label="要改掛的段落(可多選;數字是相似度)",
+                                        )
+                                        with gr.Row(elem_classes=["apply-row"]):
+                                            audit_name = gr.Dropdown(
+                                                choices=[], allow_custom_value=True,
+                                                scale=1, label="把選取的段落改掛給",
+                                            )
+                                            audit_apply_btn = gr.Button(
+                                                "套用改掛", variant="primary",
+                                                scale=0, min_width=110,
+                                            )
+                                            audit_close_btn = gr.Button(
+                                                "完成核對", scale=0, min_width=110,
+                                            )
                                 preview = gr.Textbox(
                                     label="逐字稿預覽(轉檔進度顯示於此)",
                                     lines=20, max_lines=20, buttons=["copy"],
@@ -2884,6 +3415,10 @@ def build_ui() -> gr.Blocks:
         # 兩者都跟著每一次轉檔換新、復位時歸零
         clips_state = gr.State({})
         playing_state = gr.State(None)
+        # 核對:{blocks: 每一輪發言, src: 從哪個音檔剪, sources: 分軌對應,
+        # open: 正在核對誰, rows: 這一批抽出來的段落}。⚠️ State 只放得下
+        # 可序列化的東西,所以區塊存成 dict 不是 SpeechBlock
+        audit_state = gr.State({})
 
         # 轉檔中關瀏覽器要先確認(ui_style.UNLOAD_GUARD_HEAD 的 beforeunload 依
         # __msBusy 判斷):舉旗用獨立的純前端事件(js-only 不進佇列,點下
@@ -2918,6 +3453,10 @@ def build_ui() -> gr.Blocks:
             vp_state, paths_state,
             clips_state, playing_state, audition_player,
             *audition_btns, unknown_aud_btn,
+            # 核對整組:順序必須與 _audit_reset_updates / _naming_page_updates
+            # 的尾端完全一致(那兩支各組一次值,錯位就是「音檔跑到表格裡」)
+            audit_state, audit_player, audit_table, audit_pick, audit_name,
+            audit_panel, *audit_btns, unknown_audit_btn,
         ]
         # 轉檔鏈三步依序:鎖介面+整頁復位 → 轉檔 → 收尾還原(順序保證與
         # 「復位必須是 _run 之前的另一批訊息」的理由見 _start_run)
@@ -3132,7 +3671,7 @@ def build_ui() -> gr.Blocks:
         # 接手,清掉元件不影響進行中的下載
         apply_evt = apply_btn.click(
             _apply_names,
-            inputs=[paths_state, vp_state, *name_inputs, unknown_input],
+            inputs=[paths_state, vp_state, audit_state, *name_inputs, unknown_input],
             outputs=[*page_outputs, src_path, run_btn, stop_btn, speakers],
         )
         # 試聽:每顆鈕綁定自己的講者標籤(partial);再按同一顆=停止,
@@ -3148,6 +3687,42 @@ def build_ui() -> gr.Blocks:
         audition_player.stop(
             _audition_ended,
             outputs=aud_outputs,
+            show_progress="hidden",
+        )
+        # 核對:每顆鈕綁自己的講者標籤(partial,同試聽);開面板時預覽讓位,
+        # 「完成核對」再切回來
+        for audit_key, audit_btn in [
+            *enumerate(audit_btns), (UNKNOWN_SPEAKER, unknown_audit_btn),
+        ]:
+            audit_btn.click(
+                functools.partial(_audit_open, audit_key),
+                inputs=[audit_state],
+                outputs=[audit_state, audit_player, audit_table, audit_pick,
+                         audit_name, audit_panel, preview],
+            )
+        # 點表格任一列 → 單獨重聽那一段(使用者 2026-08-13 補的需求:整批
+        # 用來掃、單段用來在標名字之前再確認一次)
+        # ⚠️ **queue=False 是效能關鍵**(2026-08-13 使用者回報「勾選改掛很慢」):
+        # Dataframe 的 select 事件在**每一格**都會觸發,包含勾選框;預設走
+        # gradio 的事件佇列,於是每點一下都要排隊等一次伺服器往返——即使
+        # handler 立刻回 skip 也一樣慢。不進佇列就沒有這個等待
+        audit_table.select(
+            _audit_play_row, inputs=[audit_state],
+            outputs=[audit_player, audit_state],
+            show_progress="hidden", queue=False,
+        )
+        # 播完自然結束:字樣復原(同命名區試聽的 Audio.stop)
+        audit_player.stop(
+            _audit_row_ended, inputs=[audit_state],
+            outputs=[audit_state], show_progress="hidden", queue=False,
+        )
+        audit_apply_btn.click(
+            _audit_apply,
+            inputs=[paths_state, audit_state, audit_pick, audit_name, preview],
+            outputs=[preview, audit_pick, audit_state],
+        )
+        audit_close_btn.click(
+            _audit_close, outputs=[audit_panel, audit_player, preview],
             show_progress="hidden",
         )
         # 命名草稿隨打隨存(.input 只在「使用者」輸入時觸發;_run 預填、
@@ -3498,6 +4073,7 @@ def _launch_ui(port: int) -> None:
             + ui_style.THEME_PERSIST_HEAD
             + ui_style.UNLOAD_GUARD_HEAD
             + ui_style.RECONNECT_HEAD
+            + ui_style.AUDIT_PLAYING_HEAD
         ),
         # 試聽片段的落地副本在 %LOCALAPPDATA%\meeting-scribe\pending——不在
         # gradio 檔案白名單(僅 cwd/系統暫存/gradio 快取)內,不明列的話

@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from meeting_scribe import loopdetect
-from meeting_scribe.types import UNKNOWN_SPEAKER, SpokenSegment
+from meeting_scribe.types import UNKNOWN_SPEAKER, SpeechBlock, SpokenSegment
 
 
 def _speaker_label(speaker: int) -> str:
@@ -28,26 +28,39 @@ def _hms(seconds: float) -> str:
     return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
 
 
-def _group_by_speaker(
-    spoken: list[SpokenSegment],
-) -> list[tuple[int, float, str, bool]]:
-    """同講者連續句子合併為區塊,回傳 (講者, 起始秒, 文字, 是否為跳針標記)。
+def speech_blocks(spoken: list[SpokenSegment]) -> list[SpeechBlock]:
+    """同講者連續句子合併為區塊(types.SpeechBlock)。
 
     跳針標記段「自成區塊」:混進一般區塊會被標點模型重新斷句斷壞
-    (「重複輸出」被斷成「重複輸,出」,使用者回報),分開才能跳過標點。"""
-    blocks: list[tuple[int, float, list[str], bool]] = []
+    (「重複輸出」被斷成「重複輸,出」,使用者回報),分開才能跳過標點。
+
+    **迄秒是區塊最後一句的結束**,不是下一塊的開始:兩塊之間常有沉默,
+    拿下一塊的起點當終點會把沉默也算進發言時長,核對音檔就會多出一段
+    沒有人在講話的空白(而使用者會以為是漏聽了)。"""
+    blocks: list[list] = []
     for seg in spoken:
         is_marker = seg.text.startswith(loopdetect.MARKER_PREFIX)
         if (
             blocks
             and blocks[-1][0] == seg.speaker
             and not is_marker
-            and not blocks[-1][3]
+            and not blocks[-1][4]
         ):
             blocks[-1][2].append(seg.text)
+            blocks[-1][3] = seg.end
         else:
-            blocks.append((seg.speaker, seg.start, [seg.text], is_marker))
-    return [(sp, st, "".join(texts), m) for sp, st, texts, m in blocks]
+            blocks.append([seg.speaker, seg.start, [seg.text], seg.end, is_marker])
+    return [
+        SpeechBlock(speaker=sp, start=st, end=en, text="".join(texts), is_marker=m)
+        for sp, st, texts, en, m in blocks
+    ]
+
+
+def _group_by_speaker(
+    spoken: list[SpokenSegment],
+) -> list[tuple[int, float, str, bool]]:
+    """同 speech_blocks,但回傳既有的 tuple 形狀(渲染與診斷區塊用)。"""
+    return [(b.speaker, b.start, b.text, b.is_marker) for b in speech_blocks(spoken)]
 
 
 # 講者診斷區塊的標題。**公開常數**:relabel 解析逐字稿時要在這裡收手
@@ -139,7 +152,37 @@ def _speaker_diagnostics(quality: list, spoken: list[SpokenSegment]) -> list[str
         "本來就不代表某一個人。",
         "",
     ]
+    lines += _unknown_note(spoken)
     return lines
+
+
+def _unknown_note(spoken: list[SpokenSegment]) -> list[str]:
+    """「未知」那一批到底是什麼(md 行清單;沒有未知段落回空清單)。
+
+    **為什麼要主動講**(2026-08-13,0812 資訊月會):以前這批零碎語音會自成
+    一群、在逐字稿裡長得像一位真的講者,使用者去聽了、填上名字——而那一群
+    其實混著七個人的插話。現在它們一律歸「未知」(見 `diarize` 的
+    `_fragmentary_labels`),但**如果不解釋,使用者只會看到「未知」變多了**,
+    那跟原本的意外一樣糟,只是換個方向。
+
+    ⚠️ **要明講「不要整批命名」**:命名框改的是整批未知的文字,而未知本來
+    就常是多人混合——工具因此不拿它登記聲紋,使用者也不該給它一個名字。"""
+    unknown = [s for s in spoken if s.speaker == UNKNOWN_SPEAKER]
+    if not unknown:
+        return []
+    durations = sorted(s.end - s.start for s in unknown)
+    median = durations[len(durations) // 2]
+    return [
+        f"「**未知**」這一批共 {len(unknown)} 段、{_hms(sum(durations))}"
+        f",單段中位長度 {median:.1f} 秒。這些語音太短或太模糊,"
+        "聲紋不足以判斷是誰——多半是「對」「好」「瞭解」這類應答與插話,"
+        "**它們很可能分屬好幾個不同的人**。",
+        "",
+        "⚠️ 所以工具**不把這一批當成一位講者**,也不會拿它登記聲紋。"
+        "在介面上替「未知」命名只會改逐字稿上的文字;"
+        "**不要整批給同一個名字**,除非你已經逐段聽過確認都是同一個人。",
+        "",
+    ]
 
 
 def to_markdown(
