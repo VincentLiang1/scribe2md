@@ -170,7 +170,7 @@ def reassign(md_text: str, blocks: list[SpeechBlock], new_name: str) -> tuple[st
     out, changed = [], 0
     in_diag = False
     for line in md_text.splitlines():
-        if line.strip().startswith(export.DIAGNOSTIC_HEADING):
+        if export.starts_diagnostics(line):
             in_diag = True
         m = None if in_diag else _SPEAKER_LINE.match(line.strip())
         if m is None:

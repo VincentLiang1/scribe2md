@@ -67,10 +67,54 @@ def _group_by_speaker(
 # (診斷表不是某位講者的發言,被當成內文會污染命名摘錄),套用新名字時
 # 也要靠它找到表格去同步改名——兩邊各寫一次字串,改標題就會有一邊失聯
 DIAGNOSTIC_HEADING = "## 講者辨識診斷"
+
+
+def starts_diagnostics(line: str) -> bool:
+    """這一行是不是檔尾診斷區塊的開頭。
+
+    **要共用的不只是常數,還有比對方式**:relabel.parse 在這裡收手、
+    relabel.rename 從這裡開始改敘述句、audit.reassign 在這裡停止改掛——
+    三處各寫一次 `.strip().startswith(...)` 的話,標題格式哪天放寬就會有
+    人沒跟上,而症狀是「有些路徑吃得到診斷區塊、有些吃不到」,測試不會全紅。
+    """
+    return line.strip().startswith(DIAGNOSTIC_HEADING)
+
+
 # 診斷表裡「一位講者」那一列的第一欄。改名時它要跟著逐字稿一起換
 # (relabel.rename),否則命名之後診斷表講的是另一套編號,比沒有更糟。
 # 後面接數字(發言輪次)才算:標題列與分隔列的第二欄不是數字,天然被排除
 DIAG_ROW_RE = re.compile(r"^\| (?P<name>[^|]+?) \| \d")
+
+
+def diag_prose_renamer(name_map: dict[str, str]) -> Callable[[str], str]:
+    """回一個函式,把診斷區塊**敘述句**裡的舊標籤換成新名字(整行進、整行出)。
+
+    ⚠️ **這一塊的敘述句也會點名標籤**,而 DIAG_ROW_RE 那個錨吃不到它們
+    (2026-08-15 的實跡:命名之後表格改對了,上面那句仍寫「建議優先核對:
+    **講者 3**」、檔尾仍寫「「**未知**」這一批共 38 段」,指向的標籤在文件
+    裡已經不存在——正是 DIAG_ROW_RE 那條註解要防的自相矛盾,只是換個位置)。
+
+    **敘述句點名標籤只有兩種寫法**:`**名字**`(「建議優先核對」那句、
+    「未知」那段的開頭)與「名字」(表格圖例、「不要整批命名」那句)。
+    **在這一塊裡加新句子時就照這兩種寫法寫**,別自創第三種括號——這支
+    函式與那些句子放在同一個檔就是為了讓它跟得上,但它沒辦法自己發現
+    第三種,而漏掉的症狀跟上面那條實跡一模一樣。
+
+    **對照表由舊名字組出來**,而不是抓「任何粗體」:這一塊本來就有別的
+    粗體(「**機器分出來的**」「**已知限制**」「**不要整批給同一個名字**」),
+    照抓會把說明文字當標籤換掉。長的排前面、整行一次 sub 完,所以一個位置
+    只會被換一次——互換名字(甲→乙、乙→丙)不會連鎖套用,這點與講者行
+    那條的單次查表行為一致。"""
+    table = {}
+    for old, new in name_map.items():
+        table[f"**{old}**"] = f"**{new}**"
+        table[f"「{old}」"] = f"「{new}」"
+    if not table:
+        return lambda line: line   # 空 pattern 會「什麼都中」,不能交給 re
+    pattern = re.compile(
+        "|".join(re.escape(k) for k in sorted(table, key=len, reverse=True))
+    )
+    return lambda line: pattern.sub(lambda m: table[m[0]], line)
 
 
 # 診斷區塊裡「建議優先核對」最多列幾個標籤。列太多等於沒列——這一節的

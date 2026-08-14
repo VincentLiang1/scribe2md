@@ -119,7 +119,7 @@ def parse(md_text: str) -> Transcript:
     for line in md_text.splitlines():
         # 檔尾的講者診斷區塊到此為止:它不是誰的發言,被當成前一段的內文
         # 會混進命名摘錄(`hints` 挑「字最多的那一段」,而那張表字很多)
-        if line.strip().startswith(export.DIAGNOSTIC_HEADING):
+        if export.starts_diagnostics(line):
             break
         m = _SPEAKER_RE.match(line.strip())
         if m is None:
@@ -163,28 +163,38 @@ def find_media(md_path: Path) -> Path | None:
 
 
 def rename(md_text: str, name_map: dict[str, str]) -> str:
-    """把逐字稿裡的講者標籤換成新名字(只動講者行與檔尾診斷表,不碰內文)。
+    """把逐字稿裡的講者標籤換成新名字(只動講者行與檔尾診斷區塊,不碰內文)。
 
     逐行重建而不是全文 replace:全文替換會誤中內文裡剛好一樣的粗體字,
     而且「講者 1」→「講者 10」這類前綴問題也要另外處理。逐行比對是
     這個格式天然給的錨,不必自己發明一個。
 
-    **檔尾的診斷表也要一起改**(export.DIAG_ROW_RE):那張表逐列點名
-    「哪個標籤疑似含多位發言人」,命名之後若還停在「講者 6」,使用者
-    與下游都對不回去是誰——一份自相矛盾的警告比沒有警告更糟。"""
+    **檔尾的診斷區塊要整塊一起改**,而且**表格與敘述句是兩件事**:
+    表格靠 export.DIAG_ROW_RE 逐列換(它逐列點名「哪個標籤該先核對」),
+    敘述句靠 export.diag_prose_renamer 換(「建議優先核對:**講者 3**」
+    「「**未知**」這一批共 38 段」)。命名之後任何一邊若還停在「講者 6」,
+    使用者與下游都對不回去是誰——一份自相矛盾的警告比沒有警告更糟。
+    兩個錨都放在 export.py:產生那些句子的是它,規則跟著產生端走才追得上。
+    ⚠️ **敘述句那條只在診斷區塊之內套用**:那一塊是程式產生的文字、
+    不含任何人講的話,所以粗體必定是標籤;內文裡的粗體則不得被動
+    (使用者講的話裡剛好出現某個名字是很正常的事)。"""
+    rename_prose = export.diag_prose_renamer(name_map)
     out = []
+    in_diagnostics = False
     for line in md_text.splitlines():
+        if export.starts_diagnostics(line):
+            in_diagnostics = True
         m = _SPEAKER_RE.match(line.strip())
-        new = name_map.get(m.group("name")) if m else None
-        if m and new:
-            out.append(line.replace(f"**{m.group('name')}**", f"**{new}**", 1))
+        if m and m.group("name") in name_map:
+            out.append(line.replace(
+                f"**{m.group('name')}**", f"**{name_map[m.group('name')]}**", 1))
             continue
         d = export.DIAG_ROW_RE.match(line)
-        new = name_map.get(d.group("name")) if d else None
-        if d and new:
-            out.append(line.replace(f"| {d.group('name')} |", f"| {new} |", 1))
-        else:
-            out.append(line)
+        if d and d.group("name") in name_map:
+            out.append(line.replace(
+                f"| {d.group('name')} |", f"| {name_map[d.group('name')]} |", 1))
+            continue
+        out.append(rename_prose(line) if in_diagnostics else line)
     return "\n".join(out) + ("\n" if md_text.endswith("\n") else "")
 
 
