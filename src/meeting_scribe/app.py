@@ -3711,11 +3711,20 @@ def build_ui() -> gr.Blocks:
             outputs=[audit_player, audit_state],
             show_progress="hidden", queue=False,
         )
-        # 播完自然結束:字樣復原(同命名區試聽的 Audio.stop)
+        # 播完自然結束:伺服器端讓「再點一次 = 停」歸零,前端把 ■ 換回 ▶。
+        # ⚠️ **那顆 ■ 只能在這裡換回來**(2026-08-14 使用者回報「播完沒有還原」,
+        # 第二次才修對):第一版是在 head 裡收 <audio> 的 ended/pause/emptied,
+        # 而 Playwright 實測的事實是**真正在播的那顆 <audio> 不在文件樹上**
+        # (wavesurfer 自己 createElement 一顆來播),document 上的監聽連捕獲
+        # 階段都收不到任何一個事件。走元件自己的 stop 才收得到
         audit_player.stop(
             _audit_row_ended, inputs=[audit_state],
             outputs=[audit_state], show_progress="hidden", queue=False,
         )
+        # ⚠️ **另外掛一顆、不與上面那顆共用**:gradio 的 `js=` 是「先跑前端、
+        # 回傳值當成 fn 的 inputs」,掛在上面那顆的話這支回 undefined 會把
+        # audit_state 整個洗掉(rows 沒了 = 之後點哪一列都不會出聲)
+        audit_player.stop(None, js=ui_style.AUDIT_PLAY_ENDED_JS)
         audit_apply_btn.click(
             _audit_apply,
             inputs=[paths_state, audit_state, audit_pick, audit_name, preview],

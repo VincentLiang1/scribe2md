@@ -505,6 +505,18 @@ def sanitize_name(name: str, fallback: str = "檔案") -> str:
     return f"{stem}.{suffix}" if suffix else stem
 
 
+def assets_name_for(stem: str) -> str:
+    r"""md 的主檔名 → 它旁邊那個 `<名>.assets\` 目錄叫什麼。
+
+    (名字刻意不叫 `assets_dir_name`:那是下面 `asset_link` 的參數名。)
+
+    **命名規則的單一出處**。`docprune` 要反推「這個 assets 還有沒有 md 在用」,
+    自己抄一份的話會漏掉消毒與 60 字元裁切——而**裁切正好會把 `--out-dir`
+    模式的內容雜湊截掉**(`很長的檔名-3f9a2b71.md` → `很長的檔名.assets`),
+    兩份不同的 md 因此共用同一個目錄名。抄錯的下場是刪掉還在用的圖。"""
+    return f"{sanitize_name(stem, 'doc')}{ASSETS_SUFFIX}"
+
+
 def asset_link(assets_dir_name: str, filename: str) -> str:
     """assets 內的檔案 → 可放進 md 的相對連結。
 
@@ -529,7 +541,7 @@ class AssetsDir:
     """
 
     def __init__(self, base: Path, stem: str):
-        self.path = Path(base) / f"{sanitize_name(stem, 'doc')}{ASSETS_SUFFIX}"
+        self.path = Path(base) / assets_name_for(stem)
         self.name = self.path.name
         self._ready = False
         self._seq = 0

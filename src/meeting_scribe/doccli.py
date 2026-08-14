@@ -27,6 +27,7 @@ from meeting_scribe import (
     cancel,
     docmd,
     docpipe,
+    docprune,
     docsrc,
     models,
     pipeline,
@@ -118,6 +119,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="把整批產出集中到這個資料夾(預設放在原始文件旁邊)",
     )
     p.add_argument(
+        "--prune-days", type=int, default=docprune.DEFAULT_PRUNE_DAYS, metavar="天數",
+        help=(
+            "--out-dir 的快取裡超過幾天的舊產出自動清掉"
+            f"(預設 {docprune.DEFAULT_PRUNE_DAYS} 天;0 = 都不清)。"
+            "只清本工具自己產生的檔案,而且只在有 --out-dir 時才做"
+        ),
+    )
+    p.add_argument(
         "--no-ocr", action="store_true",
         help="不做文字辨識。掃描頁與圖片會只留標記,但快得多",
     )
@@ -188,6 +197,20 @@ def main(argv: list[str] | None = None) -> int:
     if out_dir is not None:
         resolved = out_dir.resolve()
         files = [f for f in files if not _inside(f, resolved)]
+
+    # 快取清理。**一定要排在「這批要轉什麼」算出來之後**:`keep` 靠它才拿得到
+    # 「這次還會用到的 md」,而清掉正要回傳的那一份等於先刪再重轉——既沒省到
+    # 空間又白花時間。乾跑時也要跑(dry_run 只列不刪),因為「先看看會刪哪些
+    # 再決定」正是使用者要的把關方式
+    prune_report = docprune.prune(
+        out_dir, args.prune_days,
+        keep=[docmd.md_path_for(f, out_dir) for f in files] if out_dir else (),
+        dry_run=args.dry_run,
+    )
+    for line in docprune.summary_lines(
+        prune_report, args.prune_days, dry_run=args.dry_run,
+    ):
+        print(line, file=sys.stderr)
 
     if args.dry_run:
         for line in docpipe.dry_run_lines(docpipe.plan_outputs(files, out_dir)):

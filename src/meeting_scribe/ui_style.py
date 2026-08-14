@@ -1281,15 +1281,26 @@ AUDIT_PLAYING_HEAD = """
     clearAll();
     if (!was) { td.classList.add(MARK); }
   }, true);
-  // 播完自然結束就還原成 ▶。⚠️ **三種事件都收**(2026-08-14 使用者回報
-  // 「播完沒有還原」):這些事件都**不冒泡**,一律用捕獲階段;而且不能只
-  // 收 ended——換播另一段時舊的載體是被換掉/清空的,那時只會有 pause
-  // 或 emptied
-  ["ended", "pause", "emptied"].forEach(function (evt) {
-    document.addEventListener(evt, function (e) {
-      if (e.target && e.target.tagName === "AUDIO") { clearAll(); }
-    }, true);
-  });
+  // 播完的還原由 gradio 的 `stop` 事件呼叫(見 AUDIT_PLAY_ENDED_JS):
+  // 這裡只把清除函式掛出去,類別名稱與選擇器才不會有第二份
+  window.msAuditClearPlaying = clearAll;
 })();
 </script>
+"""
+
+
+# 播完自然結束 → 還原成 ▶。**接在 gradio 的 `Audio.stop` 上**(app.py 接線)。
+#
+# ⚠️ **不要再回頭去收 <audio> 的 ended/pause/emptied**(2026-08-14 第一版就是
+# 那樣寫的,使用者回報「播完沒有還原」):Playwright 實測的事實是**真正在播的
+# 那顆 <audio> 不在文件樹上**——播放器是 wavesurfer,它自己 createElement 一個
+# 載體來播,所以 document 上的監聽(連捕獲階段也一樣)**一個事件都收不到**;
+# 頁面上找得到的那顆 `#audit-player audio` 是另一顆、從來不會播。同一次實測
+# 也確認 gradio 的 `play` / `stop` 兩個事件都準時派送(wavesurfer 的 `finish`
+# 就接在那裡),所以正解是走元件的事件、不是走 DOM。
+#
+# `fn=None` = 純前端,零往返(不得把表格牽進來,見 app._audit_play_row)。
+# 對不到函式就什麼都不做:這是錦上添花的回饋,不能讓核對本身壞掉。
+AUDIT_PLAY_ENDED_JS = """
+() => { if (window.msAuditClearPlaying) { window.msAuditClearPlaying(); } }
 """
