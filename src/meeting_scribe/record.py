@@ -147,6 +147,13 @@ _DRAIN_TIMEOUT_SEC = 5.0
 # 否則好不容易留住的尾巴會在 join 逾時那條路上被丟掉。這個數字就是
 # 「按下停止最壞要等多久」,不要為了保險把它拉大
 _STOP_JOIN_SEC = 10.0
+# 收檔那行要不要用 WARNING 的判準(理由見 _log_accounting 的 ⚠️)。
+# 補零是實打實的損失,用絕對值;牆鐘與檔案的落差含裝置時鐘漂移,用比例
+# ——0.2% 容得下實測的 0.06%(9120 秒差 5.6 秒),又攔得住 2026-08-03 那次
+# 幻影靜音的災情(726.8 秒的錄音長出 907.6 秒,+24.9%)
+_PAD_TOL_SEC = 1.0
+_DRIFT_ABS_TOL_SEC = 1.0
+_DRIFT_REL_TOL = 0.002
 
 
 def _sc():
@@ -798,7 +805,15 @@ class _TrackRecorder:
         修得很成功的錄音會長得跟一場沒事的錄音一模一樣——而那正是需要
         知道「裝置在停擺」的時候。
 
-        真的出事就用 WARNING(壞消息不得只躺在 DEBUG 裡),否則 INFO。"""
+        真的出事就用 WARNING(壞消息不得只躺在 DEBUG 裡),否則 INFO。
+
+        ⚠️ **牆鐘與檔案的落差要用比例判,不能用固定秒數**(2026-08-15 從
+        執行紀錄查出來):裝置的取樣時鐘跟系統牆鐘本來就差個 0.05% 上下,
+        那是晶振不是故障——9120 秒的錄音實測差 +5.6 秒,固定 1 秒的門檻
+        等於**每一場長錄音都報警**,而那幾場補零 0 秒、掉幀 5 次,乾淨得
+        很。示警一旦變成常態就會被當背景音,真的出事那次也就沒人看了
+        (同 test_clean_recording_does_not_cry_wolf 守的那件事)。補零那半
+        維持絕對值:補零是實打實的損失,一秒就是一秒。"""
         pad_sec = (self._pad_frames + max(0, tail_pad)) / TARGET_RATE
         trim_sec = self._trim_frames / TARGET_RATE
         file_sec = self._writer.frames / TARGET_RATE
@@ -810,7 +825,8 @@ class _TrackRecorder:
                 "補零 %.1f 秒、修掉捏造的靜音 %.1f 秒%s")
         args = (_KIND_LABEL.get(self.kind, self.kind), wall_sec, file_sec,
                 file_sec - wall_sec, pad_sec, trim_sec, stalls)
-        bad = pad_sec >= 1.0 or abs(file_sec - wall_sec) >= 1.0
+        drift_tol = max(_DRIFT_ABS_TOL_SEC, wall_sec * _DRIFT_REL_TOL)
+        bad = pad_sec >= _PAD_TOL_SEC or abs(file_sec - wall_sec) >= drift_tol
         (logger.warning if bad else logger.info)(line, *args)
 
     def stop(self) -> RecordedTrack:

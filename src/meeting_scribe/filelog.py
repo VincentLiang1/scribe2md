@@ -256,11 +256,19 @@ class _LineTee:
     - **`\\r` 只留最後一段**:下載模型的進度條是原地重寫,整串收下來會在
       紀錄檔裡堆出上萬行,而這個檔要保持「貼得進對話」。
 
+    ⚠️ **stderr 那條記成 WARNING 不是 INFO**(2026-08-15 改):這個檔存在
+    的理由是事後分析,而先前**未攔截的例外在檔裡長得跟一般訊息一模一樣**
+    ——259 份紀錄裡有 35 次 traceback(一晚就 33 次)全掛在 INFO,用等級
+    篩選會整批漏掉,只能靠 grep「Traceback」去撈。查過那 1178 行 stderr
+    輸出**全部**是 traceback 內容、沒有一行是正常訊息,所以整條提級不會
+    製造新的雜訊(否則就是另一種狼來了)。
+
     寫入端有任何閃失都吞掉:紀錄檔不該有辦法讓程式的輸出壞掉。"""
 
-    def __init__(self, stream, logger_name: str):
+    def __init__(self, stream, logger_name: str, level: int = logging.INFO):
         self._stream = stream
         self._log = logging.getLogger(logger_name)
+        self._level = level
         self._buf = ""
 
     def write(self, text) -> int:
@@ -286,7 +294,7 @@ class _LineTee:
         if "\r" in line:
             line = line.rsplit("\r", 1)[1]
         if line.strip():
-            self._log.info("%s", line.rstrip())
+            self._log.log(self._level, "%s", line.rstrip())
 
     def flush(self) -> None:
         self._stream.flush()
@@ -303,14 +311,17 @@ def tee_console() -> bool:
     寫真正的 stderr、不會繞回這裡被收第二次。"""
     if _handler is None or _teed:
         return False
-    for name, logger_name in (("stdout", _OUT_LOGGER), ("stderr", _ERR_LOGGER)):
+    for name, logger_name, level in (
+        ("stdout", _OUT_LOGGER, logging.INFO),
+        ("stderr", _ERR_LOGGER, logging.WARNING),  # 見 _LineTee 的 ⚠️
+    ):
         stream = getattr(sys, name)
         log = logging.getLogger(logger_name)
         log.setLevel(logging.INFO)
         log.propagate = False  # 不往上傳,否則黑視窗每行印兩遍
         log.addHandler(_handler)
         _teed.append((name, stream))
-        setattr(sys, name, _LineTee(stream, logger_name))
+        setattr(sys, name, _LineTee(stream, logger_name, level))
     return True
 
 

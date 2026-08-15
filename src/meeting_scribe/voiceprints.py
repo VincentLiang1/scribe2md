@@ -64,6 +64,13 @@ _MATCH_THRESHOLD = 0.62
 # _MISFILED_MARGIN 註解裡遠端與會者那段)。這個值買到的是「明顯更嚴」,
 # 不是保證不出錯。
 _RUNNER_UP_MARGIN = 0.10
+# 「分不開」時最多列幾個名字給使用者參考(close_calls)。⚠️ **列一個是不
+# 行的**:2026-08-15 拿 259 份執行紀錄回頭查,98 次留白**全部**卡在上面
+# 那條 margin(不是「不夠像」),而其中 54% 的第一名與第二名只差 0.03 以
+# 內——照上面那張校準表換算,那一段第一名只有 24% 是對的。單列第一名等於
+# 給一個四次錯三次的答案,而使用者說過「自動識別的我會相信」。並列才誠實
+# 傳達「這是待確認的名單,不是答案」。3 個是版面與資訊量的折衷
+_MAX_RIVALS = 3
 # 每個名字最多保留的聲紋樣本數:多樣本(不同場次)比對取最相似者更穩,
 # 但限量避免無限膨脹、也讓過舊樣本自然淘汰。
 #
@@ -237,10 +244,48 @@ def recognize_batch(
 
     平手時取講者編號較小者(= 較早開口),結果穩定可預期。
     """
-    names, lib = load()
-    if not names or lib.shape[0] == 0:
-        return {}
     best: dict[str, tuple[float, int]] = {}
+    for speaker, ranked in _ranked_matches(vecs, threshold):
+        name, score = ranked[0]
+        if len(ranked) > 1 and score - ranked[1][1] < margin:
+            logger.info(
+                "聲紋辨識:講者 %d 最像「%s」(%.2f),但與第二名只差 %.2f"
+                "(需 %.2f),留白不猜",
+                speaker + 1, name, score, score - ranked[1][1], margin,
+            )
+            continue
+        if name not in best or score > best[name][0]:
+            best[name] = (score, speaker)
+    return {speaker: name for name, (_score, speaker) in best.items()}
+
+
+class CloseCall(NamedTuple):
+    """一位「像得夠、卻分不出是哪一個」的講者(close_calls 的值)。"""
+
+    rivals: list[str]   # 分不開的名字,分數由高到低;已排除被別人拿走的
+    gap: float          # 第一名與第二個名字的差距(越小越難分)
+
+
+def _ranked_matches(
+    vecs: dict[int, "np.ndarray"], threshold: float,
+) -> list[tuple[int, list[tuple[str, float]]]]:
+    """每位講者對聲紋庫的比對結果:[(講者編號, [(名字, 分數)…由高到低])]。
+
+    **同一個名字只留最高分的那一份**:同名多樣本是這個庫的常態,不合併的
+    話「第二名」永遠是同一個人的另一份樣本,margin 那條規則等於沒寫。
+    低於相似度門檻的講者整個不列——那是「不夠像」,與「分不開」是兩件事。
+
+    ⚠️ **平手時保留先出現的名字**(dict 插入序 + 穩定排序),與先前直接
+    `argmax` 的行為一致:同一份資料重跑要給同一個答案,不能每次換一個人。
+
+    ⚠️ **recognize_batch 與 close_calls 共用這一份**:兩邊各算一次的話,
+    畫面上的候選會與「為什麼沒自動填」的判準悄悄脫節,而那種不一致沒有
+    任何症狀——使用者只會看到一份看起來很合理、卻不是同一套規則算出來的
+    名單。"""
+    names, lib = load()
+    out: list[tuple[int, list[tuple[str, float]]]] = []
+    if not names or lib.shape[0] == 0:
+        return out
     for speaker in sorted(vecs):
         vec = vecs[speaker]
         if vec is None:
@@ -248,26 +293,52 @@ def recognize_batch(
         q = _normalize(vec)
         if q.shape[0] != lib.shape[1]:
             continue
-        sims = lib @ q
-        i = int(np.argmax(sims))
-        score = float(sims[i])
-        if score < threshold:
+        best_of_name: dict[str, float] = {}
+        for name, sim in zip(names, lib @ q):
+            sim = float(sim)
+            if sim > best_of_name.get(name, -2.0):
+                best_of_name[name] = sim
+        ranked = sorted(best_of_name.items(), key=lambda kv: -kv[1])
+        if not ranked or ranked[0][1] < threshold:
             continue
-        name = names[i]
-        # 第二名要取「別的名字」的最高分,不是全庫第二高:同一個人的另一份
-        # 樣本本來就會排在第二,拿它當對照的話 margin 永遠是 0,整條規則
-        # 等於沒寫(而同名多樣本正是這個庫的常態)
-        other = [float(s) for s, n in zip(sims, names) if n != name]
-        if other and score - max(other) < margin:
-            logger.info(
-                "聲紋辨識:講者 %d 最像「%s」(%.2f),但與第二名只差 %.2f"
-                "(需 %.2f),留白不猜",
-                speaker + 1, name, score, score - max(other), margin,
-            )
-            continue
-        if name not in best or score > best[name][0]:
-            best[name] = (score, speaker)
-    return {speaker: name for name, (_score, speaker) in best.items()}
+        out.append((speaker, ranked))
+    return out
+
+
+def close_calls(
+    vecs: dict[int, "np.ndarray"],
+    taken=(),
+    threshold: float = _MATCH_THRESHOLD,
+    margin: float = _RUNNER_UP_MARGIN,
+    limit: int = _MAX_RIVALS,
+) -> dict[int, CloseCall]:
+    """留白的那幾位「聲音同時像誰」;{講者編號: CloseCall}(認得出的不列)。
+
+    只給介面當**線索**用——「這幾個人分不出來,去聽一下」——絕不拿來
+    自動填名:填名的判準仍然只有 recognize_batch 那一套,這裡不碰。
+
+    ⚠️ **回的是一份名單不是一個答案**,理由見 `_MAX_RIVALS`:98 次留白裡
+    54% 的第一名與第二名只差 0.03 以內,而那一段第一名只有 24% 是對的。
+    呼叫端要把它們**並列**呈現;只顯示第一個等於給了一個四次錯三次的
+    答案,而使用者會相信自動填出來的名字(2026-08-08 他明確說過)。
+
+    `taken` = 已經被自動填給別人的名字,一律排除:同一場會議一個名字只能
+    給一位講者(recognize_batch 的約束),把已經確定屬於別人的名字列進
+    來,等於邀請使用者製造一個「兩群同名」的成品——那在逐字稿裡看起來
+    是「少了一個人」,不是「認錯人」,而使用者不會發現。"""
+    taken = set(taken)
+    out: dict[int, CloseCall] = {}
+    for speaker, ranked in _ranked_matches(vecs, threshold):
+        if len(ranked) < 2:
+            continue  # 庫裡只有一個名字:沒有「分不開」這回事
+        top = ranked[0][1]
+        gap = top - ranked[1][1]
+        if gap >= margin:
+            continue  # 這位自動填得出名字,不需要線索
+        rivals = [n for n, s in ranked if top - s < margin and n not in taken]
+        if rivals:
+            out[speaker] = CloseCall(rivals[:limit], gap)
+    return out
 
 
 def _log_inconsistent(name: str, q: "np.ndarray", names, vecs) -> None:

@@ -105,6 +105,12 @@ _CHUNK_OVERLAP_SEC = 30
 # 塊內進度的兩相分配:sd.process(切分+sherpa 內部聲紋)與本模組抽聲紋
 # 耗時粗估 7:3。比例只影響塊內視覺速度,不影響正確性(單調即可)。
 _SEG_PHASE_FRAC = 0.7
+# 「切分+抽聲紋」佔整段講者分析進度的比例,剩下的留給全域重聚。
+# ⚠️ **重聚只值 3%,不是 10%**(2026-08-15 從執行紀錄實測):一場 3 小時
+# 59 分、3904 段的月會,重聚只花 12 秒,而整段講者分析是 71 分——0.3%。
+# 先前留 10% 給它,於是進度條在最後衝完 10% 只用了 0.2 分,而那一段正是
+# 剩餘時間最該準的時候。留 3% 是給超大會議的餘裕(重聚是 O(n²) 階層合併)
+_SEG_TOTAL_FRAC = 0.97
 # --- 發言塊(2026-08-08 加,校準見下方與 tests/test_diarize.py)---
 #
 # **分群的單位是「發言塊」不是「區段」**。sherpa 切出來的區段中位數只有
@@ -644,16 +650,27 @@ def _segment_and_embed(
     samples: np.ndarray,
     progress: ProgressFn | None,
 ) -> _ChunkAccum:
-    """整份音訊逐塊切分 + 抽聲紋(離線路徑)。"""
+    """整份音訊逐塊切分 + 抽聲紋(離線路徑)。
+
+    ⚠️ **進度按各塊的實際音訊長度加權,不是按塊數均分**(2026-08-15 從
+    259 份執行紀錄回頭查出來的):末塊通常遠短於一整塊——1084 秒的錄音
+    切成兩塊,第二塊只有 214 秒(佔真正工作量的 19%),按塊數均分卻讓它
+    佔進度的一半。症狀是進度前段以 20%/分 爬,最後 45%→100% 只花 27 秒,
+    而**剩餘時間正好是在那之前算出來的**,於是一路高估。"""
     accum = _ChunkAccum(_CHUNK_SEC)
     window, step = _window_step(_CHUNK_SEC)
     n_chunks = _chunk_count(len(samples), _CHUNK_SEC)
+    sizes = [
+        min(c * step + window, len(samples)) - c * step for c in range(n_chunks)
+    ]
+    total = sum(sizes) or 1
+    offsets = [sum(sizes[:c]) for c in range(n_chunks)]
     for c in range(n_chunks):
         # c 以預設參數固化,防 late-binding 錯亂(同 app.on_stage)
         sub = None
         if progress is not None:
-            def sub(f: float, c: int = c) -> None:
-                progress((c + f) / n_chunks)
+            def sub(f: float, base: int = offsets[c], size: int = sizes[c]) -> None:
+                progress((base + f * size) / total)
         accum.process_chunk(
             sd, samples[c * step: c * step + window], c,
             is_last=(c == n_chunks - 1), progress=sub,
@@ -790,15 +807,17 @@ def diarize(
     quality = 每位講者的分群品質(見 types.SpeakerQuality),供拒絕自動
     命名與輸出診斷用。
 
-    逐段(每 15 分鐘)切分 + 抽聲紋(進度 0~0.9,超長檔案也全程可見進度、
-    控制記憶體),再對全部聲紋做全域重聚(0.9~1.0)決定「誰是誰」,
-    見 _ChunkAccum / _cluster docstring。現場收音走增量版
+    逐段(每 15 分鐘)切分 + 抽聲紋(進度 0~_SEG_TOTAL_FRAC,超長檔案也
+    全程可見進度、控制記憶體),再對全部聲紋做全域重聚(剩下那一段)決定
+    「誰是誰」,見 _ChunkAccum / _cluster docstring。現場收音走增量版
     (IncrementalDiarizer),兩者共用同一份塊界與重聚邏輯。
     """
     sd = _get_diarizer()
     samples = audio.read_wav16k(wav_path)
 
-    seg_progress = (lambda f: progress(0.9 * f)) if progress is not None else None  # noqa: E731
+    seg_progress = (  # noqa: E731
+        (lambda f: progress(_SEG_TOTAL_FRAC * f)) if progress is not None else None
+    )
     accum = _segment_and_embed(sd, samples, seg_progress)
     turns, voiceprints, quality = _labels_and_voiceprints(
         accum, num_speakers,

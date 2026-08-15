@@ -653,17 +653,42 @@ def _rename_speakers(
 _HINT_QUOTE_CHARS = 40
 
 
-def _hint_text(hint) -> str | None:
-    """命名欄位下的認人線索:「共 N 段發言・『最長一句摘錄』」。
+def _hint_text(hint, rivals=None, can_audit=False) -> str | None:
+    """命名欄位下的認人線索:「共 N 段發言・『最長一句摘錄』」,聲紋分不開
+    的那幾位再加一行候選。
 
     讓使用者不必翻預覽找「講者 N 說了什麼」就能認人。無線索回 None
-    (該講者沒有合格的摘錄句;線索與聲紋同源,見 speaker_hints)。"""
-    if not hint:
-        return None
-    count, quote = hint[0], hint[1]  # 尾端另有該句起訖秒(剪試聽用),這裡用不到
-    if len(quote) > _HINT_QUOTE_CHARS:
-        quote = quote[:_HINT_QUOTE_CHARS] + "…"
-    return f"共 {count} 段發言・「{quote}」"
+    (該講者沒有合格的摘錄句;線索與聲紋同源,見 speaker_hints)。
+
+    ⚠️ **候選一定要並列、而且不寫分數**(使用者 2026-08-15 選定 3 案):
+    98 次留白裡 54% 的第一名與第二名只差 0.03 以內,那一段第一名只有
+    24% 是對的——單獨顯示第一名等於給一個四次錯三次的答案。分數不寫則是
+    因為「0.86 對 0.85」會讓那 0.01 看起來像一種依據,而它其實是雜訊。
+
+    ⚠️ **換行用單一 `\\n`**:gradio 6.20 的 info 會把它轉成 `<br>`
+    (2026-08-15 Playwright 實測,見 docs/dev/ui.md)——它不是 markdown,
+    所以既不必寫兩個空格,也不怕摘錄裡的符號被當成語法。
+
+    ⚠️ **指路只能指到那一列真的有的鈕**(`can_audit`;2026-08-15 使用者
+    截圖抓到):候選文字給**每一位**分不開的講者,而「🔍 核對」只亮在
+    差距最小的前三位——第一版兩邊沒有對齊,於是有幾列寫著「建議按
+    『🔍 核對』」,那一列卻連那顆鈕都沒有。沒有核對鈕時改指「▶️ 試聽」,
+    它本來就在,而且回答的正好是「這一群聽起來像誰」。"""
+    parts = []
+    if hint:
+        count, quote = hint[0], hint[1]  # 尾端另有該句起訖秒(剪試聽用),這裡用不到
+        if len(quote) > _HINT_QUOTE_CHARS:
+            quote = quote[:_HINT_QUOTE_CHARS] + "…"
+        parts.append(f"共 {count} 段發言・「{quote}」")
+    if rivals:
+        # 措辭要短:左欄實寬只有 482px,摘錄本身在那個寬度就已經折成兩行,
+        # 這句再長一點整列就會高得很有存在感(實測加這一句多 33px)
+        btn = _AUDIT_LABEL if can_audit else _AUD_PLAY_LABEL
+        parts.append(
+            f"聲音同時像:{'、'.join(rivals)}"
+            f" — 分不出來,建議按「{btn}」聽過再選"
+        )
+    return "\n".join(parts) or None
 
 
 # ---- 試聽(無播放器介面:按「試聽」即從頭播、再按即停、換人直接切)----
@@ -785,8 +810,41 @@ def _audit_choices(rows, blocks=None) -> list[tuple[str, int]]:
     return out
 
 
-def _audit_open(spk, audit):
+def _reassign_choices(spk, name_values, audit) -> list[str]:
+    """「把選取的段落改掛給」的名單順序(使用者 2026-08-15 選定「只排序」)。
+
+    好選的排前面,但**任何人都還選得到**:
+      ① 本場其他講者已經填好的名字——插話的人最可能就在這場會議裡
+      ② 本場的聲紋候選——外面都還沒填時,這就是「聲紋庫覺得今天可能在場
+         的人」;零成本,`_naming_clues` 已經算過了
+      ③ 其餘完整名單
+
+    ⚠️ **只排序不限縮**:插話的人常常只講一兩句、根本沒有自成一群,所以
+    不會出現在①②裡(0812 那場實測:某個標籤裡 13 段插話分屬**七個人**,
+    而那七位多半沒有自己的講者編號)。限縮的話他們就只能靠打字,而打錯
+    一個字就是聲紋庫裡多一個人。
+
+    ⚠️ **排除當前這一位**:改掛的意思是「這幾段其實不是他」,把他自己排在
+    第一個只會擋路。
+
+    ⚠️ 同樣**不加任何標記**,理由見 `_ordered_choices`。"""
+    head: list[str] = []
+    for i, v in enumerate(name_values[:MAX_SPEAKERS]):
+        if i == spk or not isinstance(v, str) or not v.strip():
+            continue
+        head.append(v.strip())
+    head += list((audit or {}).get("rivals") or [])
+    head = list(dict.fromkeys(head))        # 保序去重
+    seen = set(head)
+    return head + [n for n in attendees.load() if n not in seen]
+
+
+def _audit_open(spk, audit, *name_values):
     """「🔍 核對」:把這一位的發言抽樣接成一個音檔 + 對照表,開面板。
+
+    `name_values` 是命名區各欄目前的值(順序同 `_save_draft_names`):
+    用來把「本場已經填好的名字」排到改掛選單前面,見 `_reassign_choices`。
+    讀畫面上的值而不是落地草稿——那才是使用者此刻看到的真相。
 
     ⚠️ **核對是輔助功能,失敗只提示、不影響命名**(同 _audition_clips):
     音檔剪不出來時關掉面板即可,使用者照樣填名字、照樣套用。"""
@@ -826,7 +884,7 @@ def _audit_open(spk, audit):
         gr.update(value=None),
         gr.update(value=_audit_table(rows, picked_blocks)),
         gr.update(choices=_audit_choices(rows, picked_blocks), value=[]),
-        gr.update(choices=attendees.load(), value=""),
+        gr.update(choices=_reassign_choices(spk, name_values, audit), value=""),
         gr.update(visible=True),
         gr.update(visible=False),          # 右欄的預覽讓位給面板
     )
@@ -866,14 +924,38 @@ def _audit_play_row(audit, evt: gr.SelectData):
         gr.Warning("這一段剪不出來,請看紀錄檔。", title="無法播放")
         return gr.skip(), gr.skip()
     state["playing"] = i
-    return gr.update(value=str(dest)), state
+    # ⚠️ **playback_position 必須明確歸零**(2026-08-15 使用者第二次回報:
+    # 「短於 3 秒的按第二次就不行,長的有時可以」)。前端會停在上次的結尾
+    # 位置,重播時一開播就播畢——**短音檔的結尾 ≈ 全長,所以必然沒聲音**;
+    # 長音檔若上次是中途按停的,位置在中間,還聽得到一小段,於是表現成
+    # 「有時可以」。Playwright 量「送出 → stop」的間隔:3 秒的音檔不設這個
+    # 參數時,第一次 3.36 秒、**第二次 0.05 秒**;設了是 3.17 / 3.14 秒。
+    # ⚠️ 這與 _audit_row_ended 清空 value 是**兩件事,缺一不可**:清 value
+    # 讓前端肯重新載入(值不變就不重載),歸零 position 讓它從頭播。實測
+    # 那一組「有清 value、沒歸零 position」正是 0.05 秒那一欄。
+    # 命名區的試聽兩件都做了(_audition / _audition_ended),核對這條路是
+    # 後來加的,兩次都只補了一半——同一個坑到此咬了三次。
+    return gr.update(value=str(dest), playback_position=0), state
 
 
 def _audit_row_ended(audit):
-    """播完自然結束:讓「再點一次 = 停」的判斷歸零(不動表格,見上)。"""
+    """播完自然結束:清掉載體 value、讓「再點一次 = 停」的判斷歸零
+    (不動表格,見上)。
+
+    ⚠️ **一定要連 value 一起清**(2026-08-15 使用者回報:同一列播完再按
+    一次就沒反應,要先按別列再切回來才會播):每一列都剪到同一個
+    `one.wav`,而重播同一列時內容也一模一樣——gradio 的快取路徑是
+    `<內容 hash>/<原檔名>`,兩者都沒變,送回去的 URL 就跟上一次完全相同,
+    前端判定「值沒變」而不重新載入,自然不出聲。清成 None 之後,同一列
+    再按才有「None → 路徑」的變化可以觸發 autoplay。
+
+    命名區的試聽早就這樣做了(`_audition_ended` 的同一段註解),核對是
+    後來才加的,只補了 playing 這一半——**同一個 gradio 行為,兩條路要用
+    同一個解法**。Playwright 最小重現實測:同檔名送第二次不播,值先清成
+    None 或換個檔名(內容完全相同)就播。"""
     state = dict(audit or {})
     state["playing"] = None
-    return state
+    return gr.update(value=None), state
 
 
 def _audit_apply(files, audit, picked, new_name, preview_text):
@@ -1141,8 +1223,28 @@ def _run(src_text, model_label, num_speakers, cpu_cores=None, recursive=False,
         runstate.end()
 
 
+def _ordered_choices(known: list[str], rivals) -> list[str]:
+    """名字選單:聲紋分不開的那幾位排到最前面,其餘維持名單原順序。
+
+    ⚠️ **只重排、不加任何標記**(2026-08-15 出設計稿時查到的地雷):這個
+    欄位是 `allow_custom_value=True` 的下拉,**選項字串就是最後寫進逐字稿
+    與聲紋庫的名字**。而 gradio 的下拉沒有分組功能,想做出「聲音接近的 /
+    全部名單」那種視覺分隔,唯一的辦法是把符號寫進選項本身(「★ 王大明」)
+    ——那個星號會原樣變成人名。所以只能安靜地重排,哪幾個是候選由 info
+    那一行用文字講清楚。
+
+    ⚠️ **候選就算不在與會名單裡也要列進來**:名單與聲紋庫是兩份資料,
+    聲紋庫記得的人不見得還在名單上。info 都已經把名字講出來了,選單裡
+    卻找不到,只會逼使用者自己打字——而打錯一個字就是聲紋庫裡多一個人。"""
+    if not rivals:
+        return known
+    head = list(dict.fromkeys(rivals))      # 保序去重
+    seen = set(head)
+    return head + [n for n in known if n not in seen]
+
+
 def _name_section_updates(count, hints, clips, names, audit_flags=(),
-                          has_audit=True):
+                          has_audit=True, rivals=None):
     """命名框/「未知」框/試聽鈕的整組更新(_present_result 與
     _restore_pending 共用)。names={講者標籤: 欄位值}:轉檔完成時是
     自動辨識預填、開頁還原時是落地草稿;缺鍵留白。
@@ -1156,12 +1258,21 @@ def _name_section_updates(count, hints, clips, names, audit_flags=(),
     _start_run、錄音經 _reset_for_new_recording、開頁還原
     則是建構時的初始狀態)。"""
     known = attendees.load()  # 下拉選單來源:與會人員名單(「與會人員名稱維護」那一欄)
+    # 哪幾列會亮「🔍 核對」——線索文字要據此指路,不能叫人去按一顆不存在
+    # 的鈕(使用者 2026-08-15 截圖抓到:候選給每一位,而鈕只給前三位)
+    flagged = set(audit_flags or ()) if has_audit else set()
     updates = []
     for i in range(MAX_SPEAKERS):
         if i < count:
+            # 聲紋分不開的那幾位:候選排到選單最前面,並在線索那行並列講出
+            # 來(3 案,使用者 2026-08-15 選定)。認得出來的人 rivals 是空的
+            # ——那時這一列與先前完全一樣
+            mine = (rivals or {}).get(i) or []
             updates.append(gr.update(
-                visible=True, choices=known, value=names.get(i, ""),
-                label=f"講者 {i + 1} 的名字", info=_hint_text(hints.get(i)),
+                visible=True, choices=_ordered_choices(known, mine),
+                value=names.get(i, ""),
+                label=f"講者 {i + 1} 的名字",
+                info=_hint_text(hints.get(i), mine, can_audit=i in flagged),
             ))
         else:
             updates.append(gr.skip())
@@ -1207,7 +1318,8 @@ def _name_section_updates(count, hints, clips, names, audit_flags=(),
     # ⚠️ **沒有核對資料就一顆都不亮**:顯示與資料必須是同一個判準。第一版
     # 只看「有沒有未知」,於是重新整理之後鈕還在、按下去卻是空的
     # (使用者 2026-08-13 實機踩到)
-    flagged = set(audit_flags or ()) if has_audit else set()
+    # `flagged` 在上面算過一次(線索文字要用它決定指哪顆鈕),這裡沿用
+    # 同一份——各算一份的話,文字與鈕遲早各走各的,而那正是這次的 bug
     audit_updates = [
         gr.update(visible=True) if i in flagged else gr.skip()
         for i in range(MAX_SPEAKERS)
@@ -1508,6 +1620,55 @@ def _audit_flags(quality) -> set:
     return {q.speaker for q in export.check_first(quality or [])}
 
 
+# 聲紋分不開時,最多讓幾列亮起「🔍 核對」(使用者 2026-08-15 選定)。
+# ⚠️ **一定要有上限**:大型會議裡「認不出來」是常態,不設限的話 8/14 那場
+# 11 位裡有 9 位、8/12 那場 19 位裡有 13 位都會亮鈕,而全部都亮就等於全部
+# 都沒標。取「差距最小的前三位」= 最難分辨的那幾位,與 export.check_first
+# 的「一致性最低前三名」同一套哲學:工具只負責排序,不下判定
+_AUDIT_CLOSE_CALLS = 3
+
+
+def _rival_pool(rivals) -> list[str]:
+    """整場的聲紋候選聯集(保序去重)= 「聲紋庫覺得今天可能在場的人」。
+
+    給核對面板的改掛選單排序用(見 _reassign_choices):外面都還沒填名字
+    的時候,這是唯一能把 59 人的名單收斂一點的依據。"""
+    pool: list[str] = []
+    for spk in sorted(rivals or {}):
+        pool.extend(rivals[spk])
+    return list(dict.fromkeys(pool))
+
+
+def _naming_clues(count, voiceprints, audit_flags, has_audit):
+    """自動填名、聲紋分不開的候選、以及該亮「🔍 核對」的那幾列。
+
+    回 (預填名, {講者: 候選名字}, 該亮核對鈕的講者集合)。
+
+    ⚠️ **轉檔完成與開頁還原共用這一份**:候選不隨命名進度落地,而是兩邊
+    各自從聲紋向量重算——落地的話,使用者中途改了名單或聲紋庫之後,重新
+    整理會看到一份與現況對不上的舊候選,而那沒有任何症狀。重算的成本是
+    一次矩陣乘法(144×192),可以忽略。
+
+    ⚠️ **核對鈕的兩個來源要合併不是取代**:原本那幾位是「群內一致性最低」
+    (這一群是不是混了人),新加的是「聲紋分不開」(這一群到底是誰)——
+    兩個判準問的是不同問題,實測名單幾乎不重疊(8/14 那場 9 位認不出來,
+    其中 8 位手上一顆鈕都沒有)。"""
+    vecs = {
+        i: voiceprints[i] for i in range(count) if voiceprints.get(i) is not None
+    }
+    # 自動辨識的預填名 = 落地草稿的初始值。**整場一起辨識**,不逐位各自
+    # recognize:同一個名字只能給一位講者,否則兩群拿到同一個名字,成品
+    # 看起來就是「少了一個人」而非「認錯人」(見 voiceprints.recognize_batch)
+    guesses = voiceprints_store.recognize_batch(vecs)
+    close = voiceprints_store.close_calls(vecs, taken=guesses.values())
+    rivals = {spk: cc.rivals for spk, cc in close.items()}
+    flags = set(audit_flags or ())
+    if has_audit:
+        hardest = sorted(close.items(), key=lambda kv: (kv[1].gap, kv[0]))
+        flags |= {spk for spk, _cc in hardest[:_AUDIT_CLOSE_CALLS]}
+    return guesses, rivals, flags
+
+
 def _present_result(outputs, preview, count, voiceprints, hints, clips,
                     audit=None, audit_flags=()):
     """轉檔成果 → 命名區/試聽/下載/落地的整組 UI 更新(PAGE_UPDATE_LEN 個值)。
@@ -1517,11 +1678,8 @@ def _present_result(outputs, preview, count, voiceprints, hints, clips,
     前置條件:進來時所有講者框/試聽鈕已是隱藏且清空(轉檔鏈經
     _start_run、錄音經 _reset_for_new_recording 保證),
     「維持隱藏」才能安全地送 gr.skip()(地雷詳見 _name_section_updates)。"""
-    # 自動辨識的預填名 = 落地草稿的初始值。**整場一起辨識**,不逐位各自
-    # recognize:同一個名字只能給一位講者,否則兩群拿到同一個名字,成品
-    # 看起來就是「少了一個人」而非「認錯人」(見 voiceprints.recognize_batch)
-    guesses = voiceprints_store.recognize_batch(
-        {i: voiceprints[i] for i in range(count) if voiceprints.get(i) is not None}
+    guesses, rivals, flags = _naming_clues(
+        count, voiceprints, audit_flags, has_audit=bool(audit),
     )
     prefill: dict[int, str] = {i: guesses.get(i, "") for i in range(count)}
     if hints.get(UNKNOWN_SPEAKER):
@@ -1533,15 +1691,18 @@ def _present_result(outputs, preview, count, voiceprints, hints, clips,
     # 下次啟動清掃,落地副本活到套用完成
     audit = dict(audit or {})
     if audit:
-        audit["flags"] = sorted(audit_flags or ())
+        # 落地的是**合併後**的那一份(含聲紋分不開的那幾位):重新整理之後
+        # 亮的鈕要跟轉完當下一模一樣,否則使用者會以為自己記錯了
+        audit["flags"] = sorted(flags)
+        audit["rivals"] = _rival_pool(rivals)
     clips = pending.persist(outputs, preview, count, voiceprints, hints, clips,
                             prefill, audit=audit)
     # outputs 也回傳給 paths_state:套用名字時要寫回「真正的 output/ 檔案」,
     # 不能靠下載元件(gr.Files 當輸入時給的是 Gradio 快取副本,改了不會存回原檔)
     return _naming_page_updates(
         outputs, preview, voiceprints, clips,
-        _name_section_updates(count, hints, clips, prefill, audit_flags,
-                              has_audit=bool(audit)),
+        _name_section_updates(count, hints, clips, prefill, sorted(flags),
+                              has_audit=bool(audit), rivals=rivals),
         audit=audit,
     )
 
@@ -1565,11 +1726,19 @@ def _restore_pending():
     # **照樣亮著**(它只看「有沒有未知」),按下去卻是「沒有可核對的段落」
     # ——比不還原更糟。現在區塊與音檔來源跟著命名進度一起落地
     audit = data.get("audit") or {}
+    # 候選不落地、在這裡重算(見 _naming_clues 的 ⚠️):落地的話,中途改過
+    # 名單或聲紋庫之後重新整理,會看到一份與現況對不上的舊候選。核對鈕的
+    # 旗標則用落地那份——轉完當下亮哪幾顆,重新整理後就要是哪幾顆
+    _guesses, rivals, _flags = _naming_clues(
+        data["count"], data["voiceprints"], (), has_audit=bool(audit),
+    )
+    if audit:
+        audit = {**audit, "rivals": _rival_pool(rivals)}
     return _naming_page_updates(
         data["outputs"], preview, data["voiceprints"], clips,
         _name_section_updates(data["count"], hints, clips, names,
                               audit_flags=audit.get("flags") or (),
-                              has_audit=bool(audit)),
+                              has_audit=bool(audit), rivals=rivals),
         audit=audit,
     )
 
@@ -2660,6 +2829,55 @@ def build_ui() -> gr.Blocks:
                                     _SRC_MODE_HINT, visible=False,
                                     elem_id="src-mode-hint", elem_classes=["pad-x"],
                                 )
+                                # 「開始轉檔/停止」**排在「講者人數」之前**(設計稿
+                                # 選案 B,使用者 2026-08-15 選定):在「轉錄音檔」模式
+                                # 下,原本的順序讓這顆鈕落在 857px、而使用者的可視
+                                # 高度是 797px——**整顆鈕在畫面外**,每次轉檔都得先
+                                # 捲一下(他截圖回報)。移上來之後底端 705px、離視窗
+                                # 底還有 92px(Playwright 實測,視窗 1307×797)。
+                                # ⚠️ **只影響「轉錄音檔」**:這一列在收音模式平時整組
+                                # 隱藏,收音那一頁的版面一格都沒動(2026-08-07 才調好的
+                                # 貼卡不受影響)。代價是「講者人數」退到鈕的下面,要填
+                                # 它仍得捲——取捨是「每次都要按的」贏過「多數場次留 0
+                                # 不動的」。
+                                # ⚠️ **「平時」兩個字是後來補的**(2026-08-15 使用者當天
+                                # 就回報):按下「停止錄音」之後的收尾期間,
+                                # `_lock_for_rec_finish` 會把這一列的「停止」**臨時亮
+                                # 回來**——於是它就夾在兩張卡中間、把貼合撐開 60px。
+                                # 修法在 ui_style(`.run-row` 的 `order`,收音模式下把
+                                # 這一列**在視覺上**排到錄音雙鈕之後),**不是搬回 DOM
+                                # 原位**:搬回去等於把「開始轉檔」推回第一屏外。
+                                # ⚠️ 教訓:判斷「這一列在某個模式看不看得見」時,要把
+                                # **每一個狀態**都走過(待機/錄音中/收尾中/開頁接回),
+                                # 不能只看三個模式的靜態畫面——設計稿與驗收都只走了
+                                # 靜態模式,所以漏掉收尾那一段。
+                                # ⚠️ **位置有 CSS 相依**:它插在「要做什麼」與「收音
+                                # 情境」兩張卡中間,而那兩張卡靠**相鄰兄弟選擇器**貼合
+                                # (ui_style 的「左欄兩張卡貼合」),中間每多一列就要在
+                                # 那三條規則裡各補一段 `+ .run-row`,否則貼合**靜默**
+                                # 失效、收音模式的「開始錄音」跟著被擠下去。
+                                # 測試 test_recording_mode_merges_two_cards_css 把
+                                # 「中間有幾列」與「CSS 有沒有寫進去」綁在一起守。
+                                # ⚠️ 也**不可以再往下挪到「收音情境」與「講者人數」
+                                # 之間**:那兩顆是連續的表單元件、被 gradio 包在同一個
+                                # <form> 裡(= 畫面上的同一張白卡),中間插一列 Row 會
+                                # 把那張卡切成兩張。
+                                # 收音模式兩顆都隱藏 → 整列空,由 .run-row 的
+                                # CSS 收掉(同 .src-pick-row,見該處註解)
+                                with gr.Row(elem_classes=["run-row"]):
+                                    # 按鈕狀態設計(使用者規格):初始皆不可按——路徑
+                                    # 欄有內容「開始」才亮,按下「開始」後才輪到「停止」。
+                                    # 預設收音模式時整組隱藏(切「轉錄音檔」才顯示)。
+                                    # elem_id 是 js 即時鎖鈕(run-btn)/「停止中…」
+                                    # 改字(stop-btn)的錨點
+                                    run_btn = gr.Button(
+                                        "開始轉檔", variant="primary", scale=4,
+                                        visible=False, interactive=False, elem_id="run-btn",
+                                    )
+                                    stop_btn = gr.Button(
+                                        "停止", variant="stop", scale=1,
+                                        visible=False, interactive=False, elem_id="stop-btn",
+                                    )
                                 # ---- 現場收音(預設模式,初始顯示)----
                                 # 情境照「使用場合」命名(訊號來源對照見 SCENARIO_LABELS)。
                                 # **每次啟動都是 DEFAULT_SCENARIO**(使用者 2026-08-09
@@ -2681,11 +2899,17 @@ def build_ui() -> gr.Blocks:
                                 # 使用者 2026-07-26 以會議一律要分講者為由移除,
                                 # 連同 diarize_speakers=False 整條跳過路徑與
                                 # 「下載檔案」收工鈕,勿在無新指示下加回)
-                                # 講者人數放主流程、「開始錄音」鈕之前(使用者指定
-                                # 2026-07-24 從「進階參數設定」移出):檔案/收音兩模式
-                                # 共用、不隨 _switch_source 切換;鎖定走 _param_updates
-                                # (檔案轉檔中鎖;錄音中保持可輸入——收尾才讀,
-                                # 見 _param_updates docstring)
+                                # 講者人數留在主流程、不收回「進階參數設定」(使用者
+                                # 指定 2026-07-24 從摺疊區移出):開會中數清人數要當場
+                                # 填得到。⚠️ 2026-08-15 為了把「開始轉檔」拉進第一屏,
+                                # 選案時另有一案是把它收回摺疊區,使用者**沒有選**
+                                # ——那會連現場收音一起收掉,正是 07-24 移出來的理由。
+                                # 位置關係從此**兩個模式不同**:收音模式仍在「開始
+                                # 錄音」之前(這一段沒動),轉錄音檔模式則排在「開始
+                                # 轉檔」之後(見上方 .run-row 的註解)。
+                                # 檔案/收音兩模式共用、不隨 _switch_source 切換;
+                                # 鎖定走 _param_updates(檔案轉檔中鎖;錄音中保持
+                                # 可輸入——收尾才讀,見 _param_updates docstring)
                                 speakers = gr.Number(
                                     value=0, precision=0,
                                     label="講者人數(0 = 自動偵測)",
@@ -2720,22 +2944,6 @@ def build_ui() -> gr.Blocks:
                                 # 或 F5)才由 `_restore_transcribing` 打開,
                                 # 接手畫進度並在轉完時收尾
                                 run_timer = gr.Timer(1.0, active=False)
-                                # 收音模式兩顆都隱藏 → 整列空,由 .run-row 的
-                                # CSS 收掉(同 .src-pick-row,見該處註解)
-                                with gr.Row(elem_classes=["run-row"]):
-                                    # 按鈕狀態設計(使用者規格):初始皆不可按——路徑
-                                    # 欄有內容「開始」才亮,按下「開始」後才輪到「停止」。
-                                    # 預設收音模式時整組隱藏(切「轉錄音檔」才顯示)。
-                                    # elem_id 是 js 即時鎖鈕(run-btn)/「停止中…」
-                                    # 改字(stop-btn)的錨點
-                                    run_btn = gr.Button(
-                                        "開始轉檔", variant="primary", scale=4,
-                                        visible=False, interactive=False, elem_id="run-btn",
-                                    )
-                                    stop_btn = gr.Button(
-                                        "停止", variant="stop", scale=1,
-                                        visible=False, interactive=False, elem_id="stop-btn",
-                                    )
                                 # 其餘參數都有堪用預設值,收進摺疊區、平常不用點開;
                                 # 摺疊區放主按鈕列之後(使用者指定 2026-07-24:主流程
                                 # 「選檔/開錄 → 開始」在上、少用的設定沉底。同日講者
@@ -2788,13 +2996,30 @@ def build_ui() -> gr.Blocks:
                                 # 圓角被吃掉、兩顆黏在一起,而且播放器自己的圓角
                                 # 會跟 Group 的圓角在上緣互咬出缺口
                                 with gr.Column(visible=False, elem_id="audit-panel") as audit_panel:
+                                    # ⚠️ **用字由使用者自己定**(2026-08-15 他逐字給
+                                    # 的版本;先前那版他嫌太長,並指定刪掉「怎麼點
+                                    # 播放」那句——那是基本操作常識,而且核對表自己
+                                    # 的標籤上已經寫了)。**改措辭前先問他,不要順手
+                                    # 潤稿**;測試守的是三個要點在不在,不是逐字比對。
+                                    # 介面上只留「不知道就會做錯」的兩條——改掛會取消
+                                    # 這次的聲紋登記、一列混多人時整列改掛會波及別人;
+                                    # 完整說明在「❓ 使用說明」分頁,本來就只該有一份。
+                                    # ⚠️ 第二條是使用者選擇**不做**「拆列改掛」(設計稿
+                                    # C 案)之後唯一的出路說明,所以它不是裝飾。拆列的
+                                    # 診斷與代價見 docs/dev/pipeline.md(切分其實有切開,
+                                    # 是後面合併的;調參數已實測否決)
                                     gr.Markdown(
-                                        "點每一列**最左邊那一格**聽那一段(再點一次停),整格都可以按、不必點準三角形;播放中會變成 ■。"
-                                        "聽出某幾段其實是別人,就在下面的清單裡選起來、"
-                                        "選個名字按「套用改掛」。"
-                                        "⚠️ **只要你在這裡改掛過,這一位就不會被登記進"
-                                        "聲紋庫**——你改掛了,表示這一群不只一個人,"
-                                        "學進去只會讓下次認得更錯。",
+                                        # 開頭標出面板的來歷(使用者 2026-08-15:
+                                        # 「這樣才知道這個面板是按下 🔍 核對 長出來
+                                        # 的」)——它取代的是右欄的預覽,不標的話
+                                        # 不容易看出畫面為什麼換了
+                                        f"**{_AUDIT_LABEL}**\n\n"
+                                        "聽出某幾段其實是別人,多選起來、指定名字按"
+                                        "「套用改掛」。**改掛就不會登記聲紋庫**,"
+                                        "否則會讓下次辨識失準。\n\n"
+                                        "⚠️ **遇到一列混著好幾人聲時,那列請不要勾**,"
+                                        "改掛會把其他人一起登記錯誤。"
+                                        "如想分開講者,請直接用 md 手動改。",
                                         elem_classes=["audit-note"],
                                     )
                                     # 出聲載體:**沒有介面**,由 CSS 移出畫面
@@ -2829,7 +3054,13 @@ def build_ui() -> gr.Blocks:
                                         # 沒有去處、「全螢幕」把它攤滿整個視窗也
                                         # 沒有意義
                                         buttons=[],
-                                        label="逐段對照(點左邊那一格聽那一段,再點一次停)",
+                                        # ⚠️ **不顯示標籤**(使用者 2026-08-15 指定
+                                        # 刪掉「逐段對照(點左邊那一格聽那一段,再點
+                                        # 一次停)」):怎麼點播放是基本操作常識,而
+                                        # 表頭第一欄的「聽」已經講完同一件事。
+                                        # 用 show_label=False 而不是 label="" ——後者
+                                        # 在 gradio 6.20 仍會佔一個標籤列的高度
+                                        show_label=False,
                                     )
                                     # 要改掛哪幾段:原生多選,勾幾百個都不卡,
                                     # 而且可以打字搜尋(「相似度」也印在選項上,
@@ -3696,10 +3927,16 @@ def build_ui() -> gr.Blocks:
         ]:
             audit_btn.click(
                 functools.partial(_audit_open, audit_key),
-                inputs=[audit_state],
+                # 命名欄一起送進來:改掛的名單要把「本場已經填好的名字」排到
+                # 前面(見 _reassign_choices),而那是畫面上的即時值
+                inputs=[audit_state, *name_inputs, unknown_input],
                 outputs=[audit_state, audit_player, audit_table, audit_pick,
                          audit_name, audit_panel, preview],
             )
+            # 捲回頁面最上面(講者多時這顆鈕在螢幕下方,而面板長在右欄上方)。
+            # ⚠️ 另外掛一顆、不與上面共用:js= 的回傳值會被當成 fn 的 inputs,
+            # 併進去會把 audit_state 洗掉(見 ui_style.AUDIT_SCROLL_TOP_JS)
+            audit_btn.click(None, js=ui_style.AUDIT_SCROLL_TOP_JS)
         # 點表格任一列 → 單獨重聽那一段(使用者 2026-08-13 補的需求:整批
         # 用來掃、單段用來在標名字之前再確認一次)
         # ⚠️ **queue=False 是效能關鍵**(2026-08-13 使用者回報「勾選改掛很慢」):
@@ -3717,9 +3954,12 @@ def build_ui() -> gr.Blocks:
         # 而 Playwright 實測的事實是**真正在播的那顆 <audio> 不在文件樹上**
         # (wavesurfer 自己 createElement 一顆來播),document 上的監聽連捕獲
         # 階段都收不到任何一個事件。走元件自己的 stop 才收得到
+        # ⚠️ outputs 要含 audit_player:播完把 value 清成 None,同一列再按
+        # 才會出聲(見 _audit_row_ended 的 ⚠️;同 _audition_ended)
         audit_player.stop(
             _audit_row_ended, inputs=[audit_state],
-            outputs=[audit_state], show_progress="hidden", queue=False,
+            outputs=[audit_player, audit_state],
+            show_progress="hidden", queue=False,
         )
         # ⚠️ **另外掛一顆、不與上面那顆共用**:gradio 的 `js=` 是「先跑前端、
         # 回傳值當成 fn 的 inputs」,掛在上面那顆的話這支回 undefined 會把

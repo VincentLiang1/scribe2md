@@ -465,13 +465,20 @@ body:has(:is(#stop-btn, #rec-stop-btn):not([disabled]))
    模式相依的,而模式是他一直在切的東西;留白到哪個模式都一樣。
    ⚠️ 貼合必須有條件:切到「轉錄音檔」時兩張卡中間會冒出路徑欄與選檔鈕,
    無條件貼合會讓下面那張卡用負 margin 壓到路徑欄上(三個模式都實測過)。
-   判準是**三者相鄰**——上卡的 .form、.src-pick-row、含 #rec-scenario 的
-   .form 直接連在一起(2026-08-08 改;原本是「.src-pick-row 整列空」,
-   理由見下)。這個判準直接描述了「下一張卡真的貼在下面」這件事,而且在
-   實測的三個模式下都對:切到轉錄音檔時 #rec-scenario **整個不渲染**
-   (gradio 6.20 對 Radio 的 visible=False 是移除 DOM,不是加 .hidden),
-   而 .src-pick-row 後面接的是選檔摘要那個 .block.pad-x、不是 .form,
-   兩邊都匹配不到 → 自動退回兩張卡。
+   判準是**四者相鄰**——上卡的 .form、.src-pick-row、.run-row、含
+   #rec-scenario 的 .form 直接連在一起(2026-08-08 改成相鄰判準;
+   2026-08-15 補上 .run-row,見下)。這個判準直接描述了「下一張卡真的貼在
+   下面」這件事,而且在實測的三個模式下都對:切到轉錄音檔時 #rec-scenario
+   **整個不渲染**(gradio 6.20 對 Radio 的 visible=False 是移除 DOM,不是加
+   .hidden),而 .src-pick-row 後面接的是選檔摘要那個 .block.pad-x、
+   不是 .run-row,兩邊都匹配不到 → 自動退回兩張卡。
+   ⚠️ **中間夾著幾列,這裡就要寫幾列**(2026-08-15,「開始轉檔/停止」上移到
+   「講者人數」之前時踩到):那一列在收音模式是整列空、被上面那條規則
+   `display:none` 收掉——但**相鄰兄弟選擇器不看 display**,它照樣把 .form 與
+   .form 隔開,漏寫一段 `+ .run-row` 整組貼合就**靜默**失效(症狀是收音模式
+   變回兩張卡、「開始錄音」被擠下去,而沒有任何錯誤)。app.py 那一列的註解
+   反向指回這裡,test_recording_mode_merges_two_cards_css 把「中間有哪幾列」
+   與「規則裡寫了哪幾列」綁在一起守,新增一列就會紅。
    ⚠️ **三條規則的條件必須等價**(不可能「字面」一致——CSS 沒有前向兄弟
    選擇器,上卡那條只能寫成 `:has(+ …)`、下面兩條只能寫成 `+ …`):上卡
    歸零圓角、下卡貼上來,只成立一半就是「上卡下緣變直角卻沒人接」。
@@ -509,18 +516,44 @@ body:has(:is(#stop-btn, #rec-stop-btn):not([disabled]))
    class——臨時在瀏覽器 devtools/injected style 裡試覆寫時,不補上同樣的
    前綴會靜靜地不生效,看起來像「這條 CSS 沒用」(驗證方案時踩過)。
    :has 不支援的舊瀏覽器退回兩張卡,功能不受影響 */
-.form:has(> #source-mode):has(+ .src-pick-row + .form > #rec-scenario:not(.hidden)) {
+.form:has(> #source-mode):has(+ .src-pick-row + .run-row + .form > #rec-scenario:not(.hidden)) {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
-.form:has(> #source-mode) + .src-pick-row + .form:has(> #rec-scenario:not(.hidden)) {
+.form:has(> #source-mode) + .src-pick-row + .run-row + .form:has(> #rec-scenario:not(.hidden)) {
   margin-top: calc(-1 * var(--layout-gap)) !important;
   border-top-left-radius: 0 !important;
   border-top-right-radius: 0 !important;
 }
-.form:has(> #source-mode) + .src-pick-row + .form > #rec-scenario:not(.hidden) {
+.form:has(> #source-mode) + .src-pick-row + .run-row + .form > #rec-scenario:not(.hidden) {
   padding-top: 20px !important;
 }
+
+/* 收音模式:把「開始轉檔/停止」那一列**在視覺上**排到錄音雙鈕之後
+   (2026-08-15 使用者回報的 bug:「按下停止錄音並完成逐字稿後,停止按鈕
+   出現的位置不對…將卡片上下擠開」,截圖圈的正是兩張卡中間多出來的那顆)。
+   ⚠️ **那一列在收音模式並非永遠隱藏**——按下「停止錄音」之後的收尾期間,
+   `_lock_for_rec_finish` 會把裡面的「停止」**臨時亮回來**(收尾要中止得有
+   東西可按,見 app.py 該處),而它 2026-08-15 起的 DOM 位置正好在兩張卡
+   中間,一亮出來就把貼合撐開 60px。⚠️ 這是**狀態相依**的破圖:三個模式
+   的靜態畫面全部正常,只有「按下停止錄音之後」那一段才看得到——設計稿
+   與驗收都只走靜態模式,所以漏掉了(同 2026-08-08「只有現場收音有灰線」
+   那一條的形狀:跨狀態的元素要把**每一個狀態**都走過)。
+   ⚠️ **修法刻意用 `order` 而不是搬 DOM**:搬回去等於把「開始轉檔」推回
+   第一屏外(那正是這次要解決的問題),而收尾期間那顆鈕只是**借用**這一列。
+   `order` 只改 flex 的視覺排序、不動 DOM,所以上面三條貼合規則的相鄰兄弟
+   判準完全不受影響(實測:收尾期間 gap 仍是 0、圓角仍歸零)。
+   ⚠️ **`#adv-params` 必須跟著設更大的 order**:order 的預設值是 0,只給
+   .run-row 設 1 會讓它排到**所有** order:0 的後面——連「進階參數設定」
+   摺疊區都在它前面。兩條要一起看,少一條就是換個地方錯位。
+   ⚠️ 判準是「**後面**還有含 #rec-scenario 的 .form」= 收音模式(別的模式
+   那顆 Radio 整個不渲染);寫成後續兄弟 `~` 而不是相鄰 `+`,因為中間隔著
+   收音狀態列等元素。`:not(.hidden)` 的理由同上面三條。
+   實測(視窗 1307×797):收尾期間「停止」從 360px(夾在兩張卡中間)回到
+   718px(錄音雙鈕 658-698 的下一列),兩張卡 gap 60 → 0;切到「轉錄音檔」
+   時判準不成立,「開始轉檔」照樣在 665px、「講者人數」之前。 */
+.run-row:has(~ .form > #rec-scenario:not(.hidden)) { order: 1 !important; }
+#adv-params { order: 2 !important; }
 
 /* 命名區塊整體:容器永遠掛載(gradio 6.20 對 visible 會切換的容器有
    children 帶舊 props 重生的地雷,見 build_ui 註解),沒有任何渲染中的
@@ -1303,4 +1336,21 @@ AUDIT_PLAYING_HEAD = """
 # 對不到函式就什麼都不做:這是錦上添花的回饋,不能讓核對本身壞掉。
 AUDIT_PLAY_ENDED_JS = """
 () => { if (window.msAuditClearPlaying) { window.msAuditClearPlaying(); } }
+"""
+
+# 按下「🔍 核對」時把頁面捲回最上面(使用者 2026-08-15:講者多的時候那顆鈕
+# 在螢幕下方,面板長在右欄上方,不捲的話還要自己捲上去)。
+#
+# ⚠️ **捲的是 window,不是 `.gradio-container`**(2026-08-15 Playwright 實測):
+# 這個 app 的捲軸就在 window / document.scrollingElement / html 那一組上,
+# `.gradio-container`、`.main`、`body` 三者的 clientHeight 都等於 scrollHeight
+# ——它們沒有自己的捲軸。只對 window 下 `scrollTo(0)`,實測全部歸零。
+# (別直接套 ui.md 裡「`.gradio-container` 有 overflow:hidden」那條就假設是它:
+#  那條講的是 sticky 的包含塊,與誰在捲是兩回事。)
+#
+# ⚠️ 掛成**獨立的一顆** `.click(None, js=...)`:gradio 的 `js=` 是「先跑前端、
+# 回傳值當成 fn 的 inputs」,併進開面板那顆的話,這支回 undefined 會把
+# audit_state 整個洗掉(同 AUDIT_PLAY_ENDED_JS 那條的理由)。
+AUDIT_SCROLL_TOP_JS = """
+() => { window.scrollTo({top: 0, behavior: 'smooth'}); }
 """

@@ -40,6 +40,12 @@ ProgressFn = Callable[[float], None]
 # 心跳訊息的間隔。這個迴圈可以跑數十分鐘,不出聲就會被當成當機
 # (2026-08-07 使用者實跡,見迴圈內註解);每分鐘一筆,369 塊也只有數十行
 _HEARTBEAT_SEC = 60.0
+# 剩餘時間只看「最近這段時間」跑多快。⚠️ **不可改回從頭到現在的平均**
+# (2026-08-15,理由與 runstate._ETA_WINDOW_SHARE 同一件事):whisper 前幾塊
+# 特別慢(GPU kernel 首次編譯、pipeline 暖機),把那段算進速率會讓開頭的
+# 預估離譜到沒有意義——一支 3 小時 59 分的月會實測報「還要 214.5 分」,
+# 而整段轉錄只花了 65 分。視窗 5 分鐘 = 5 筆心跳,夠平掉單塊的長短差異
+_ETA_WINDOW_SEC = 300.0
 
 # --- 跳針防護 ---
 # 塊輸出中招(loopdetect)→ 切半重轉;短於此秒數×2 就不再切(再切窗太短、
@@ -268,6 +274,7 @@ def transcribe_ov(
     out: list[TranscriptSegment] = []
     done = 0.0
     t0 = last_beat = time.monotonic()
+    marks: list[tuple[float, float]] = [(t0, 0.0)]  # 速率取樣,見 _remaining_sec
     for i, (start, end) in enumerate(chunks):
         # 單塊解碼(官方 chunks 型別為 list | None,None 已在內處理);
         # 跳針時塊內自行切半重轉,進度仍以原始塊回報(重轉是罕見路徑,
@@ -287,8 +294,12 @@ def transcribe_ov(
         if now - last_beat >= _HEARTBEAT_SEC:
             last_beat = now
             spent = now - t0
-            # 剩餘時間用「已完成的音訊比例」外推,比塊數準(塊長差異大)
-            left = spent * (speech_total - done) / done if done > 0 else 0.0
+            marks.append((now, done))
+            cutoff = now - _ETA_WINDOW_SEC
+            # 留住視窗外的最後一筆當基準(同 runstate._sample_locked 的 ⚠️)
+            while len(marks) > 1 and marks[1][0] <= cutoff:
+                marks.pop(0)
+            left = _remaining_sec(marks, now, done, speech_total)
             logger.info(
                 "轉錄進行中:%d/%d 塊、已處理 %.0f/%.0f 秒音訊,"
                 "已花 %.1f 分,預估還要 %.1f 分",
@@ -299,3 +310,17 @@ def transcribe_ov(
         len(chunks), done, (time.monotonic() - t0) / 60,
     )
     return out
+
+
+def _remaining_sec(
+    marks: list[tuple[float, float]], now: float, done: float, total: float,
+) -> float:
+    """依取樣視窗內的速率估剩餘秒數;算不出來回 0.0(不猜)。
+
+    `marks` 是 [(時刻, 已處理音訊秒數)],呼叫端已按 `_ETA_WINDOW_SEC`
+    修剪。**用音訊秒數而不是塊數**:塊長差異大,塊數進度嚴重失真。"""
+    t_ref, done_ref = marks[0]
+    gained, span = done - done_ref, now - t_ref
+    if gained <= 0 or span <= 0:
+        return 0.0
+    return max(total - done, 0.0) * span / gained
