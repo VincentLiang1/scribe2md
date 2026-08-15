@@ -812,6 +812,67 @@ body:has(#name-box .name-row .block) #adv-params { display: none !important; }
    稀疏——樣式與試聽鈕一致,靠字樣區分,不另外給顏色:整排鈕五顏六色
    會讓人以為那是三種不同性質的操作 */
 
+/* 聲紋分不開時,那幾位候選在**選單裡**的標示(設計稿 D 案,使用者
+   2026-08-16 選定):淺琥珀底 + 「聲音接近的 / 全部名單」兩個分組小標;
+   **收起來之後不留任何記號**(同日他指定:欄位裡不要多一個符號)。
+   之前只是安靜地把候選排到最前面,打開選單完全看不出哪幾筆是它。
+
+   ⚠️ **標示只能做在 CSS,絕不能寫進選項字串**:這個欄位允許自由輸入,
+   選項字串就是最後寫進逐字稿與 `data/voiceprints.npz` 的名字(見
+   app._choice_layout,突變 M185)。欄位掛的 class 由 `rival_classes()`
+   產生:`rivals`(有候選就掛,與筆數無關的規則錨它)+ `rivals-N`。
+
+   改這段之前,兩條非知不可的實測結論(其餘沿革見 docs/dev/ui.md
+   「下拉選單的標示」,那裡是 gradio 地雷的家):
+   ⚠️ **選 li 一律用 `data-index`,不可用 `nth-child`**:打字過濾時
+   gradio 把不符的 li 整個移除,但**留下來的 data-index 保持原始索引**
+   ——`nth-child` 在過濾後會把底色落到別人身上,而**標錯人比不標更糟**。
+   ⚠️ **小標要 `flex-basis:100%` 才會自成一行**:li 是 flex 容器,
+   `display:block` 的 ::before 會被排成 flex item、跟名字擠在同一行。
+
+   底色用**半透明琥珀**而不是寫死 #FFF4D1:同一個值疊在淺色卡片上正好
+   是使用者選定的 #FFF4D1,疊在深色卡片(#1d1d1f)上自動變成暗琥珀
+   ——這裡沒有現成的主題變數可用,寫死的話深色模式會亮得刺眼。alpha 走
+   `--rival-bg` 是為了讓 hover 只換一個數字,不必把整串選擇器再抄一遍
+   (非候選的 li 拿到這個變數也沒有規則會用)。⚠️ `!important` 不可省:
+   gradio 自己會給選中/滑過的那一列掛 `bg-gray-100`。
+
+   ⚠️ **三種失效都是「安靜地退回改動前」,這是刻意的**:gradio 改 DOM、
+   候選超過 `voiceprints._MAX_RIVALS`(CSS 只寫到那個數)、過濾把第 0 筆
+   濾掉——三者都只是琥珀底不出現,而「聲音同時像:A、B」那行 info 是
+   **另一條獨立的通道**、仍然在。所以壞掉不會誤導,只會少一個提示 */
+#name-box .rivals li { flex-wrap: wrap; }
+#name-box :is(
+  .rivals-1 li[data-index="0"],
+  .rivals-2 li[data-index="0"], .rivals-2 li[data-index="1"],
+  .rivals-3 li[data-index="0"], .rivals-3 li[data-index="1"],
+  .rivals-3 li[data-index="2"]
+) { background: rgba(255, 199, 0, var(--rival-bg, 0.18)) !important; }
+#name-box .rivals li:hover { --rival-bg: 0.30; }
+/* 兩個分組小標:第一筆候選(永遠是 data-index=0)與第一筆非候選
+   (= 第 N 筆)。「請聽過再選」這半句是重點——底色只說得出「這幾筆
+   不一樣」,說不出哪裡不一樣,而使用者看到名字就填正是要防的事 */
+#name-box .rivals li[data-index="0"]::before {
+  content: "聲音接近的 ・ 請聽過再選";
+}
+#name-box :is(
+  .rivals-1 li[data-index="1"],
+  .rivals-2 li[data-index="2"],
+  .rivals-3 li[data-index="3"]
+) {
+  border-top: 1px solid var(--input-border-color) !important;
+  margin-top: 4px; padding-top: 8px !important;
+}
+#name-box :is(
+  .rivals-1 li[data-index="1"],
+  .rivals-2 li[data-index="2"],
+  .rivals-3 li[data-index="3"]
+)::before { content: "全部名單"; }
+#name-box .rivals li::before {
+  flex-basis: 100%; font-size: 11px; margin-bottom: 1px;
+  color: var(--body-text-color-subdued); letter-spacing: 0.04em;
+}
+
 /* 轉檔進度文字(「XXX.m4a:轉錄與講者分析 - 5.0%」,gradio 畫在預覽框上
    的 .progress-level-inner)原生只有 12px,使用者反映太小;先放 16px
    後改 14px(使用者微調)。錨定自家 #preview-box,gradio 改內部結構時
@@ -888,6 +949,23 @@ body:has(#name-box .name-row .block) #adv-params { display: none !important; }
 }
 #reconnect-bar .rc-dismiss:hover { background: var(--background-fill-secondary); }
 """
+
+
+def rival_classes(count: int) -> list[str]:
+    """命名欄位的 class:有 `count` 位聲紋候選就掛 `rivals` + `rivals-N`。
+
+    ⚠️ **這串是只有上面那段 CSS 看得懂的私有編碼**,所以產生器住在視覺層
+    ——`app.py` 只負責把它接到 `gr.update(elem_classes=…)` 上,不必知道
+    拼法。`rivals` 那個不帶數字的給「與筆數無關」的規則錨(小標的外觀、
+    flex-wrap),`rivals-N` 給「前 N 筆」那幾條;分開之後上限改大時,
+    只有列舉 `data-index` 的那兩條要跟著長。
+
+    ⚠️ **沒有候選時一定要回空清單,不能省略不送**:gradio 的
+    `elem_classes` 更新是**整組取代**,上一檔留下的 class 不清掉,下一檔
+    認得出來的那幾位會繼續黃著——那正好是「看起來還沒確認、其實已經
+    認出來」的反向誤導。復位路徑(`app._page_reset_updates`)同理。"""
+    return ["rivals", f"rivals-{count}"] if count else []
+
 
 # 外觀(深淺色)設定:gradio 6 對主題選擇無任何落地(重啟即失),而且它切主題是
 # 「整頁導向 ?__theme=」——class 變化發生在下一頁的初始化期間,靠監聽

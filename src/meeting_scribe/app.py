@@ -822,6 +822,20 @@ def _audit_choices(rows, blocks=None) -> list[tuple[str, int]]:
     return out
 
 
+def _all_names() -> list[str]:
+    """所有選得到的名字:與會名單(維持使用者排的順序)+ **只在聲紋庫裡的**。
+
+    ⚠️ **有聲紋卻不在名單上的人一定要列進來**(2026-08-15 code review 抓到
+    命名下拉與改掛下拉都少了這一半):名單與聲紋庫是兩份資料,而
+    `data_tabs.orphan_names` 那整套安全網存在的理由,正是「這種狀態真的會
+    發生」(改名只改一邊、用記事本編過名單、半途而廢的改名)。選單裡找不到
+    就只能自己打字,而打錯一個字就是聲紋庫裡多一個人——那正是這些下拉
+    要防的事。`_choice_layout` 的註解早就寫著這條規則,只是它靠 rivals
+    才做得到,沒有進候選的那些人漏在外面。"""
+    return list(dict.fromkeys(
+        [*attendees.load(), *voiceprints_store.known_names()]))
+
+
 def _reassign_choices(spk, name_values, audit) -> list[str]:
     """「把選取的段落改掛給」的名單順序(使用者 2026-08-15 選定「只排序」)。
 
@@ -839,7 +853,8 @@ def _reassign_choices(spk, name_values, audit) -> list[str]:
     ⚠️ **排除當前這一位**:改掛的意思是「這幾段其實不是他」,把他自己排在
     第一個只會擋路。
 
-    ⚠️ 同樣**不加任何標記**,理由見 `_ordered_choices`。"""
+    ⚠️ 同樣**不加標記**,理由見 `_choice_layout`(那邊的琥珀底色畫在
+    CSS,這裡沒做)。"""
     head: list[str] = []
     for i, v in enumerate(name_values[:MAX_SPEAKERS]):
         if i == spk or not isinstance(v, str) or not v.strip():
@@ -848,7 +863,7 @@ def _reassign_choices(spk, name_values, audit) -> list[str]:
     head += list((audit or {}).get("rivals") or [])
     head = list(dict.fromkeys(head))        # 保序去重
     seen = set(head)
-    return head + [n for n in attendees.load() if n not in seen]
+    return head + [n for n in _all_names() if n not in seen]
 
 
 def _audit_open(spk, audit, *name_values):
@@ -884,7 +899,7 @@ def _audit_open(spk, audit, *name_values):
     state["rows"] = [
         {"start": r.start, "end": r.end, "speaker": spk} for r in rows
     ]
-    label = "未知" if spk == UNKNOWN_SPEAKER else f"講者 {spk + 1}"
+    label = export.speaker_label(spk)     # 顯示規則全 repo 只有這一份
     # ⚠️ **不跳提示**(使用者 2026-08-14 指定):面板一打開就在眼前,右上角
     # 再彈一個 toast 只是擋住畫面;真正該講的(抽了幾段、怎麼操作)寫在
     # 面板頂端那一行,看得到、也不會自己消失
@@ -991,6 +1006,10 @@ def _audit_apply(files, audit, picked, new_name, preview_text):
                     end=float(r["end"]), text="")
         for r in chosen
     ]
+    # 檔尾診斷區塊要加註「這份人工改掛過」(見 audit.note_reassigned):
+    # 那張表講的是**機器分群當下**的結果,改掛之後數字與內文就對不上了,
+    # 而這份 md 的既定消費者是 RAG——自相矛盾的診斷比沒有診斷更糟
+    labels = sorted({export.speaker_label(int(r["speaker"])) for r in chosen})
     changed = 0
     for path in files or []:
         pth = Path(path)
@@ -998,7 +1017,10 @@ def _audit_apply(files, audit, picked, new_name, preview_text):
             before = pth.read_text(encoding="utf-8")
             after, n = audit_mod.reassign(before, blocks, name)
             if n:
-                pth.write_text(after, encoding="utf-8")
+                pth.write_text(
+                    audit_mod.note_reassigned(after, labels, name, n),
+                    encoding="utf-8",
+                )
             changed += n
         except OSError:
             logger.exception("改掛寫回失敗:%s", pth)
@@ -1019,7 +1041,10 @@ def _audit_apply(files, audit, picked, new_name, preview_text):
         "⚠️ 這一位這次不會被登記進聲紋庫——你改掛過,表示這一群不只一個人。",
         title="改掛完成",
     )
-    new_preview, _ = audit_mod.reassign(preview_text or "", blocks, name)
+    new_preview, moved_in_preview = audit_mod.reassign(preview_text or "", blocks, name)
+    new_preview = audit_mod.note_reassigned(
+        new_preview, labels, name, moved_in_preview,
+    )
     return gr.update(value=new_preview), gr.update(value=[]), state
 
 
@@ -1080,7 +1105,9 @@ def _page_reset_updates(downloads_files) -> tuple:
     `_naming_page_updates`,這是全檔僅有的兩個「下載區的值」產生點
     (漏一處的症狀見 _servable,測試以 AST 反向守著不得再冒出第三個)。"""
     cleared = [
-        gr.update(visible=False, value="", info=None)
+        # 候選的琥珀底色掛在欄位的 class 上,復位要一起歸零
+        # (理由見 ui_style.rival_classes)
+        gr.update(visible=False, value="", info=None, elem_classes=[])
         for _ in range(MAX_SPEAKERS + 1)  # 30 個講者框+1 個「未知」框
     ]
     return (
@@ -1235,24 +1262,33 @@ def _run(src_text, model_label, num_speakers, cpu_cores=None, recursive=False,
         runstate.end()
 
 
-def _ordered_choices(known: list[str], rivals) -> list[str]:
-    """名字選單:聲紋分不開的那幾位排到最前面,其餘維持名單原順序。
+def _choice_layout(known: list[str], rivals) -> tuple[list[str], list[str]]:
+    """名字選單的**順序**與**候選標示**;回 (選項, elem_classes)。
 
-    ⚠️ **只重排、不加任何標記**(2026-08-15 出設計稿時查到的地雷):這個
-    欄位是 `allow_custom_value=True` 的下拉,**選項字串就是最後寫進逐字稿
-    與聲紋庫的名字**。而 gradio 的下拉沒有分組功能,想做出「聲音接近的 /
-    全部名單」那種視覺分隔,唯一的辦法是把符號寫進選項本身(「★ 王大明」)
-    ——那個星號會原樣變成人名。所以只能安靜地重排,哪幾個是候選由 info
-    那一行用文字講清楚。
+    聲紋分不開的那幾位排到最前面(其餘維持名單原順序),並讓 CSS 把那
+    幾筆畫成淺琥珀底、補上「聲音接近的 / 全部名單」兩個分組小標(設計稿
+    D 案,使用者 2026-08-16 選定;收起來不留記號也是他指定的)。
+
+    ⚠️ **兩件事出自同一次計算,不是兩條各自的算式**:CSS 認的是「選單
+    最前面 N 筆」,N 一旦與實際前綴長度對不上,底色就會落在別人身上
+    ——而標錯人比不標更糟。共用同一個 `head` 之後,這件事不必靠註解或
+    測試維持,它是同一個變數的兩種用法。
+
+    ⚠️ **選項字串只重排、不加任何標記**:這個欄位是 `allow_custom_value`
+    的下拉,**選項字串就是最後寫進逐字稿與 `data/voiceprints.npz` 的
+    名字**——把「★」寫進選項,那個星號就會原樣變成人名。標示一律做在
+    CSS(見 `ui_style.rival_classes` 與那段「候選標示」),選項因此一路
+    乾淨,收名字那一關不必剝任何東西。突變 M185 守著這條。
 
     ⚠️ **候選就算不在與會名單裡也要列進來**:名單與聲紋庫是兩份資料,
     聲紋庫記得的人不見得還在名單上。info 都已經把名字講出來了,選單裡
     卻找不到,只會逼使用者自己打字——而打錯一個字就是聲紋庫裡多一個人。"""
-    if not rivals:
-        return known
-    head = list(dict.fromkeys(rivals))      # 保序去重
+    head = list(dict.fromkeys(rivals or ()))      # 保序去重
+    if not head:
+        return known, []
     seen = set(head)
-    return head + [n for n in known if n not in seen]
+    return (head + [n for n in known if n not in seen],
+            ui_style.rival_classes(len(head)))
 
 
 def _name_section_updates(count, hints, clips, names, audit_flags=(),
@@ -1269,7 +1305,9 @@ def _name_section_updates(count, hints, clips, names, audit_flags=(),
     呼叫端進來時所有講者框/試聽鈕已是隱藏且清空(轉檔鏈經
     _start_run、錄音經 _reset_for_new_recording、開頁還原
     則是建構時的初始狀態)。"""
-    known = attendees.load()  # 下拉選單來源:與會人員名單(「與會人員名稱維護」那一欄)
+    # 下拉選單來源:與會人員名單(「與會人員名稱維護」那一欄)+ 只在聲紋庫
+    # 裡的那些(見 _all_names——選不到就只能打字,打錯就是庫裡多一個人)
+    known = _all_names()
     # 哪幾列會亮「🔍 核對」——線索文字要據此指路,不能叫人去按一顆不存在
     # 的鈕(使用者 2026-08-15 截圖抓到:候選給每一位,而鈕只給前三位)
     flagged = set(audit_flags or ()) if has_audit else set()
@@ -1280,8 +1318,12 @@ def _name_section_updates(count, hints, clips, names, audit_flags=(),
             # 來(3 案,使用者 2026-08-15 選定)。認得出來的人 rivals 是空的
             # ——那時這一列與先前完全一樣
             mine = (rivals or {}).get(i) or []
+            # 選單順序與候選的琥珀底色出自同一次計算(見 _choice_layout);
+            # 認得出來的人 mine 是空的,marks 就是空清單——**要照送**,
+            # 不送的話上一檔的 class 會留在這一欄上
+            choices, marks = _choice_layout(known, mine)
             updates.append(gr.update(
-                visible=True, choices=_ordered_choices(known, mine),
+                visible=True, choices=choices, elem_classes=marks,
                 value=names.get(i, ""),
                 label=f"講者 {i + 1} 的名字",
                 info=_hint_text(hints.get(i), mine, can_audit=i in flagged),
@@ -1580,20 +1622,33 @@ def _naming_page_updates(outputs, preview, voiceprints, clips, section,
         # 核對:狀態帶著「這一份的區塊與音檔來源」,面板關著等使用者點
         audit, gr.update(value=None), gr.update(value=None),
         gr.update(value=[], choices=[]),
-        gr.update(value="", choices=attendees.load()), gr.update(visible=False),
+        gr.update(value="", choices=_all_names()), gr.update(visible=False),
         *audit_updates, unknown_audit_update,
     )
 
 
-def _audit_payload(result, src_path) -> dict:
+def _audit_payload(result, src_path, sources=None) -> dict:
     """核對面板要的東西:每一輪發言 + 從哪個音檔剪。
 
     ⚠️ **音檔來源優先用管線留下的 16k wav**:從原始 m4a/mp4 剪要先整檔
     解碼(長錄音數十秒),而 16k wav 是隨機存取、實測 0.01 秒
-    (見 audit._cut_and_join)。沒有就退回原始檔,慢但仍可用。"""
+    (見 audit._cut_and_join)。沒有就退回原始檔,慢但仍可用。
+
+    ⚠️ **`sources` 的鍵一定要是字串**(2026-08-15 code review 抓到):讀的
+    那兩處(`_audit_open`、`_audit_play_row`)查的是 `str(spk)`,而這裡先前
+    寫的是 `int`——於是**剛轉完的那一次**永遠查不到、一律退回 `src`,
+    重新整理之後(經過 JSON 落地,鍵變成字串)才會生效。整份落地一趟就
+    改變行為,而症狀是「線上會議的核對播錯音軌」:現場講者要剪麥克風軌、
+    遠端講者剪系統軌,退回 `src` 就是全部剪同一軌(見 PipelineResult
+    的 speaker_sources)。
+
+    `sources` 可另外指定:現場收音那條路的軌檔在錄音工作目錄裡、收尾後
+    整個刪掉,不能拿來當核對來源(見 `_finish_recording`)。"""
     blocks = getattr(result, "blocks", None) or []
     if not blocks:
         return {}
+    if sources is None:
+        sources = result.speaker_sources or {}
     return {
         "blocks": [
             {"speaker": b.speaker, "start": b.start, "end": b.end,
@@ -1601,7 +1656,7 @@ def _audit_payload(result, src_path) -> dict:
             for b in blocks
         ],
         "src": str(src_path or ""),
-        "sources": {int(k): str(v) for k, v in (result.speaker_sources or {}).items()},
+        "sources": {str(k): str(v) for k, v in sources.items()},
     }
 
 
@@ -2379,9 +2434,19 @@ def _run_recording_finish(rec, lt, stem, num_speakers, progress):
     clips = _cut_speaker_clips(
         Path(tracks[0].path), result.speaker_hints, sources=result.speaker_sources,
     )
+    # 核對也要給現場收音這條路(2026-08-15 code review 抓到:先前只有檔案
+    # 轉檔給,於是線上會議永遠沒有「🔍 核對」鈕,而使用說明寫著「未知那一列
+    # 一定有核對鈕」)。⚠️ **來源只能用 output\ 裡的成品音檔**:
+    # `speaker_sources` 指的是錄音工作目錄裡的軌檔,而那個目錄下面幾行就
+    # 整個刪掉了(留著才是錯的——錄音檔動輒幾百 MB)。分軌的差別因此在
+    # 核對時消失(雙軌是合成後的立體聲),但那是「聽得到就好」的功能,
+    # 而試聽仍然剪對軌(clips 在刪目錄之前就剪好了)
+    audit_src = next((p for p in result.outputs if p.suffix == ".wav"), None)
     out = _present_result(
         transcripts, preview, result.speakers,
         result.voiceprints or {}, result.speaker_hints or {}, clips,
+        audit=_audit_payload(result, audit_src, sources={}) if audit_src else {},
+        audit_flags=_audit_flags(result.quality),
     )
     # 音檔已進 output/、試聽片段已剪出(pending 另存副本):錄音工作目錄
     # 功成身退。放最後:前面任何一步炸掉都還留著原始素材
@@ -4052,6 +4117,25 @@ def build_ui() -> gr.Blocks:
         # 重新整理頁面即可接續;沒有落地資料時 _restore_pending 整組 skip)
         demo.load(
             _restore_pending, outputs=page_outputs, show_progress="hidden",
+        )
+        # 開頁時把名單表格與聲紋那三個元件**重新讀一次檔**(2026-08-15 code
+        # review 抓到)。⚠️ 它們的值是 `build_ui` **建構當下**的快照,而
+        # build_ui 一個行程只跑一次——工具開著的期間用記事本或 git 改過
+        # `data\attendees.txt`(那本來就是預期用法,見 orphan_names),畫面
+        # 連重新整理都還是舊的;接著改別人那一列按儲存,送回伺服器的是那份
+        # 舊快照,於是外面的改動被整批倒回去,連聲紋都會被「偵測到改名」
+        # 一起改回舊名字。走 reload_* 兩支與「重新載入」鈕完全同一條路
+        demo.load(
+            data_tabs.reload_attendees,
+            outputs=[att_table, att_preview_note, att_sync_check,
+                     att_rename_note, att_rename_btn, att_rename_skip_btn,
+                     att_rename_state],
+            show_progress="hidden",
+        )
+        demo.load(
+            data_tabs.reload_voiceprints,
+            outputs=[vp_pick, vp_rename_pick, vp_info],
+            show_progress="hidden",
         )
         # (2)(3) 必須是「並行」的兩個 .then,不能寫成 js→清空的直鏈:
         # 接在 js-only 步(fn=None+js)「之後」的環節一律不觸發——js 當

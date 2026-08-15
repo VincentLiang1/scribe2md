@@ -146,11 +146,17 @@ def _report_misfiled(names: list[str], vecs: np.ndarray,
     # 拿全部(門檻設極低)才看得到分佈與斷層——只印過線的那幾筆,讀報告的
     # 人無從判斷門檻訂得合不合理。判準本身仍是 voiceprints.suspects
     # 兩個門檻都放到最低才看得到完整分佈;判定仍用 voiceprints 的常數
-    rows = [
-        (s.gap, s.lone, s.name, s.index, s.own_sim, s.like_sim, s.like_name)
-        for s in voiceprints.suspects(margin=-2.0, lone=-2.0)
-    ]
-    hard = [r for r in rows if r[0] >= _MISFILED_MARGIN and r[1] >= _LONE_MARGIN]
+    #
+    # ⚠️ **一路帶著 `Suspect` 物件走,不要拆成位置 tuple**(2026-08-15 code
+    # review 抓到兩個真的 bug):`lone` 這一欄 2026-08-08 插進 tuple 之後,
+    # 這一段有兩個消費端沒跟著改——一個把 7 個欄位解成 6 個(`ValueError`,
+    # 整支工具連同 `--drop-duplicates`、`--against` 一起帶走),一個拿
+    # `(lone, name)` 去比對 `(name, index)`(那句「這樣刪會讓某個人整個
+    # 消失」的紅字**恆為空**)。兩者都只在「真的掃到可疑樣本」時才發作,
+    # 平常的報告是 0 筆、被上面的 `if not hard: return` 短路掉,所以測不到
+    # 也看不見。具名欄位讓這種錯連寫都寫不出來。
+    rows = voiceprints.suspects(margin=-2.0, lone=-2.0)
+    hard = [s for s in rows if s.gap >= _MISFILED_MARGIN and s.lone >= _LONE_MARGIN]
     print(f"\n=== 疑似存錯名字的樣本(差距 >= {_MISFILED_MARGIN} 且"
           f"孤例度 >= {_LONE_MARGIN}:{len(hard)} 個)===")
     print("   「差距」= 跟某個別人的相似度 － 跟自己人的相似度。為正代表")
@@ -159,27 +165,31 @@ def _report_misfiled(names: list[str], vecs: np.ndarray,
     print("   一起變像(共用麥克風/遠端連線的通道成分),不是存錯名字的證據")
     print("   ——2026-08-08 誤刪過三個遠端樣本,就是少了這一欄。")
     print(f"   {'差距':>6} {'孤例':>6} {'名字':<20} {'#':>2} {'跟自己人':>7}  跟別人")
-    for gap, lone, name, k, own, other, who in rows[:20]:
-        if gap < 0.05:
+    for s in rows[:20]:
+        if s.gap < 0.05:
             break
-        mark = ("  ← 證據硬" if gap >= _MISFILED_MARGIN and lone >= _LONE_MARGIN
-                else "  (孤例度不足,多半是通道效應)" if gap >= _MISFILED_MARGIN
-                else "")
-        print(f"   {gap:+6.2f} {lone:+6.2f} {name:<20} #{k} {own:7.2f}  "
-              f"{who}({other:.2f}){mark}")
+        mark = ("  ← 證據硬"
+                if s.gap >= _MISFILED_MARGIN and s.lone >= _LONE_MARGIN
+                else "  (孤例度不足,多半是通道效應)"
+                if s.gap >= _MISFILED_MARGIN else "")
+        print(f"   {s.gap:+6.2f} {s.lone:+6.2f} {s.name:<20} #{s.index} "
+              f"{s.own_sim:7.2f}  {s.like_name}({s.like_sim:.2f}){mark}")
     if not hard:
         return
+    doomed = {(s.name, s.index) for s in hard}
     gone = [n for n, idx in by.items()
-            if all((n, k) in {(r[1], r[2]) for r in hard} for k in range(len(idx)))]
+            if all((n, k) in doomed for k in range(len(idx)))]
     if gone:
         print(f"\n   ⚠️ 這樣刪會讓 {len(gone)} 個名字整個消失"
               f"(下次開會要重新命名一次):{'、'.join(gone)}")
         print("      那代表這個名字底下**沒有一個樣本可信**——不是同一個人的"
               "幾份樣本,而是幾個不同的人被存到同一個名字底下。")
     print("\n   要刪的話(先自己看過再貼):")
-    order = sorted(hard, key=lambda r: (r[1], r[2]))
+    # 依 (名字, 序號) 排:貼出來的清單要跟上面的報告對得起來,而
+    # `delete_samples` 收的也是這一組鍵
+    order = sorted(hard, key=lambda s: (s.name, s.index))
     print("   uv run python scripts/audit_voiceprints.py --drop " +
-          " ".join(f'"{n}#{k}"' for _g, n, k, _o, _x, _w in order))
+          " ".join(f'"{s.name}#{s.index}"' for s in order))
 
 
 def _report_against(names: list[str], vecs: np.ndarray, path: Path) -> None:
@@ -188,7 +198,10 @@ def _report_against(names: list[str], vecs: np.ndarray, path: Path) -> None:
     npz 需要兩個陣列:`labels`(每群一個名稱)與 `centroids`(對應的聲紋
     質心,L2 正規化)。這正是 2026-08-07 判出「C 名下有 B 總樣本」的
     方法——沒有這種外部真值,聲紋庫自己說不出誰對誰錯。"""
-    data = np.load(path, allow_pickle=True)
+    # ⚠️ **不開 allow_pickle**:對照組是操作者從別處拿來的檔,而
+    # `allow_pickle=True` 的 npz 一載入就等於執行裡面的程式碼。`labels` 存
+    # 成一般字串陣列(`np.array([...])`,不加 dtype=object)本來就讀得到
+    data = np.load(path)
     labels = [str(x) for x in data["labels"]]
     cents = data["centroids"]
     print(f"\n\n=== 對照組 {path.name}({len(labels)} 群)===")

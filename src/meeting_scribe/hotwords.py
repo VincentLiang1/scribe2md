@@ -43,7 +43,9 @@ def load() -> list[str]:
         return []
     out: list[str] = []
     seen: set[str] = set()
-    for line in f.read_text(encoding="utf-8").splitlines():
+    # utf-8-sig:詞表是使用者會用記事本直接編的檔,BOM 會黏在第一個詞前面
+    # 而那個詞就這樣靜靜地不生效了(同 attendees.load 的理由)
+    for line in f.read_text(encoding="utf-8-sig").splitlines():
         w = line.strip()
         if w and not w.startswith("#") and w not in seen:
             seen.add(w)

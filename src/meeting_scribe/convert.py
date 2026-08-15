@@ -72,7 +72,9 @@ def _load_rules() -> list[tuple[str, str]]:
     key = (str(f), mtime)
     if _rules_cache and _rules_cache[0] == key:
         return _rules_cache[1]
-    rules, bad = parse_rules(f.read_text(encoding="utf-8"))
+    # utf-8-sig:替換表是使用者會用記事本直接編的檔(同 attendees.load),
+    # BOM 會黏在第一條規則的原詞前面,那條規則從此不再命中任何東西
+    rules, bad = parse_rules(f.read_text(encoding="utf-8-sig"))
     for line in bad:
         logger.warning("replace.txt 規則缺少新詞(需「原詞 新詞」),已略過:%s", line)
     # 長詞優先:「打印機→印表機」必須先於「打印→列印」執行,

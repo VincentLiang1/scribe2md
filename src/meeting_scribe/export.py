@@ -17,8 +17,13 @@ from meeting_scribe import loopdetect
 from meeting_scribe.types import UNKNOWN_SPEAKER, SpeechBlock, SpokenSegment
 
 
-def _speaker_label(speaker: int) -> str:
-    """講者顯示名稱:未知(哨兵 <0)顯示「未知」,其餘為「講者 N」(1-based)。"""
+def speaker_label(speaker: int) -> str:
+    """講者顯示名稱:未知(哨兵 <0)顯示「未知」,其餘為「講者 N」(1-based)。
+
+    ⚠️ **全 repo 只有這一份**(2026-08-15 起):先前 `audit` 與 `app` 各抄了
+    一行,而 audit 那份的註解寫著「測試盯著它們一致」——`grep tests/` 是
+    0 命中,也就是三份實作沒有任何東西守著。抄的理由(怕 import 繞回來)
+    也不成立:`audit` 本來就已經 import export,而 export 只相依 types。"""
     return "未知" if speaker == UNKNOWN_SPEAKER else f"講者 {speaker + 1}"
 
 
@@ -171,7 +176,7 @@ def _speaker_diagnostics(quality: list, spoken: list[SpokenSegment]) -> list[str
     ]
     first = check_first(quality)
     if first:
-        names = "、".join(f"**{_speaker_label(q.speaker)}**" for q in first)
+        names = "、".join(f"**{speaker_label(q.speaker)}**" for q in first)
         lines += [
             f"**建議優先核對**:{names}——這幾個標籤的群內一致性明顯低於"
             "本場其他人,是最可能混進別人的。",
@@ -184,7 +189,7 @@ def _speaker_diagnostics(quality: list, spoken: list[SpokenSegment]) -> list[str
     for q in sorted(quality, key=lambda x: x.speaker):
         n_blocks = sum(1 for sp, _s, _t, _m in blocks if sp == q.speaker)
         lines.append(
-            f"| {_speaker_label(q.speaker)} | {n_blocks} | {_hms(q.seconds)} "
+            f"| {speaker_label(q.speaker)} | {n_blocks} | {_hms(q.seconds)} "
             f"| {q.cohesion:.2f} |"
         )
     lines += [
@@ -243,7 +248,7 @@ def to_markdown(
     診斷區塊(見 _speaker_diagnostics)。"""
     lines = [f"## 會議逐字稿 — {title}", ""]
     for speaker, start, text, is_marker in _group_by_speaker(spoken):
-        lines.append(f"**{_speaker_label(speaker)}** ({_hms(start)})")
+        lines.append(f"**{speaker_label(speaker)}** ({_hms(start)})")
         lines.append(punctuate(text) if punctuate and not is_marker else text)
         lines.append("")
     lines += _speaker_diagnostics(quality or [], spoken)

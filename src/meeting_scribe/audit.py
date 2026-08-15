@@ -27,7 +27,7 @@ from pathlib import Path
 
 from meeting_scribe import audio, export
 from meeting_scribe.errors import UserFacingError
-from meeting_scribe.types import UNKNOWN_SPEAKER, SpeechBlock
+from meeting_scribe.types import SpeechBlock
 
 logger = logging.getLogger(__name__)
 
@@ -157,13 +157,14 @@ def reassign(md_text: str, blocks: list[SpeechBlock], new_name: str) -> tuple[st
     發言被改名,而那比不能改更糟。
 
     ⚠️ **檔尾診斷區塊之後不動**:那張表講的是分群結果,不是誰的發言
-    (`relabel` 同此)。人工改掛之後表上的數字會與內文不一致,由呼叫端
-    另外加註,不在這裡偷偷改——那張表的意義是「機器分成這樣」。"""
+    (`relabel` 同此)。人工改掛之後表上的數字會與內文不一致,所以呼叫端
+    要接著呼叫 `note_reassigned` 在那一塊**加註**,不在這裡偷偷改數字
+    ——那張表的意義是「機器分成這樣」。"""
     if not blocks or not new_name.strip():
         return md_text, 0
     want: dict[tuple[str, str], int] = {}
     for b in blocks:
-        key = (_speaker_label(b.speaker), _hms(b.start))
+        key = (export.speaker_label(b.speaker), _hms(b.start))
         want[key] = want.get(key, 0) + 1
 
     seen: dict[tuple[str, str], int] = {}
@@ -187,10 +188,46 @@ def reassign(md_text: str, blocks: list[SpeechBlock], new_name: str) -> tuple[st
     return "\n".join(out) + ("\n" if md_text.endswith("\n") else ""), changed
 
 
-def _speaker_label(speaker: int) -> str:
-    """與 export 同一份顯示規則(未知/講者 N);import 那邊會繞回來,所以複製
-    一行而不是相互 import——兩邊都只有這一行,測試盯著它們一致。"""
-    return "未知" if speaker == UNKNOWN_SPEAKER else f"講者 {speaker + 1}"
+# 加註的抬頭。⚠️ 裡面點名標籤的寫法**只能用「名字」或 `**名字**`**——那是
+# `export.diag_prose_renamer` 認得的兩種,套用名字時它要能把「講者 3」一起
+# 換掉;自創第三種寫法的話,這段加註會在命名之後指向一個文件裡已經不存在
+# 的標籤(那正是 DIAG_ROW_RE 註解說的「比沒有警告更糟」)
+_REASSIGN_NOTE = ("> ⚠️ **這份逐字稿人工改掛過**,所以下面的數字與排序是"
+                  "**機器分群當下**的結果,與內文已經對不上:")
+
+
+def note_reassigned(md_text: str, labels, new_name: str, moved: int) -> str:
+    """在檔尾診斷區塊加一句「這份被人工改掛過」;回傳新的 md。
+
+    ⚠️ **這是 `reassign` 的另一半**(2026-08-15 code review 抓到:先前那半
+    根本不存在)。`reassign` 刻意不動診斷表,docstring 說「由呼叫端另外
+    加註」——而在 `src\\` 全域搜尋找不到任何這樣的呼叫端。後果:把講者 3
+    的 13 輪改掛給別人之後,出貨的 md 仍寫著 `| 講者 3 | 38 | … |`、仍寫著
+    「建議優先核對:**講者 3**」,而內文只剩 25 輪。這份 md 的既定消費者
+    是 RAG,等於餵進一段自我矛盾的診斷。
+
+    **加註而不是改數字**是刻意的:那張表的意義就是「機器分成這樣」,把它
+    改成人工修正後的樣子,下游就再也看不出哪些是機器判的、哪些是人改的。
+
+    改掛好幾次會累積成好幾條(同一個抬頭底下,依動作順序排)。"""
+    if not moved or not md_text:
+        return md_text
+    who = "、".join(f"「{n}」" for n in labels) or "這一群"
+    bullet = f"> - {who}的 {moved} 段已改掛給「{new_name}」"
+    lines = md_text.splitlines()
+    at = next((i for i, ln in enumerate(lines) if export.starts_diagnostics(ln)), None)
+    if at is None:
+        return md_text          # 沒有診斷區塊(沒給 quality)就沒有東西會對不上
+    head = next((i for i in range(at + 1, len(lines))
+                 if lines[i] == _REASSIGN_NOTE), None)
+    if head is None:
+        lines[at + 1:at + 1] = ["", _REASSIGN_NOTE, bullet]
+    else:
+        end = head + 1
+        while end < len(lines) and lines[end].startswith("> "):
+            end += 1
+        lines[end:end] = [bullet]
+    return "\n".join(lines) + ("\n" if md_text.endswith("\n") else "")
 
 
 def _is_wav16k(path: Path) -> bool:

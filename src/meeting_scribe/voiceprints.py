@@ -156,23 +156,101 @@ def store_file() -> Path:
     return models.data_dir() / "voiceprints.npz"
 
 
+def _empty() -> tuple[list[str], np.ndarray]:
+    return [], np.zeros((0, _DIM), dtype=np.float32)
+
+
+def _set_aside(f: Path) -> Path:
+    """把讀不動的聲紋庫搬到旁邊,回傳搬去哪裡。
+
+    **不刪、也不原地留著**:留著的話下一次 `_save` 就把它蓋掉(那是使用者
+    累積了幾個月、無法重錄的樣本);刪掉則連搶救的機會都沒有。搬開之後
+    `models.seed_missing` 會在下次啟動補一個乾淨的種子檔,工具照常開得起來。
+    已經有一份搬過的就再編號,絕不覆蓋(第一份通常才是最完整的那個)。"""
+    for n in range(1, 100):
+        dest = f.with_name(f"{f.name}.壞損{n}")
+        if not dest.exists():
+            f.rename(dest)
+            return dest
+    return f
+
+
+def _read(f: Path, allow_pickle: bool) -> tuple[list[str], np.ndarray]:
+    """真的把兩個陣列取出來。
+
+    ⚠️ **一定要在這裡就取值、而且要 `with`**:`np.load` 對 npz 是**惰性**的
+    ——它只開檔,「這是 pickle 而你沒開 allow_pickle」那個 ValueError 要等到
+    `data["names"]` 才丟(2026-08-15 實測)。把取值留在外面的話,舊格式的檔
+    會直接掉進「壞檔」那條路,而那條路會把使用者累積數月的聲紋庫搬走。
+    `with` 則是為了關檔:handle 還開著時 `_set_aside` 的改名會被 Windows 擋。"""
+    with np.load(f, allow_pickle=allow_pickle) as data:
+        return [str(n) for n in data["names"]], data["vecs"]
+
+
 def load() -> tuple[list[str], np.ndarray]:
-    """回傳 (names, vecs):平行的名字清單與 L2 正規化聲紋矩陣(N×維度)。"""
+    """回傳 (names, vecs):平行的名字清單與 L2 正規化聲紋矩陣(N×維度)。
+
+    ⚠️ **讀不動也不能讓例外跑出去**:這支被 `data_tabs.vp_summary` 在
+    `build_ui` **建構介面的當下**呼叫(而且在 try 之外),所以一個半截的
+    npz 不只是聲紋失效,是整個工具打不開、黑視窗一串英文 traceback。
+    壞檔搬到旁邊(見 `_set_aside`)、回空的,程式照常開,使用者看到的是
+    「目前尚無登記任何聲紋」而不是打不開的網頁。
+
+    ⚠️ **舊檔的名字是 pickle**(0.7.1 以前 `dtype=object` 存的),所以讀
+    法是「先用安全的方式試,失敗才退回 allow_pickle 並就地轉存成新格式」
+    ——同仁手上那些累積過的庫不能因為換格式就報廢,而轉存一次之後就不必
+    再開 pickle 了(見 `_save` 的 ⚠️)。"""
     f = store_file()
     if not f.exists():
-        return [], np.zeros((0, _DIM), dtype=np.float32)
-    data = np.load(f, allow_pickle=True)
-    names = [str(n) for n in data["names"]]
-    vecs = data["vecs"]
+        return _empty()
+    legacy = False
+    try:
+        try:
+            names, vecs = _read(f, allow_pickle=False)
+        except ValueError:
+            # numpy 對「內容是 pickle、卻沒開 allow_pickle」丟的就是 ValueError
+            names, vecs = _read(f, allow_pickle=True)
+            legacy = True
+    except Exception:
+        dest = _set_aside(f)
+        logger.exception(
+            "聲紋庫讀不動(檔案可能在存檔中途被中斷),已搬到 %s;"
+            "本次以空的聲紋庫繼續,那個檔請留著別刪", dest,
+        )
+        return _empty()
     if vecs.ndim != 2 or len(names) != len(vecs):
-        return [], np.zeros((0, _DIM), dtype=np.float32)
-    return names, vecs.astype(np.float32)
+        return _empty()
+    vecs = vecs.astype(np.float32)
+    if legacy:
+        logger.info("聲紋庫是舊格式(名字以 pickle 儲存),已就地轉存成新格式")
+        _save(names, vecs)
+    return names, vecs
 
 
 def _save(names: list[str], vecs: np.ndarray) -> None:
+    """整份覆寫聲紋庫。**先寫暫存檔再原子改名**,絕不就地截斷。
+
+    ⚠️ 這是**天天在跑的熱路徑**:套用一次命名,每位講者各 `enroll` 一次,
+    七位講者就是七個獨立的毀損窗口(斷電、防毒鎖檔、闔蓋進 Modern Standby
+    之後被砍)。就地 `np.savez` 一旦寫到一半,留下的是半個 zip——而聲紋
+    樣本錄不回來。`models.seed_missing` 早就為**同一個檔**寫了 .part + 改名
+    (那條註解白紙黑字寫著「不會讓半個 voiceprints.npz 落地」),冷路徑有
+    護欄、熱路徑沒有,是 2026-08-15 code review 才發現的。
+
+    ⚠️ **名字不用 `dtype=object`**:那會讓 names.npy 變成 pickle,於是讀檔
+    非開 `allow_pickle=True` 不可——而這個檔正是要私下互傳給同仁的那一個
+    (公開版一律是空庫),路上被掉包就等於開啟工具的當下執行任意程式碼。
+    一般的字串陣列對中文、全形「・」與多空白的名字 round-trip 完全相同。"""
     f = store_file()
     f.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(f, names=np.array(names, dtype=object), vecs=vecs.astype(np.float32))
+    tmp = f.with_name(f.name + ".part")
+    try:
+        with open(tmp, "wb") as fh:
+            np.savez(fh, names=np.array(names, dtype=np.str_),
+                     vecs=vecs.astype(np.float32))
+        tmp.replace(f)          # 同一個磁碟區,POSIX/Windows 都是原子的
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def known_names() -> list[str]:

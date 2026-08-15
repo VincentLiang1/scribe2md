@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "0.7.1"
+version = "0.7.2"
 description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
 # AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
 # 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
@@ -96,6 +96,19 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/meeting_scribe"]
+
+# ⚠️ **sdist 一定要自己列白名單**(2026-08-15 code review 實測抓到):只設
+# wheel 的話,hatchling 的 sdist 走「.gitignore 沒排除的都收」——`uv build
+# --sdist` 實際產出 203 個成員,裡面有 `data/voiceprints.npz`(全部的聲紋)、
+# `data/attendees.txt`(全部同仁的真名)、`CLAUDE.md`、`.claude/`、整個
+# `docs/dev/` 與 `tests/`。一次 `uv publish`,或一次把 `dist\*` 整包附上
+# Release(那裡本來就會有 `scribe2md.zip`),就是**不可撤回**的外洩,而
+# 「現有 repo 的歷史含聲紋與姓名、永遠不能轉 public」是硬規格。
+# wheel 那邊本來就乾淨(只收 packages 指到的目錄),缺的只有這一段。
+# ⚠️ **是白名單不是排除清單**:少一項只是打包出來少個檔(當場看得見),
+# 多一項是外洩(看不見而且不可逆)——同 scripts/package.py 的同一條理由。
+[tool.hatch.build.targets.sdist]
+only-include = ["src/meeting_scribe", "README.md", "LICENSE", "pyproject.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

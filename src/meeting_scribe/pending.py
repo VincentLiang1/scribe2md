@@ -165,6 +165,38 @@ def clear() -> None:
     shutil.rmtree(pending_dir(), ignore_errors=True)
 
 
+def rename_draft(old: str, new: str) -> None:
+    """名單/聲紋庫改名時,把落地草稿裡的**舊名字**一起換掉。
+
+    ⚠️ **不做的話舊名字會復活成第二個身分**(2026-08-15 code review 抓到):
+    草稿存的是名字字串本身(`persist` 逐字寫、`load` 逐字還原),而改名的
+    兩條路(名單表格那條、「修改名稱作業」那條)都不碰它。於是「轉完一份
+    30 分鐘的檔、自動填好名字還沒套用 → 中途去改那個人的名字 → 回頭開頁」
+    之後,下拉裡放回來的是**舊**名字(`allow_custom_value=True`,看不出
+    異狀,而使用者說過「自動識別的我會相信」);按下套用,舊名字被加回
+    名單、聲紋也在舊名字底下新建樣本——同一個人在庫裡以兩個字串存在,而
+    「同一場一個名字只給一群」那條約束對兩個**不同字串**完全不設防。
+
+    對照:候選(rivals)刻意不落地就是為了避開同一件事(見 app 的
+    `_restore_pending`),唯獨 names 這一份被漏掉了。"""
+    old, new = (old or "").strip(), (new or "").strip()
+    if not old or not new or old == new:
+        return
+    meta_file = pending_dir() / "meta.json"
+    if not meta_file.exists():
+        return
+    try:
+        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        names = meta.get("names") or {}
+        if not any(v == old for v in names.values()):
+            return
+        meta["names"] = {k: (new if v == old else v) for k, v in names.items()}
+        meta_file.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        logger.info("命名草稿裡的「%s」已跟著改成「%s」", old, new)
+    except Exception:
+        logger.exception("命名草稿改名失敗(草稿裡可能留著舊名字)")
+
+
 def update_names(names: dict[int, str]) -> None:
     """整份覆寫落地的草稿名字({講者標籤: 名字});沒有落地資料
     (套用後/從未轉檔)就略過。失敗只記 log:草稿是便利功能,

@@ -12,7 +12,7 @@ import logging
 
 import gradio as gr
 
-from meeting_scribe import attendees, convert, hotwords
+from meeting_scribe import attendees, convert, hotwords, pending
 from meeting_scribe import voiceprints as voiceprints_store
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,50 @@ def detect_rename(before: list[str], after: list[str]) -> tuple[str, str] | None
     return None
 
 
+def stranded(before: list[str], after: list[str]) -> list[tuple[str, int]]:
+    """這次編輯會讓哪些「還有聲紋的人」從名單上消失;[(名字, 樣本數)]。
+
+    ⚠️ **這是 `detect_rename` 回 None 那條路唯一的出聲機會**(2026-08-15
+    code review 抓到:那條路先前**什麼都不說**,而 `detect_rename` 的
+    docstring 白紙黑字寫著「那種情況只存名單,**並在訊息裡說清楚**」)。
+    一次整批補部門正是使用者實際做過的事(1de1af1 十三人、0f08b5f 二十八
+    人),而隔離環境實測那樣做的結果是:預告區不出現、儲存訊息只寫
+    「已儲存與會名單(69 人)」,聲紋庫卻一口氣多出 25 個對不上的名字。
+    漏改的症狀是那些人下次開會認不出來,而那個症狀長得像分群壞掉——
+    診斷會被帶去完全錯的方向。
+
+    也涵蓋「刻意刪掉一個還有聲紋的人」:那時提醒同樣是對的(他的聲紋還在
+    庫裡,下次會被自動填成一個名單上沒有的名字)。"""
+    if not before:
+        return []
+    left = set(after)
+    library = voiceprints_store.load()[0]
+    out = [(n, library.count(n)) for n in before if n not in left]
+    return [(n, c) for n, c in out if c]
+
+
+def _stranded_prompt(left: list[tuple[str, int]], saved: bool = False) -> str:
+    """「一次改了好幾個名字」的說明(預告用未來式、儲存後用過去式)。
+
+    **數字一定要講出來**(同 `_rename_prompt` 的理由):只說「有些人對不上」
+    的話,使用者無從判斷嚴不嚴重、也不知道要去補哪幾個。"""
+    shown = "、".join(f"「**{n}**」" for n, _c in left[:_ORPHANS_SHOWN])
+    rest = len(left) - _ORPHANS_SHOWN
+    if rest > 0:
+        shown += f"、等 {len(left)} 人"
+    samples = sum(c for _n, c in left)
+    head = ("⚠️ 這次**一次改動了好幾個名字**,工具無法確定誰對應誰,"
+            "所以聲紋庫**不會**跟著改")
+    tail = ("按下「儲存名單」之後," if not saved else "")
+    return (
+        f"{head}。{tail}{shown}的 **{samples} 個聲紋樣本**"
+        f"{'就' if not saved else '已'}只剩在聲紋庫裡、名單上沒有了"
+        "——**下次開會認不出他們**。\n\n"
+        "要補做的話:用最右邊的「修改名稱作業」一個一個改成新名字;"
+        "下次要一起改聲紋的話,**一次只改一個名字**再儲存。"
+    )
+
+
 def _preview_hidden():
     """預告區收起來(勾選一併回到預設的「要改」)。
 
@@ -85,9 +129,18 @@ def preview_rename(table):
     不能靠一個預設打勾的框帶過,必須維持「儲存後再問一次」(見
     `save_attendees`)。這裡只預告「等一下會被問」,免得那個追問又是憑空
     冒出來的。"""
-    pair = detect_rename(attendees.load(), _table_names(table))
+    before = attendees.load()
+    edited = _table_names(table)
+    pair = detect_rename(before, edited)
     if pair is None:
-        return _preview_hidden()
+        # 一次改了好幾個名字:對應不起來,聲紋庫不會動——但**一定要講**,
+        # 而且要在他按下儲存**之前**講(見 `stranded`)。勾選框跟著藏起來:
+        # 這條路沒有「一起改」可選,給一個按不動的框只會讓人以為按了就好
+        left = stranded(before, edited)
+        if not left:
+            return _preview_hidden()
+        return (gr.update(value=_stranded_prompt(left), visible=True),
+                gr.update(value=True, visible=False))
     old, new = pair
     plan = voiceprints_store.rename_plan(old, new)
     if plan.moving == 0:
@@ -134,6 +187,17 @@ def save_attendees(table, sync_voiceprints=True):
     那條路一定要走「儲存 → 看數字 → 按確認」。"""
     before = attendees.load()
     names = _table_names(table)
+    # ⚠️ **整份清空一律擋下來**:那多半是「全選 → 刪」或表格值送壞了,而
+    # 名單一旦寫成 0 bytes,每個人的下拉都空了、聲紋庫整批變成孤兒——
+    # 隔壁「清除全部聲紋」為同一等級的破壞性動作準備了確認框與正面表列,
+    # 這裡卻是一顆平凡的「儲存名單」。真的想清空,一個一個刪還是做得到
+    if before and not names:
+        return (
+            f"**沒有儲存**:這樣會把名單上的 {len(before)} 個人整個清空。"
+            "真的要清空請一列一列刪,或按「重新載入」把畫面復原。",
+            *_preview_hidden(), *_merge_ask_hidden(),
+            *_name_dropdowns(), gr.update(value=vp_summary()),
+        )
     attendees.save_all(names)
     msg = f"已儲存與會名單({len(attendees.load())} 人)。"
     # 追問區(合併專用)與待確認的改名;預告區一律收起來(它的任務結束了)
@@ -146,10 +210,17 @@ def save_attendees(table, sync_voiceprints=True):
         # 人、或只是把名單重新排序,中間欄就已經過期了
         return (message, *tail, *_name_dropdowns(), gr.update(value=vp_summary()))
 
-    pair = detect_rename(before, attendees.load())
+    after = attendees.load()
+    pair = detect_rename(before, after)
     if pair is None:
-        return done(msg)
+        # 對應不起來就只存名單——但**要在訊息裡說清楚**(見 `stranded`):
+        # 先前這條路一句話都沒有,而整批補部門正是使用者實際會做的事
+        left = stranded(before, after)
+        return done(msg if not left else f"{msg}\n\n{_stranded_prompt(left, saved=True)}")
     old, new = pair
+    # 名單那一半已經改掉了,落地的命名草稿要跟著改(見 pending.rename_draft)
+    # ——這與聲紋要不要一起改是兩件事,所以放在那個判斷之前
+    pending.rename_draft(old, new)
     plan = voiceprints_store.rename_plan(old, new)
     if plan.moving == 0:
         # 聲紋庫裡沒有這個名字:名單改完就結束,不必問
@@ -311,6 +382,9 @@ def _do_vp_rename(old: str, new: str):
     或是名單上還留著已經不存在的舊名字。"""
     moved = voiceprints_store.rename(old, new)
     attendees.rename(old, new)
+    # 落地的命名草稿也要跟著改,否則舊名字會在下次開頁時復活成第二個身分
+    # (見 pending.rename_draft)
+    pending.rename_draft(old, new)
     # ⚠️ 同 apply_rename:總數要數完整清單,known_names() 去重過
     all_names, _ = voiceprints_store.load()
     return (
@@ -605,7 +679,9 @@ def reload_voiceprints():
 
 def read_data_file(path) -> str:
     try:
-        return path.read_text(encoding="utf-8")
+        # utf-8-sig:編輯區讀到的第一個字如果是 BOM,存回去就多一個
+        # (同 attendees.load;那份 docstring 有完整理由)
+        return path.read_text(encoding="utf-8-sig")
     except OSError:  # 檔案不存在:給空編輯區,存檔時建立
         return ""
 
@@ -634,7 +710,7 @@ def replace_status() -> str:
     f = convert.replace_file()
     if not f.exists():
         return "目前無替換表(功能等同關閉)。"
-    rules, bad = convert.parse_rules(f.read_text(encoding="utf-8"))
+    rules, bad = convert.parse_rules(f.read_text(encoding="utf-8-sig"))
     msg = f"目前 {len(rules)} 條替換規則。"
     if bad:
         msg += (

@@ -18,13 +18,20 @@ def store_file() -> Path:
 
 
 def load() -> list[str]:
-    """回傳名單(去重、依加入順序保留、去除空白行)。"""
+    """回傳名單(去重、依加入順序保留、去除空白行)。
+
+    ⚠️ **用 utf-8-sig 讀**:這個檔的預期用法就包含「用記事本直接編」
+    (見 `data_tabs.orphan_names`),而任何一個以「UTF-8 with BOM」存檔的
+    編輯器都會在**第一行**前面留下 `\\ufeff`。純 utf-8 讀出來的第一個人
+    因此變成另一個 key:畫面上兩個名字一模一樣,聲紋卻對不上(摘要開始亮
+    「只在聲紋庫、不在名單上」),而使用者從下拉挑那個帶 BOM 的名字套用,
+    就在聲紋庫裡建立了第三個身分。utf-8-sig 對沒有 BOM 的檔完全無害。"""
     f = store_file()
     if not f.exists():
         return []
     out: list[str] = []
     seen: set[str] = set()
-    for line in f.read_text(encoding="utf-8").splitlines():
+    for line in f.read_text(encoding="utf-8-sig").splitlines():
         n = line.strip()
         if n and n not in seen:
             seen.add(n)
