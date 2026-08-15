@@ -19,10 +19,25 @@ from pathlib import Path
 import numpy as np
 
 from meeting_scribe import paths
+from meeting_scribe.types import UNKNOWN_SPEAKER
 
 logger = logging.getLogger(__name__)
 
 _VERSION = 1
+
+
+def anyone_to_name(count, hints) -> bool:
+    """這份成品**有沒有人可以命名**:有講者,或有「未知」那一段。
+
+    ⚠️ 兩者皆無時,整份落地是**沒有意義而且有害**的(使用者 2026-08-15
+    實機踩到):UI 端命名區一個框都不會渲染,而「有成品在等命名」的判準
+    (`app._naming_focus` 看 `paths_state`)卻成立——左欄那整組「開始下一份
+    工作」被收走,畫面上只剩「進階參數設定」。落地之後每次開頁還原都會
+    把那個狀態原封不動搬回來,重開程式也救不了。
+
+    「一位講者都沒有」是真的會發生的:「只錄電腦聲音」錄到一段沒有人聲
+    的音,逐字稿就只有一行標題。"""
+    return bool(count) or hints.get(UNKNOWN_SPEAKER) is not None
 
 
 def pending_dir() -> Path:
@@ -38,6 +53,10 @@ def persist(outputs, preview, count, voiceprints, hints, clips, names,
     if not outputs:
         # 沒有成品就沒有可接續的命名(整批停止/失敗)——保留舊落地,
         # 不讓一次失敗的嘗試毀掉上一份還能接續的命名
+        return dict(clips or {})
+    if not anyone_to_name(count, hints or {}):
+        # 有成品、但一位講者都沒有:命名這件事根本不會發生,落地只會在
+        # 下次開頁把畫面卡在一個空的命名狀態(見 anyone_to_name)
         return dict(clips or {})
     try:
         d = pending_dir()
@@ -106,6 +125,12 @@ def load() -> dict | None:
         outputs = [p for p in meta.get("outputs", []) if Path(p).exists()]
         if not outputs:
             raise ValueError("輸出檔已不存在")
+        hints = {int(k): tuple(v) for k, v in meta.get("hints", {}).items()}
+        # ⚠️ **這一道守的是舊版留在使用者機器上的那些**:寫入端(app 的
+        # `_present_result`)已經不再落地「沒有人可命名」的成品,但先前寫下的
+        # 那一份還在磁碟上,不清掉的話程式更新後開頁照樣被還原、左欄照樣鎖著
+        if not anyone_to_name(int(meta.get("count", 0)), hints):
+            raise ValueError("這份落地沒有任何可命名的講者")
         voiceprints: dict = {}
         npz = pending_dir() / "voiceprints.npz"
         if npz.exists():
@@ -115,7 +140,7 @@ def load() -> dict | None:
             "outputs": outputs,
             "preview": meta.get("preview", ""),
             "count": int(meta.get("count", 0)),
-            "hints": {int(k): tuple(v) for k, v in meta.get("hints", {}).items()},
+            "hints": hints,
             "names": {int(k): v for k, v in meta.get("names", {}).items()},
             "voiceprints": voiceprints,
             # 試聽片段逐檔過濾:少檔只是該講者試聽鈕不亮,不整包報廢
@@ -127,7 +152,10 @@ def load() -> dict | None:
             "audit": _usable_audit(meta.get("audit")),
         }
     except Exception:
-        logger.warning("未完成命名的落地資料無法使用(過期或輸出檔被移走),已清除")
+        logger.warning(
+            "未完成命名的落地資料無法使用(過期、輸出檔被移走,"
+            "或裡面根本沒有可命名的講者),已清除",
+        )
         clear()
         return None
 

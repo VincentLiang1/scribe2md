@@ -139,6 +139,18 @@ _SRC_MODE_HINT = (
     "**選多檔或資料夾**:整批連轉、**不做命名**(只標「講者 1／2／3」),"
     "成品是原檔旁的 `<原檔名>.md`,已有同名 md 就跳過。"
 )
+# 整段沒聽到人說話時貼在預覽最前面(2026-08-15,與「左欄整組消失」同一批修:
+# 使用者用「只錄電腦聲音」錄了一段沒有人聲的音)。**空的逐字稿一定要有一句
+# 解釋**——不講的話畫面上就只有一行標題,而那看起來跟程式壞掉一模一樣。
+# 錄音與轉檔案共用同一句(兩邊的成因不同,但「先檢查聲音來源」是同一件事)
+# ⚠️ **預覽區是 `gr.Textbox` 不是 Markdown**:寫 `**粗體**` 只會讓星號原樣
+# 印在畫面上(Playwright 實拍抓到),所以這裡一律純文字,語氣與同區的
+# 「已依要求停止,逐字稿未完成。」那幾句一致
+_NO_SPEECH_NOTE = (
+    "這一段聲音裡沒有聽到任何人說話,所以逐字稿是空的,也沒有講者可以命名。\n"
+    "常見原因:收音時電腦其實沒有在出聲、麥克風被靜音或選錯裝置。"
+    f"音檔已經存起來了——確認聲音沒問題之後,可以用「{_MODE_FILE}」把它重轉一次。"
+)
 DEVICE_NAMES = {"cuda": "NVIDIA GPU", "intel-gpu": "Intel GPU", "cpu": "CPU"}
 # 「本機偵測」只報**實際在算的**裝置:標準機還有一顆 NPU(AI Boost),
 # 但本專案沒有任何運算跑在上面,列出來會讓人以為它在幫忙
@@ -1539,7 +1551,7 @@ def _analyse_for_relabel(md_path, media, transcript, named, progress, blocks=Non
 
 
 def _naming_page_updates(outputs, preview, voiceprints, clips, section,
-                         audit=None) -> tuple:
+                         audit=None, naming=True) -> tuple:
     """「成品/命名區」那一批更新(PAGE_UPDATE_LEN 個值)的**唯一**組法。
 
     轉檔收尾(_present_result)與開頁還原(_restore_pending)送的是同一
@@ -1547,6 +1559,11 @@ def _naming_page_updates(outputs, preview, voiceprints, clips, section,
     兩邊各抄一份,而 `_servable` 就是這樣在 _restore_pending 那份漏掉的
     (使用者 2026-08-06 真機踩到)。`section` = _name_section_updates
     的四元組原樣傳進來。
+
+    `naming=False` = 這份成品沒有任何人可以命名(見 `pending.anyone_to_name`):
+    下載區與預覽照常給,但 `paths_state` 要留空——它是「有沒有東西在等命名」
+    的判準(`_naming_focus` 據它收起左欄那整組),而命名區這時一個框都不會
+    渲染,兩邊對不起來的下場就是「左欄只剩進階參數設定」。
 
     下載區的值只在這裡與 `_page_reset_updates` 產生,見那裡的註解。"""
     (updates, unknown_update, aud_updates, unknown_aud_update,
@@ -1557,7 +1574,7 @@ def _naming_page_updates(outputs, preview, voiceprints, clips, section,
         # 資料夾裡,下載不了但照樣改得到
         _servable(outputs), gr.update(value=preview, visible=True),
         *updates, unknown_update,
-        voiceprints, outputs,
+        voiceprints, outputs if naming else [],
         clips, None, gr.update(value=None),
         *aud_updates, unknown_aud_update,
         # 核對:狀態帶著「這一份的區塊與音檔來源」,面板關著等使用者點
@@ -1678,6 +1695,13 @@ def _present_result(outputs, preview, count, voiceprints, hints, clips,
     前置條件:進來時所有講者框/試聽鈕已是隱藏且清空(轉檔鏈經
     _start_run、錄音經 _reset_for_new_recording 保證),
     「維持隱藏」才能安全地送 gr.skip()(地雷詳見 _name_section_updates)。"""
+    naming = pending.anyone_to_name(count, hints)
+    if outputs and not naming:
+        # 有成品、卻連一位講者都沒有 = 整段沒聽到人說話。**一定要明講**:
+        # 不講的話畫面上只有一份空的逐字稿,而使用者(2026-08-15 錄了一段
+        # 沒有人聲的電腦聲音)第一個念頭是「程式壞了」。同一批修的還有
+        # 「左欄整組消失」——那才是他回報的症狀,但看到空稿子一樣會卡住
+        preview = f"{_NO_SPEECH_NOTE}\n\n{preview}"
     guesses, rivals, flags = _naming_clues(
         count, voiceprints, audit_flags, has_audit=bool(audit),
     )
@@ -1699,11 +1723,13 @@ def _present_result(outputs, preview, count, voiceprints, hints, clips,
                             prefill, audit=audit)
     # outputs 也回傳給 paths_state:套用名字時要寫回「真正的 output/ 檔案」,
     # 不能靠下載元件(gr.Files 當輸入時給的是 Gradio 快取副本,改了不會存回原檔)
+    # ——⚠️ 但一位講者都沒有時要留空,否則左欄整組被收走而命名區又是空的
+    # (使用者 2026-08-15 實機踩到,見 pending.anyone_to_name)
     return _naming_page_updates(
         outputs, preview, voiceprints, clips,
         _name_section_updates(count, hints, clips, prefill, sorted(flags),
                               has_audit=bool(audit), rivals=rivals),
-        audit=audit,
+        audit=audit, naming=naming,
     )
 
 
@@ -2454,6 +2480,39 @@ def _restore_recording():
 
 
 # ---- 文字、圖像→MD(第二分頁;把關在 docsrc、管線在 docpipe)----
+
+def _doc_summary(text):
+    """選檔摘要文字 → 元件更新:**空的時候整塊藏起來**。
+
+    ⚠️ 空的 `gr.Markdown` 高度是 0、畫面上什麼都看不到,**但它仍是 Column
+    的一個孩子、照樣吃掉兩份 layout_gap**:2026-08-15 Playwright 實測(使用者
+    截圖圈出「選檔鈕與『開始轉檔』中間空一大段」),選檔列底到「開始轉檔」列頂
+    量到 **40px**,而同一欄其他每一對相鄰列都是 20px。藏起來之後回到 20px
+    ——gradio 6 對 visible=False 是整個不渲染(開頁)或加 `.hidden`(執行中
+    切換),兩種都不佔 gap。**改回常駐的空元件就會把那段空白帶回來。**
+
+    做法與「🎙️ 聲音→MD」的 `_src_summary` 一致(兩個分頁本來就該長一樣);
+    doctab 回的是純字串(它刻意不 import gradio),顯不顯示到這一層才決定。
+    """
+    return gr.update(value=text, visible=bool(text))
+
+
+def _doc_picked(picker, current, recursive):
+    """「選擇檔案…」/「選擇資料夾…」共用的收尾:(路徑欄, 摘要更新)。"""
+    path, summary = picker(current, recursive)
+    return path, _doc_summary(summary)
+
+
+def _doc_clear():
+    """「清空」:路徑欄與摘要一起回到空的狀態(摘要連帶收起來)。"""
+    path, summary = doctab.clear_paths()
+    return path, _doc_summary(summary)
+
+
+def _doc_preview(text, recursive=True):
+    """路徑欄打字/切「包含子資料夾」時重算摘要。"""
+    return _doc_summary(doctab.preview_summary(text, recursive))
+
 
 def _doc_start():
     """文件批次鏈第一步:鎖介面 + 亮「停止」。
@@ -3470,7 +3529,13 @@ def build_ui() -> gr.Blocks:
                                 "清空", scale=0, min_width=80,
                                 elem_id="doc-clear-btn",
                             )
-                        doc_summary = gr.Markdown("", elem_classes=["pad-x"])
+                        # ⚠️ **visible=False 不是可有可無的初始值**:常駐的
+                        # 空 Markdown 高 0 卻照吃兩份 layout_gap,選檔列與
+                        # 「開始轉檔」中間就會空出 40px(其他相鄰列都是 20px)。
+                        # 見 _doc_summary 的實測數據
+                        doc_summary = gr.Markdown(
+                            "", visible=False, elem_classes=["pad-x"],
+                        )
                         # **三顆同一列**(使用者 2026-08-09 指定;原本是
                         # 「開始轉檔/停止」一列、「開啟輸出資料夾」獨佔一列)
                         # ——省掉一列 60px(鈕高 40 + gap 20),而那三顆本來就
@@ -4125,21 +4190,25 @@ def build_ui() -> gr.Blocks:
         # 見 doctab.preview_summary)——所以貼上路徑時就算前端沒觸發 input
         # 事件、摘要沒更新,按下去照樣會轉。「包含子資料夾」也要重算摘要:
         # 它會改變資料夾展開的結果,勾掉之後可能一個檔都不剩
+        # 四條路都經過 app 這一層的薄包裝(_doc_summary):摘要為空時要把
+        # 元件藏起來,而 doctab 刻意不 import gradio、回的是純字串
         doc_files_btn.click(
-            doctab.pick_files, inputs=[doc_src, doc_recursive],
+            functools.partial(_doc_picked, doctab.pick_files),
+            inputs=[doc_src, doc_recursive],
             outputs=[doc_src, doc_summary], show_progress="hidden",
         )
         doc_folder_btn.click(
-            doctab.pick_folder, inputs=[doc_src, doc_recursive],
+            functools.partial(_doc_picked, doctab.pick_folder),
+            inputs=[doc_src, doc_recursive],
             outputs=[doc_src, doc_summary], show_progress="hidden",
         )
         doc_clear_btn.click(
-            doctab.clear_paths, outputs=[doc_src, doc_summary],
+            _doc_clear, outputs=[doc_src, doc_summary],
             show_progress="hidden",
         )
         for doc_trigger in (doc_src.input, doc_recursive.change):
             doc_trigger(
-                doctab.preview_summary, inputs=[doc_src, doc_recursive],
+                _doc_preview, inputs=[doc_src, doc_recursive],
                 outputs=[doc_summary], show_progress="hidden",
             )
         # 連點空窗:js-only 先在前端 disable(同 run_btn 的作法)
