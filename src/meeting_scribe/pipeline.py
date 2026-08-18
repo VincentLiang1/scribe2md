@@ -196,7 +196,7 @@ def _run_transcribe(wav: Path, model_key: str, progress):
         return transcribe.transcribe(wav, model_key=model_key, progress=progress)
 
 
-def _run_diarize(wav: Path, num_speakers: int, progress):
+def _run_diarize(wav: Path, num_speakers: int, progress, features_out=None):
     """講者分析:同上,優先走子行程。
 
     ⚠️ 這一支**也**要搬出去,只搬轉錄是不夠的:sherpa 的 pybind11 綁定在
@@ -213,7 +213,8 @@ def _run_diarize(wav: Path, num_speakers: int, progress):
         proc = diarproc.DiarProcess(below_normal=True)
         proc.start()
         proc.on_progress = progress
-        return proc.diarize(wav, num_speakers=num_speakers)
+        return proc.diarize(
+            wav, num_speakers=num_speakers, features_out=features_out)
     except cancel.Cancelled:
         raise
     except Exception:
@@ -221,7 +222,9 @@ def _run_diarize(wav: Path, num_speakers: int, progress):
             "講者分析子行程不可用,改在主行程執行(轉檔期間網頁介面會比較不順)",
             exc_info=True,
         )
-        return diarize.diarize(wav, num_speakers=num_speakers, progress=progress)
+        return diarize.diarize(
+            wav, num_speakers=num_speakers, progress=progress,
+            features_out=features_out)
     finally:
         if proc is not None:
             proc.close()
@@ -232,6 +235,7 @@ def _transcribe_and_diarize(
     model_key: str,
     num_speakers: int,
     report: Callable[[str, float], None],
+    features_out: Path | None = None,
 ):
     """執行轉錄與講者分析,合成單一進度回報。
 
@@ -267,7 +271,7 @@ def _transcribe_and_diarize(
         segments, device = _run_transcribe(
             wav, model_key, sub_progress("transcribe"))
         turns, voiceprints, quality = _run_diarize(
-            wav, num_speakers, sub_progress("diarize"))
+            wav, num_speakers, sub_progress("diarize"), features_out)
         return segments, device, turns, voiceprints, quality
 
     # gr.Progress 每次呼叫都經 contextvars 解析回報管道,而 worker 執行緒
@@ -281,7 +285,7 @@ def _transcribe_and_diarize(
         )
         fut_d = ex.submit(
             contextvars.copy_context().run, _run_diarize, wav,
-            num_speakers, sub_progress("diarize"),
+            num_speakers, sub_progress("diarize"), features_out,
         )
         segments, device = fut_t.result()
         turns, voiceprints, quality = fut_d.result()
@@ -390,8 +394,13 @@ def run_pipeline(
                 cancel.check()
 
                 report("轉錄與講者分析")
+                # 分群特徵檔**跟著 md 走**(這條路是 output/)。relabel 是從
+                # md 出發找同層同名的東西,放到別處等於白存
                 segments, device, turns, voiceprints, quality = (
-                    _transcribe_and_diarize(wav, model_key, num_speakers, report)
+                    _transcribe_and_diarize(
+                        wav, model_key, num_speakers, report,
+                        features_out=diarize.features_path(out_dir / src.name),
+                    )
                 )
 
         spoken = merge.assign_speakers(segments, turns)
@@ -437,8 +446,12 @@ def transcribe_to_markdown(
                 cancel.check()
 
                 report("轉錄與講者分析")
+                # 批次的 md 落在原檔旁邊,特徵檔跟著它。⚠️ **這條路更需要**:
+                # 這個分頁沒有「講者人數」可填、一律自動偵測,而使用者不會
+                # 逐份回頭看——分壞了,事後改人數是唯一的救
                 segments, _device, turns, _vp, quality = _transcribe_and_diarize(
                     wav, model_key, num_speakers, report,
+                    features_out=diarize.features_path(src),
                 )
 
         report("輸出")

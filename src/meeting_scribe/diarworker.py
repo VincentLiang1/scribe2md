@@ -129,6 +129,9 @@ def main(argv: list[str] | None = None) -> int:
                 _reply(_result(*diarize.diarize(
                     msg["wav"], num_speakers=int(msg.get("speakers", 0)),
                     progress=on_progress,
+                    # 分群特徵檔**由這裡寫**:vecs 是幾 MB 的 float 陣列,
+                    # 回應那條是手寫的 JSON 陣列,塞不進去也不該塞
+                    features_out=msg.get("features") or None,
                 )))
             elif msg["cmd"] == "poll":
                 st = state_for(kind)
@@ -139,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
                     read, float(msg["total"]),
                     num_speakers=int(msg.get("speakers", 0)),
                     progress=on_progress,
+                    features_out=msg.get("features") or None,
                 )))
             else:
                 _reply({"ok": False, "error": f"未知指令:{msg['cmd']}"})

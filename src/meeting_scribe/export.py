@@ -147,6 +147,16 @@ def check_first(quality: list) -> list:
     return sorted(low, key=lambda q: q.cohesion)[:_CHECK_FIRST_MAX]
 
 
+def speaker_diagnostics(quality: list, spoken: list[SpokenSegment]) -> list[str]:
+    """公開入口(重設講者的重新分群要重建這一塊)。
+
+    **開一個公開名字而不是讓呼叫端去拿私有的**:上游一改名就會安靜壞掉
+    (同 diarize.voiceprints_for_spans 的理由),而診斷區塊的格式必須與
+    轉檔當下產生的那一份完全一致——兩邊各寫一套的話,重新分群過的逐字稿
+    檔尾會長得跟別人不一樣。"""
+    return _speaker_diagnostics(quality, spoken)
+
+
 def _speaker_diagnostics(quality: list, spoken: list[SpokenSegment]) -> list[str]:
     """講者標籤的診斷區塊(md 行清單;無資料回空清單)。
 

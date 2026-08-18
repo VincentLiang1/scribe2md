@@ -139,16 +139,22 @@ class DiarProcess:
 
     def finish(
         self, kind: str, wav: Path, total_sec: float, num_speakers: int = 0,
+        features_out: Path | str | None = None,
     ) -> tuple[list[SpeakerTurn], dict, list[SpeakerQuality]]:
-        """補完剩餘的塊 + 全域重聚,回傳 (turns, 聲紋, 分群品質)。"""
+        """補完剩餘的塊 + 全域重聚,回傳 (turns, 聲紋, 分群品質)。
+
+        features_out 只送**路徑**過去、由子行程自己落檔:那份特徵是每段
+        一個 192 維向量,幾 MB 的浮點數塞進這條手寫的 JSON 協定不划算。"""
         return self._turns_reply({
             "cmd": "finish", "kind": kind, "wav": _abs(wav),
             "total": total_sec, "speakers": num_speakers,
+            "features": _abs(features_out) if features_out else "",
             "progress": self.on_progress is not None,
         })
 
     def diarize(
         self, wav: Path, num_speakers: int = 0,
+        features_out: Path | str | None = None,
     ) -> tuple[list[SpeakerTurn], dict, list[SpeakerQuality]]:
         """離線整檔一次做完(檔案轉檔用),等同 diarize.diarize()。
 
@@ -157,6 +163,7 @@ class DiarProcess:
         結果就不同,不可互相代用(理由寫在 diarworker 那一段)。"""
         return self._turns_reply({
             "cmd": "diarize", "wav": _abs(wav), "speakers": num_speakers,
+            "features": _abs(features_out) if features_out else "",
             "progress": self.on_progress is not None,
         })
 

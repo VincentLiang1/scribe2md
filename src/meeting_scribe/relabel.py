@@ -24,8 +24,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from meeting_scribe import export, srcfile
+from meeting_scribe import diarize, export, srcfile
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.types import UNKNOWN_SPEAKER, SpokenSegment
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,107 @@ def find_media(md_path: Path) -> Path | None:
         if candidate.is_file():
             return candidate
     return None
+
+
+def _block_bounds(t: Transcript) -> list[tuple[float, float]]:
+    """每個區塊的時間範圍(下一段的起點就是這一段的終點,同 Transcript.spans)。"""
+    out = []
+    for i, b in enumerate(t.blocks):
+        end = t.blocks[i + 1].start if i + 1 < len(t.blocks) else b.start + _TAIL_SEC
+        out.append((b.start, end))
+    return out
+
+
+def _labels_for_blocks(t: Transcript, turns: list) -> list[int]:
+    """每個 md 區塊在新分群裡屬於誰(區間內講最久的那一位)。
+
+    ⚠️ **區塊是原子的、拆不開**:一個區塊如果當初就把兩個人混在一起,
+    這裡只能挑講得比較久的那一位。所以「往少的方向改」一定準(合併是
+    粗化,區塊邊界是真值的超集),往多的方向改則受限於原本的粒度——
+    這一點要寫在介面上,不能讓人填了 5 卻安靜地只拿到 3。"""
+    out: list[int] = []
+    last = 0
+    for lo, hi in _block_bounds(t):
+        by: dict[int, float] = {}
+        for tu in turns:
+            mid = (tu.start + tu.end) / 2
+            if lo <= mid < hi:
+                by[tu.speaker] = by.get(tu.speaker, 0.0) + (tu.end - tu.start)
+        if by:
+            last = max(by.items(), key=lambda kv: kv[1])[0]
+        # 區間內一段都沒有(靜默、或被切掉的碎段):沿用前一段的講者,
+        # 總比丟一個不存在的編號給下游好
+        out.append(last)
+    return out
+
+
+def recluster_md(md_text: str, turns: list, quality: list) -> str:
+    """拿新的分群結果改寫逐字稿的講者標籤,**內文一個字都不動**。
+
+    做法是**逐行改寫**而不是重建:`parse` 會把區塊內的多行併成一行
+    (它只為了取線索),照它重建等於順手改掉使用者的排版。這裡只動
+    「`**名字** (時:分:秒)`」那幾行與檔尾的診斷區塊。
+
+    ⚠️ **絕對不要把相鄰的同人區塊併起來**(2026-08-18 實機災情,原本真的
+    這樣做):併掉的是**下一次重新分群唯一能用的粒度**。使用者按了 4 → 2 →
+    1,那個「1」把 417 個區塊併成 1 個,之後再按 2、按 3 都只能在一個區塊上
+    重新分配——**永遠回不去了**,而畫面上看起來一切正常。
+
+    保留每一行標籤,重新分群就是**可以反覆做的**:每次都拿原本那 417 個
+    區塊重新分配,改錯了再改回來即可。代價只是同一位連續發言時會出現
+    幾行同名標籤——那是原本就存在的發言輪次界線(時間戳是真的),
+    比「改壞了救不回來」便宜太多。
+
+    檔尾的診斷區塊整塊換成新的:群數、輪次、一致性全變了,留著舊的比
+    沒有更糟。"""
+    t = parse(md_text)
+    labels = _labels_for_blocks(t, turns)
+    # 依「在檔案裡第一次出現」重編號,讀者看到的順序才與編號一致
+    order: dict[int, int] = {}
+    for lab in labels:
+        if lab != UNKNOWN_SPEAKER and lab not in order:
+            order[lab] = len(order)
+
+    def label_name(lab: int) -> str:
+        # 顯示規則(含「未知」)全 repo 只有 export.speaker_label 一份,
+        # 這裡只負責把新分群的標籤換算成顯示用的編號
+        return export.speaker_label(
+            UNKNOWN_SPEAKER if lab == UNKNOWN_SPEAKER else order[lab])
+
+    bounds = _block_bounds(t)
+    out: list[str] = []
+    spoken: list[SpokenSegment] = []
+    i = 0
+    for line in md_text.splitlines():
+        if export.starts_diagnostics(line):
+            break
+        m = _SPEAKER_RE.match(line.strip())
+        if m is None:
+            out.append(line)
+            continue
+        lab = labels[i]
+        lo, hi = bounds[i]
+        i += 1
+        # **每一個區塊都留一行標籤**(哪怕跟上一段同一位),理由見 docstring:
+        # 那些界線是下一次重新分群唯一的粒度來源
+        spoken.append(SpokenSegment(
+            lo, hi, UNKNOWN_SPEAKER if lab == UNKNOWN_SPEAKER else order[lab], "",
+        ))
+        out.append(
+            f"**{label_name(lab)}** ({m.group(2)}:{m.group(3)}:{m.group(4)})")
+    text = "\n".join(out).rstrip("\n")
+    diag = export.speaker_diagnostics(quality, spoken)
+    return text + ("\n\n" + "\n".join(diag) if diag else "\n")
+
+
+def find_features(md_path: Path) -> Path | None:
+    """同一層、同檔名的分群特徵檔(`會議.md` → `會議.分群.npz`);沒有回 None。
+
+    判準與 find_media 同一套(同層同名,理由見那支)。⚠️ **有媒體檔不代表
+    有這個檔**:它是 v0.7.3 之後轉檔才會留下的,舊的逐字稿一律沒有——
+    面板的三種狀態(只有 md / md+媒體 / md+媒體+分群檔)就是這樣分出來的。"""
+    candidate = diarize.features_path(md_path)
+    return candidate if candidate.is_file() else None
 
 
 def rename(md_text: str, name_map: dict[str, str]) -> str:

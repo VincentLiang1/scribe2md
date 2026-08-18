@@ -662,10 +662,13 @@ def _rename_speakers(
 
 
 # 命名欄位摘錄長度:一行內讀得完的識別線索即可,不是給全文
-_HINT_QUOTE_CHARS = 40
+# 摘錄字數上限。⚠️ **40 → 24 是量出來的**(2026-08-18 精簡面板):40 字在
+# 482px 的左欄折成 **3 行**、整段線索佔 84px;認人其實看前二十幾字就夠——
+# 那是「這個人講話的樣子」,而真要確認,試聽鈕就在同一列
+_HINT_QUOTE_CHARS = 24
 
 
-def _hint_text(hint, rivals=None, can_audit=False) -> str | None:
+def _hint_text(hint, rivals=None) -> str | None:
     """命名欄位下的認人線索:「共 N 段發言・『最長一句摘錄』」,聲紋分不開
     的那幾位再加一行候選。
 
@@ -681,11 +684,13 @@ def _hint_text(hint, rivals=None, can_audit=False) -> str | None:
     (2026-08-15 Playwright 實測,見 docs/dev/ui.md)——它不是 markdown,
     所以既不必寫兩個空格,也不怕摘錄裡的符號被當成語法。
 
-    ⚠️ **指路只能指到那一列真的有的鈕**(`can_audit`;2026-08-15 使用者
-    截圖抓到):候選文字給**每一位**分不開的講者,而「🔍 核對」只亮在
-    差距最小的前三位——第一版兩邊沒有對齊,於是有幾列寫著「建議按
-    『🔍 核對』」,那一列卻連那顆鈕都沒有。沒有核對鈕時改指「▶️ 試聽」,
-    它本來就在,而且回答的正好是「這一群聽起來像誰」。"""
+    ⚠️ **線索裡不寫任何按鈕名稱**(2026-08-18 精簡面板時整句拿掉)。沿革:
+    原本候選後面附「建議按『🔍 核對』聽過再選」,而核對只亮在差距最小的
+    前三位——有幾列因此叫人去按一顆畫面上不存在的鈕(2026-08-15 使用者
+    截圖抓到,當時是加 `can_audit` 改指試聽)。**現在改成不指鈕**:那半句
+    是規則不是這一位的資訊,每一位重複一次、實測每列多 33px,而兩顆鈕
+    本來就在同一列右邊。指路改在面板頂部講一次,並同時提試聽與核對。
+    `test_hint_text_never_names_a_button` 守著。"""
     parts = []
     if hint:
         count, quote = hint[0], hint[1]  # 尾端另有該句起訖秒(剪試聽用),這裡用不到
@@ -693,13 +698,11 @@ def _hint_text(hint, rivals=None, can_audit=False) -> str | None:
             quote = quote[:_HINT_QUOTE_CHARS] + "…"
         parts.append(f"共 {count} 段發言・「{quote}」")
     if rivals:
-        # 措辭要短:左欄實寬只有 482px,摘錄本身在那個寬度就已經折成兩行,
-        # 這句再長一點整列就會高得很有存在感(實測加這一句多 33px)
-        btn = _AUDIT_LABEL if can_audit else _AUD_PLAY_LABEL
-        parts.append(
-            f"聲音同時像:{'、'.join(rivals)}"
-            f" — 分不出來,建議按「{btn}」聽過再選"
-        )
+        # ⚠️ **只講「像誰」,不再附「建議按 X 聽過再選」**(2026-08-18 精簡):
+        # 那半句是**規則**不是這一位的資訊,每一位重複一次——實測它讓每一列
+        # 多 33px,十位講者就是 330px。而「🔍 核對」「▶️ 試聽」本來就在同一列
+        # 的右邊,按鈕自己就是指路;那句話改成整個面板頂部講一次
+        parts.append(f"聲音同時像:{'、'.join(rivals)}")
     return "\n".join(parts) or None
 
 
@@ -1094,7 +1097,7 @@ def _servable(files) -> list:
     return out
 
 
-def _page_reset_updates(downloads_files) -> tuple:
+def _page_reset_updates(downloads_files, keep_context: bool = False) -> tuple:
     """整頁復位的共用前段(套用收工/轉檔鏈復位/開始錄音/跳過命名四處
     共用):下載區、預覽清空、30+1 個命名框藏回、vp/paths 狀態歸零、
     試聽整組復位。呼叫端各自追加尾端更新(路徑欄/雙鈕);唯一的參數是
@@ -1117,10 +1120,32 @@ def _page_reset_updates(downloads_files) -> tuple:
         # 核對面板打開時預覽是被藏起來讓位的,而套用名字/跳過命名這條路
         # 不會經過「完成核對」——只清值不改 visible 的話,收工之後右半邊
         # 就一直是空的,而且**再也回不來**(下一次轉檔也只清值)
-        gr.update(value="", visible=True), *cleared, {}, [],
+        gr.update(value="", visible=True), *cleared,
+        # ⚠️ **keep_context=True 時這幾個 state 一律 gr.skip()**(2026-08-18
+        # 實機踩到):「重新分群」的復位跟下一步在**同一條鏈**上,而下一步
+        # 的輸入正是 paths_state 與分群檔路徑——清掉的話按下去只會回一句
+        # 「找不到這份逐字稿的分群檔」,而畫面上明明有那顆按鈕。
+        # 轉檔鏈那條沒踩到是因為它的輸入是 src_path,而 _start_run 留著它
+        gr.skip() if keep_context else {},
+        gr.skip() if keep_context else [],
         *_audition_reset_updates(),
         *_audit_reset_updates(),
+        # 重新分群那一列:收工就收起來;同一條鏈上的復位則原樣留著
+        # (跟著閃一下再回來只是視覺雜訊)
+        *((gr.skip(), gr.skip(), gr.skip()) if keep_context
+          else (gr.update(visible=False), None,
+                gr.update(value=0, elem_classes=["recluster-n", "now-0"]))),
     )
+
+
+def _reset_for_recluster() -> tuple:
+    """「重新分群」前的整頁復位。
+
+    **具名而不是 lambda**:它與 `_run_recluster` 是同一條鏈上的兩步,而
+    「復位保不保留下一步要讀的東西」正是 2026-08-18 踩過的坑——具名之後
+    測試才盯得到接線(`demo.fns` 只認得出有名字的函式),換回
+    `_page_reset_updates(None)` 會當場變紅。"""
+    return _page_reset_updates(None, keep_context=True)
 
 
 def _audition(spk, clips, playing):
@@ -1161,6 +1186,7 @@ def _audition_ended():
 PAGE_UPDATE_LEN = (
     2 + MAX_SPEAKERS + 1 + 2 + 3 + MAX_SPEAKERS + 1
     + 1 + 5 + MAX_SPEAKERS + 1
+    + 3  # 重新分群那一列(顯示與否)+ 分群檔路徑 + 人數欄的值
 )
 
 def _run(src_text, model_label, num_speakers, cpu_cores=None, recursive=False,
@@ -1322,11 +1348,16 @@ def _name_section_updates(count, hints, clips, names, audit_flags=(),
             # 認得出來的人 mine 是空的,marks 就是空清單——**要照送**,
             # 不送的話上一檔的 class 會留在這一欄上
             choices, marks = _choice_layout(known, mine)
+            # ⚠️ **填好名字的那一列收起線索**(使用者 2026-08-18 選定):
+            # 線索是拿來「認出這是誰」的,認完就只剩佔位——實測每列 84px,
+            # 十位講者填到第八位時畫面有 672px 是已經用不到的東西。
+            # 原文存進 clues 交給 _toggle_clues:**清空名字就放回來**,
+            # 所以這不是丟掉資訊,是收合
             updates.append(gr.update(
                 visible=True, choices=choices, elem_classes=marks,
                 value=names.get(i, ""),
                 label=f"講者 {i + 1} 的名字",
-                info=_hint_text(hints.get(i), mine, can_audit=i in flagged),
+                info=_hint_text(hints.get(i), mine),
             ))
         else:
             updates.append(gr.skip())
@@ -1483,6 +1514,24 @@ def _run_relabel(src_text, cpu_cores, progress):
         for i, h in hints.items()
     }
     media = relabel.find_media(md_path)
+    # 分群檔在不在,決定第三種狀態——**而且要在分析之前讀**:有它的話聲紋
+    # 與每段相似度都直接從裡面算,一個字節的音訊都不必碰(見 _from_features)。
+    # ⚠️ **存在不等於用得動**:換過聲紋模型或格式舊了的檔要當成沒有,而且
+    # 要把原因講出來——擺一顆按下去才報錯的鈕,比不擺更糟
+    features = relabel.find_features(md_path)
+    feat = None
+    feat_note = ""
+    origin = ""
+    if features is not None:
+        try:
+            feat = diarize.load_features(features)
+            origin = (
+                "自動判斷" if feat.num_speakers == 0
+                else f"當初指定 {feat.num_speakers} 位"
+            )
+        except UserFacingError as e:
+            features = None
+            feat_note = f"\n{e}"
     voiceprints: dict = {}
     clips: dict = {}
     audit = _audit_payload_from_transcript(transcript, named, media)
@@ -1490,7 +1539,7 @@ def _run_relabel(src_text, cpu_cores, progress):
         try:
             voiceprints, clips, cohesion = _analyse_for_relabel(
                 md_path, media, transcript, named, progress,
-                blocks=audit.get("blocks"),
+                blocks=audit.get("blocks"), feat=feat,
             )
             for b, c in zip(audit.get("blocks") or [], cohesion):
                 b["cohesion"] = float(c)
@@ -1501,14 +1550,31 @@ def _run_relabel(src_text, cpu_cores, progress):
             # 為了它擋掉整個功能不划算(同 _cut_speaker_clips 的取捨)
             logger.exception("重設講者:媒體檔分析失敗,只提供命名")
             gr.Info("找到媒體檔但分析失敗,這次只能手動命名(詳見紀錄檔)。")
-    note = (
-        f"已讀取「{md_path.name}」,共 {len(named)} 位講者。"
-        + (
-            f"\n同一層找到「{media.name}」,可以試聽、命名後也會記住聲紋。"
-            if media is not None and voiceprints else
-            "\n同一層沒有同名的錄音檔,所以沒有試聽、也不會登記聲紋"
-            "(名字仍會寫回逐字稿)。"
+    have_media = media is not None and voiceprints
+    if not have_media:
+        tail = (
+            "\n同一層沒有同名的錄音檔——這次只能改名字:沒有試聽、"
+            "不會記住聲紋,也不能改人數。名字照樣寫得回逐字稿。"
         )
+    elif features is None:
+        tail = (
+            f"\n同一層找到「{media.name}」:可以試聽原音,命名後也會記住聲紋、"
+            "下次開會自動認人。"
+            + (feat_note or
+               f"\n沒有找到分群檔「{diarize.features_path(md_path).name}」,"
+               "所以這份改不了講者人數——分群檔是新版轉檔才會留下的,"
+               "舊的逐字稿沒有。要改人數只能重轉一次。")
+        )
+    else:
+        tail = (
+            f"\n同一層找到「{media.name}」與分群檔「{features.name}」:"
+            "可以試聽、命名後記住聲紋,而且**可以直接改講者人數重新分群**,"
+            "幾秒鐘就好、不必重轉。"
+        )
+    note = (
+        f"已讀取「{md_path.name}」,共 {len(named)} 位講者"
+        + (f"(當初是{origin}分出來的)" if origin else "")
+        + "。" + tail
     )
     return (*_present_result(
         [str(md_path)], f"{note}\n\n{relabel.read(md_path)}",
@@ -1517,8 +1583,74 @@ def _run_relabel(src_text, cpu_cores, progress):
         # 同層的錄音檔就夠了,不必重轉一支兩小時的檔。⚠️ **哪幾列亮**
         # 在這裡沒有分群品質可依據(那是轉檔當下才算得出來的),所以
         # 只亮「未知」——真正常需要核對的也是它
-        audit=audit,
+        audit=audit, features=features,
     ), None)
+
+
+def _check_recluster(count, features, paths) -> None:
+    """按下「重新分群」的把關。**掛在鏈頭、在整頁復位之前**。
+
+    ⚠️ **順序就是這條的重點**(2026-08-18 使用者回報「每次還要按 F5」):
+    原本檢查寫在 `_run_recluster` 裡,而它前面那一步已經把整頁復位了——
+    一拋錯,畫面停在被清空的狀態、又沒有東西填回去,只能重新整理。改成
+    第一步就檢查:`.then` 只在前一步成功後才跑(gradio 6.20 實測,見
+    docs/dev/ui.md),所以擋下來的時候**復位根本沒有發生**,畫面原封不動。
+
+    ⚠️ **前端已經先擋了一層**(按鈕會變灰,見 `NAME_PANEL_JS`),這一支是
+    安全網:前端的判斷可以被繞過(改 DOM、舊分頁),而「按了也沒用」的兩種
+    情況都會讓使用者付出代價(畫面重來、名字清掉),不能只靠畫面把關。"""
+    if not features or not paths:
+        raise gr.Error(
+            "找不到這份逐字稿的分群檔,不能改人數。", title="提醒",
+            print_exception=False,
+        )
+    n = _normalize_speakers(count)
+    if n <= 1:
+        # 0 是自動偵測——而自動判斷正是要改掉的那個結果;1 則是把整份逐字稿
+        # 都掛到同一位名下,那不是「分講者」而是「取消分講者」
+        raise gr.Error(
+            "請填 2 以上的講者人數。0 是自動偵測(那正是你要改掉的結果);"
+            "1 等於把整份逐字稿都算成同一個人,不必經過重新分群。",
+            title="提醒", print_exception=False,
+        )
+    now = len([x for x in relabel.parse(relabel.read(Path(paths[0]))).order
+               if x != "未知"])
+    if n == now:
+        raise gr.Error(
+            f"這份逐字稿現在就是 {now} 位講者,不必重新分群。"
+            "要改成別的位數再按一次。",
+            title="提醒", print_exception=False,
+        )
+
+
+def _run_recluster(count, features, paths, cpu_cores, progress=gr.Progress()):
+    """「重新分群」:拿分群特徵檔重算 → 改寫 md 的講者標籤 → 回到命名流程。
+
+    **不重轉、也不重讀音訊做分群**:貴的那一段(切分+抽聲紋)轉檔當下就
+    存下來了,這裡只做重聚——實測 0.3 秒。之後照樣走 `_run_relabel`,所以
+    試聽、聲紋登記、核對那一整套完全共用。
+
+    ⚠️ **重分群等於推翻上一次的命名,所以一律強制重新命名**(使用者
+    2026-08-18 指定):講者編號整個換過了,舊名字對應的那一位已經不存在。
+    走 `_run_relabel` 天然就是這個行為(它從改寫後的 md 重新建命名欄位)。
+
+    ⚠️ **上一輪已經 enroll 進聲紋庫的樣本不會自動撤銷**——那要使用者自己
+    去「🩺 聲紋健檢」看。這一點寫在使用說明裡,不在這裡默默處理:程式沒有
+    立場判斷哪一次的命名才是對的。"""
+    # 把關全部在 _check_recluster,而且是**鏈頭**那一步(理由見那支)
+    n = _normalize_speakers(count)
+    md_path = Path(paths[0])
+    try:
+        feat = diarize.load_features(features)
+        turns, _vps, quality = diarize.recluster(feat, n)
+    except UserFacingError as e:
+        raise gr.Error(str(e), title="提醒", print_exception=False) from None
+    md_path.write_text(
+        relabel.recluster_md(relabel.read(md_path), turns, quality),
+        encoding="utf-8",
+    )
+    logger.info("重新分群:%s → %d 位講者", md_path.name, n)
+    return _run_relabel(str(md_path), cpu_cores, progress)
 
 
 def _relabel_cohesion(wav, blocks, progress) -> list[float]:
@@ -1553,7 +1685,49 @@ def _relabel_cohesion(wav, blocks, progress) -> list[float]:
     return out
 
 
-def _analyse_for_relabel(md_path, media, transcript, named, progress, blocks=None):
+def _from_features(feat, transcript, named, blocks):
+    """有分群檔時的快路:(聲紋質心, 每輪發言的相似度),全部取自 npz。
+
+    ⚠️ **這條路一個字節的音訊都不讀**——原本的慢主要在兩件事:把整份音訊
+    轉成 16k、以及**把每一輪發言各抽一次聲紋**(使用者 2026-08-18 回報
+    「計算每段的相似度跑得較久」,而他手上那份有 417 輪)。兩者要的向量
+    轉檔當下就抽好在 .分群.npz 裡了。"""
+    import numpy as np
+
+    spans_by_name = transcript.spans()
+    vp: dict[int, np.ndarray] = {}
+    for name, spans in spans_by_name.items():
+        if name == "未知":  # 多人零碎語音的混合,絕不登記聲紋
+            continue
+        vecs = diarize.block_vectors(feat, spans)
+        good = vecs[np.linalg.norm(vecs, axis=1) > 0]
+        if not len(good):
+            continue
+        c = good.sum(axis=0)
+        n = float(np.linalg.norm(c))
+        if n > 0:
+            vp[named.index(name)] = (c / n).astype(np.float32)
+    cohesion: list[float] = []
+    if blocks:
+        bv = diarize.block_vectors(feat, [(b["start"], b["end"]) for b in blocks])
+        cohesion = [0.0] * len(blocks)
+        by_speaker: dict[int, list[int]] = {}
+        for i, b in enumerate(blocks):
+            by_speaker.setdefault(int(b["speaker"]), []).append(i)
+        for idxs in by_speaker.values():
+            rows = [i for i in idxs if np.linalg.norm(bv[i]) > 0]
+            if not rows:
+                continue
+            w = np.array([blocks[i]["end"] - blocks[i]["start"] for i in rows],
+                         dtype=float)
+            centroid = diarize._wcentroid(bv[rows], np.maximum(w, 0.01))
+            for i in rows:
+                cohesion[i] = float(bv[i] @ centroid)
+    return vp, cohesion
+
+
+def _analyse_for_relabel(md_path, media, transcript, named, progress,
+                         blocks=None, feat=None):
     """媒體檔 → (每位講者的聲紋質心, 試聽片段, 每一輪發言的相似度)。
 
     先轉 16k 單聲道再抽聲紋(`diarize.voiceprints_for_spans` 吃的就是那個
@@ -1568,20 +1742,26 @@ def _analyse_for_relabel(md_path, media, transcript, named, progress, blocks=Non
     hints = transcript.hints()
     spans = transcript.spans()
     cohesion: list[float] = []
-    with tempfile.TemporaryDirectory(prefix=pipeline.TMP_PREFIX) as tmp:
-        progress(0.05, desc=f"{media.name}:準備音訊")
-        wav = audio.to_wav16k(media, Path(tmp))
+    if feat is not None:
+        # 有分群檔:聲紋與相似度都算得出來,而且是毫秒級(見 _from_features)
+        progress(0.5, desc="讀分群檔")
+        vp, cohesion = _from_features(feat, transcript, named, blocks)
         cancel.check()
-        progress(0.15, desc=f"{media.name}:抽取聲紋")
-        vp = diarize.voiceprints_for_spans(
-            wav,
-            {named.index(n): s for n, s in spans.items() if n != "未知"},
-            progress=lambda f: progress(0.15 + 0.60 * f, desc="抽取聲紋"),
-        )
-        cancel.check()
-        if blocks:
-            progress(0.75, desc="計算每段的相似度")
-            cohesion = _relabel_cohesion(wav, blocks, progress)
+    else:
+        with tempfile.TemporaryDirectory(prefix=pipeline.TMP_PREFIX) as tmp:
+            progress(0.05, desc=f"{media.name}:準備音訊")
+            wav = audio.to_wav16k(media, Path(tmp))
+            cancel.check()
+            progress(0.15, desc=f"{media.name}:抽取聲紋")
+            vp = diarize.voiceprints_for_spans(
+                wav,
+                {named.index(n): s for n, s in spans.items() if n != "未知"},
+                progress=lambda f: progress(0.15 + 0.60 * f, desc="抽取聲紋"),
+            )
+            cancel.check()
+            if blocks:
+                progress(0.75, desc="計算每段的相似度")
+                cohesion = _relabel_cohesion(wav, blocks, progress)
     progress(0.95, desc="剪試聽片段")
     # 線索的鍵在呼叫端已改成哨兵/序號,這裡要的是同一組;直接照 named 重建
     clip_hints = {
@@ -1592,8 +1772,38 @@ def _analyse_for_relabel(md_path, media, transcript, named, progress, blocks=Non
     return vp, _cut_speaker_clips(media, clip_hints), cohesion
 
 
+# 「改成幾位」底下那行限制說明(設計稿定案文案)。⚠️ **一定要寫**:
+# md 的區塊是原子的,往多的方向改只能在現有段落之間重新分配,而使用者
+# 填了 5 卻安靜地只拿到 3 是最糟的一種——他不會知道
+# ⚠️ **只留那個限制**(2026-08-18 精簡:原本 46 字)。「在現有段落間重新
+# 分配」是實作細節,使用者要知道的只有「往少改一定準、同一段裡的兩個人
+# 拆不開」——完整說明在「❓ 使用說明」
+_RECLUSTER_HINT = "往少改一定準;當初就在同一段裡的兩個人拆不開,要重轉。"
+
+
+# 「沒有指定 features」與「指定為沒有」是兩回事,所以不能用 None 當預設:
+# `_run_relabel` 判斷分群檔用不動(換過聲紋模型/格式舊了)時會**明確**傳
+# None,那時候絕不可以又自己推一個回來
+_DERIVE_FEATURES = object()
+
+
+def _features_for(outputs) -> Path | None:
+    """成品清單 → 同層同名的分群檔(沒有回 None)。
+
+    ⚠️ **統一在匯流點推,不要各呼叫端各自傳**(2026-08-18 使用者回報:
+    「設定講者的功能出現時,也要提供改成幾位講者」):命名區會出現的路徑有
+    四條——檔案轉檔、現場收音、重設講者、開頁還原——當初只接了後兩條,
+    於是同一份逐字稿「剛轉完沒有那一列、重新整理之後就有了」。漏掉一條
+    使用者根本分不出是功能沒做還是這份檔不支援。"""
+    for p in outputs or []:
+        if str(p).lower().endswith(".md"):
+            return relabel.find_features(Path(p))
+    return None
+
+
 def _naming_page_updates(outputs, preview, voiceprints, clips, section,
-                         audit=None, naming=True) -> tuple:
+                         audit=None, naming=True,
+                         features=_DERIVE_FEATURES, count=0) -> tuple:
     """「成品/命名區」那一批更新(PAGE_UPDATE_LEN 個值)的**唯一**組法。
 
     轉檔收尾(_present_result)與開頁還原(_restore_pending)送的是同一
@@ -1608,6 +1818,8 @@ def _naming_page_updates(outputs, preview, voiceprints, clips, section,
     渲染,兩邊對不起來的下場就是「左欄只剩進階參數設定」。
 
     下載區的值只在這裡與 `_page_reset_updates` 產生,見那裡的註解。"""
+    if features is _DERIVE_FEATURES:
+        features = _features_for(outputs)
     (updates, unknown_update, aud_updates, unknown_aud_update,
      audit_updates, unknown_audit_update) = section
     return (
@@ -1624,6 +1836,18 @@ def _naming_page_updates(outputs, preview, voiceprints, clips, section,
         gr.update(value=[], choices=[]),
         gr.update(value="", choices=_all_names()), gr.update(visible=False),
         *audit_updates, unknown_audit_update,
+        # 重新分群那一列:只有「同層真的有分群檔」時才出現(第三種狀態)
+        gr.update(visible=features is not None),
+        str(features) if features is not None else None,
+        # ⚠️ **人數欄預設填「現在幾位」,不是猜一個建議值**(使用者
+        # 2026-08-18 選定):同一天實測過兩種標準做法(合併相似度的斷層、
+        # 譜分群的 eigengap),**都推算不出人數**——四份已知人數的錄音全被
+        # 回答「1~2 人」(見 docs/dev/pipeline.md)。既然算不出來,欄位就
+        # 該顯示**事實**;建議留給說明文字,兩件事不要混在同一個格子裡
+        # ⚠️ **值與「現在幾位」一起送**:前端要拿它當基準,才判斷得出
+        # 「使用者根本沒改」。class 是唯一送得進 DOM 的路(value 會被使用者
+        # 改掉,就不能再當基準了)
+        gr.update(value=count, elem_classes=["recluster-n", f"now-{count}"]),
     )
 
 
@@ -1742,7 +1966,7 @@ def _naming_clues(count, voiceprints, audit_flags, has_audit):
 
 
 def _present_result(outputs, preview, count, voiceprints, hints, clips,
-                    audit=None, audit_flags=()):
+                    audit=None, audit_flags=(), features=_DERIVE_FEATURES):
     """轉檔成果 → 命名區/試聽/下載/落地的整組 UI 更新(PAGE_UPDATE_LEN 個值)。
 
     檔案轉檔(_run)與現場收音收尾(_finish_recording)共用;回傳形狀
@@ -1784,7 +2008,7 @@ def _present_result(outputs, preview, count, voiceprints, hints, clips,
         outputs, preview, voiceprints, clips,
         _name_section_updates(count, hints, clips, prefill, sorted(flags),
                               has_audit=bool(audit), rivals=rivals),
-        audit=audit, naming=naming,
+        audit=audit, naming=naming, features=features, count=count,
     )
 
 
@@ -1815,12 +2039,13 @@ def _restore_pending():
     )
     if audit:
         audit = {**audit, "rivals": _rival_pool(rivals)}
+    # 分群檔在不在由 _naming_page_updates 統一從成品清單推(見 _features_for)
     return _naming_page_updates(
         data["outputs"], preview, data["voiceprints"], clips,
         _name_section_updates(data["count"], hints, clips, names,
                               audit_flags=audit.get("flags") or (),
                               has_audit=bool(audit), rivals=rivals),
-        audit=audit,
+        audit=audit, count=data["count"],
     )
 
 
@@ -2791,11 +3016,21 @@ def build_ui() -> gr.Blocks:
                                     # 「為/名/動」左半被切)
                                     # 精簡版說明(使用者指定:原版字太多);完整細節
                                     # 在「使用說明」分頁
+                                    # ⚠️ **只留「這一屏要做的事」**(2026-08-18
+                                    # 精簡:原本 83 字三行,講了四件事)。搬走的
+                                    # 三件——聲紋會被記住、下次自動辨識、未知欄
+                                    # 不記聲紋——「❓ 使用說明」都已經有。
+                                    # 「分不出來就按核對」原本印在**每一位**的
+                                    # 線索尾巴(每列多 33px),移到這裡講一次
                                     gr.Markdown(
-                                        "**為講者命名(選填)**——看摘錄、按「試聽」認人,"
-                                        "填好按「套用」:逐字稿換上名字並自動下載,"
-                                        "聲紋會被記住、下次自動辨識;留白維持「講者 N」。"
-                                        "「未知」欄只改文字、不記聲紋。",
+                                        # ⚠️ **同時提兩顆鈕**:核對只亮在該核對
+                                        # 的那幾列,只寫它等於叫某些列的人去按
+                                        # 一顆不存在的鈕——那正是 2026-08-15
+                                        # 在每一列的線索裡踩過的坑,搬到頂部
+                                        # 講一次也一樣要避
+                                        "**為講者命名(選填)**——看摘錄、按"
+                                        "「▶️ 試聽」或「🔍 核對」認人;"
+                                        "填好按「套用」,留白維持「講者 N」。",
                                         elem_classes=["pad-x"],
                                     )
                                     # 試聽的「出聲載體」(使用者指定 2026-07-18:不要
@@ -2816,6 +3051,81 @@ def build_ui() -> gr.Blocks:
                                     # 的膠囊小鈕;gradio 的 label 列塞不進按鈕,退而與
                                     # 整個下拉同列置中對齊)。字樣/顯示由 _run 與
                                     # _audition 系列統一管理
+                                    # 「改成幾位 + 重新分群」(設計稿 B 案,
+                                    # 使用者 2026-08-18 選定;A 案重用左欄的
+                                    # 「講者人數」要改個數字就得重走一趟讀取,
+                                    # C 案折疊成一顆鈕則把剛講清楚的能力又藏
+                                    # 起來)。⚠️ **只在第三種狀態出現**:逐字稿
+                                    # 同層要有錄音檔**與**分群檔,由
+                                    # _naming_page_updates 依 features 切;整組
+                                    # 包在一個 Column 裡、只切它一個 visible,
+                                    # 分開切會在三個元件之間留下空隙
+                                    with gr.Column(
+                                        visible=False, elem_id="recluster-box",
+                                    ) as recluster_box:
+                                        # 排法:標題、說明、輸入列各一行,最後
+                                        # 一條分隔線(使用者 2026-08-18 指定;
+                                        # 前一版把標題塞進輸入列裡,三個東西擠
+                                        # 在同一行反而讀不出「這是一組功能」)。
+                                        # ⚠️ **標題不用 Number 自己的 label**:
+                                        # gr.Number 的 label 排在輸入框上面,
+                                        # 同列的按鈕就只能跟輸入框齊高、跟標題
+                                        # 錯開(使用者回報「高低有差,怪怪的」)
+                                        # 兩段文字的樣式照抄命名列的
+                                        # 「講者 N 的名字」與「共 N 段發言…」
+                                        # (使用者 2026-08-18 指定),由 CSS
+                                        # 以這兩個 class 對齊
+                                        gr.Markdown(
+                                            "改成幾位講者",
+                                            elem_classes=["pad-x", "recluster-title"],
+                                        )
+                                        gr.Markdown(
+                                            _RECLUSTER_HINT,
+                                            elem_classes=["pad-x", "recluster-hint"],
+                                        )
+                                        # ⚠️ **排法照抄命名列**(使用者
+                                        # 2026-08-18 指定「跟下面的一樣」):
+                                        # 欄位 scale=1 佔滿、按鈕接在右邊,
+                                        # 連 Row 都不加 .pad-x(.name-row 也
+                                        # 沒有)——幾何一致就不必再補 padding。
+                                        # ⚠️ **不可以直接掛 .name-row**:
+                                        # `#name-box:not(:has(.name-row .block))`
+                                        # 拿它當「命名區有沒有東西」的判準,
+                                        # 掛上去會讓沒有講者時命名區也跑出來
+                                        with gr.Row(elem_classes=["recluster-row"]):
+                                            # ⚠️ **要 container=False**:留著
+                                            # 容器會多畫一層灰底圓框、還把整列
+                                            # 撐到 88px 高(使用者 2026-08-18
+                                            # 回報「上下行距太寬,有看到一個
+                                            # 灰色的圈圈」)。拿掉之後 input 自己
+                                            # 的圓角就是 10px——**與下拉可見框
+                                            # 的 10px 相同**(量出來的,不是猜的)
+                                            recluster_n = gr.Number(
+                                                value=2, precision=0,
+                                                # ⚠️ **下限 2 由前端設 min 屬性**
+                                                # (使用者 2026-08-18:上下箭頭
+                                                # 按得到負數),不設 gradio 的
+                                                # `minimum`——它的 preprocess
+                                                # 會對超限值拋**英文**錯誤
+                                                # (spec §8:訊息一律繁中),
+                                                # 範圍照本專案慣例在伺服器端
+                                                # clamp。見 CLUE_COLLAPSE_JS
+                                                show_label=False, container=False,
+                                                scale=1,
+                                                elem_classes=["recluster-n"],
+                                            )
+                                            # 大小與「試聽」一致(size="sm" →
+                                            # 13px、高 28、圓角 999px);scale=0
+                                            # 讓它維持自身寬度靠右,不設的話會
+                                            # 跟輸入框一起長,實測撐到 225px
+                                            recluster_btn = gr.Button(
+                                                "🔀 重新分群", scale=0, size="sm",
+                                                elem_id="recluster-btn",
+                                            )
+                                    # 分群檔路徑:重新分群時要讀它。放 State
+                                    # 而不是每次重推,是因為那一列的顯示與這個
+                                    # 值必須同進同出(見 _naming_page_updates)
+                                    features_state = gr.State(None)
                                     name_inputs = []
                                     audition_btns = []
                                     # 「🔍 核對」只亮在該核對的那幾列(設計稿方案 B,
@@ -3818,6 +4128,9 @@ def build_ui() -> gr.Blocks:
             # 的尾端完全一致(那兩支各組一次值,錯位就是「音檔跑到表格裡」)
             audit_state, audit_player, audit_table, audit_pick, audit_name,
             audit_panel, *audit_btns, unknown_audit_btn,
+            # 重新分群那一列(顯示與否)+ 分群檔路徑 + 人數欄的值,
+            # 順序同上面兩支的尾端
+            recluster_box, features_state, recluster_n,
         ]
         # 轉檔鏈三步依序:鎖介面+整頁復位 → 轉檔 → 收尾還原(順序保證與
         # 「復位必須是 _run 之前的另一批訊息」的理由見 _start_run)
@@ -3831,6 +4144,24 @@ def build_ui() -> gr.Blocks:
             inputs=[src_path, model, speakers, cores, recursive, source_mode],
             outputs=[*page_outputs, src_path],
             # 進度條預設會在「每個輸出元件」上各畫一份;指定只畫在預覽區
+            show_progress_on=preview,
+        )
+        # 「重新分群」:與轉檔鏈同一個形狀(先整頁復位再跑)——_present_result
+        # 的前置條件是「進來時所有講者框/試聽鈕已隱藏且清空」,少了復位那一步
+        # 就會踩到 _name_section_updates 那串 gr.skip() 的地雷
+        # ⚠️ **檢查排在復位之前**:`.then` 只在前一步成功後才跑,所以
+        # 擋下來的時候整頁復位根本沒有發生,畫面原封不動——反過來寫的話
+        # 一報錯就停在被清空的畫面上,只能按 F5(2026-08-18 使用者回報)
+        recluster_btn.click(
+            _check_recluster,
+            inputs=[recluster_n, features_state, paths_state],
+            show_progress="hidden",
+        ).then(
+            _reset_for_recluster, outputs=page_outputs, show_progress="hidden",
+        ).then(
+            _run_recluster,
+            inputs=[recluster_n, features_state, paths_state, cores],
+            outputs=[*page_outputs, src_path],
             show_progress_on=preview,
         )
         # 收尾:按鈕/路徑欄還原,依路徑欄有無內容決定「開始」亮不亮
@@ -4118,6 +4449,10 @@ def build_ui() -> gr.Blocks:
         demo.load(
             _restore_pending, outputs=page_outputs, show_progress="hidden",
         )
+        # 「填好名字的那一列收起線索」:純前端,開頁掛一次就自己維持
+        # (裡面裝 MutationObserver 與 input/change 監聽,見 CLUE_COLLAPSE_JS
+        # ——為什麼不在伺服器端做,那段註解有寫)
+        demo.load(None, js=ui_style.CLUE_COLLAPSE_JS)
         # 開頁時把名單表格與聲紋那三個元件**重新讀一次檔**(2026-08-15 code
         # review 抓到)。⚠️ 它們的值是 `build_ui` **建構當下**的快照,而
         # build_ui 一個行程只跑一次——工具開著的期間用記事本或 git 改過

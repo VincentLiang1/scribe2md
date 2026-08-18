@@ -426,6 +426,94 @@ body:has(:is(#stop-btn, #rec-stop-btn):not([disabled]))
    疊出半頁空白)。列內渲染出 .block(=命名框可見)才顯示整列;
    :has 不支援的舊瀏覽器只是多出空白,功能不受影響 */
 .name-row { align-items: center; }
+/* 填好名字的那一列把線索藏起來(class 由 CLUE_COLLAPSE_JS 切;**藏不是刪**
+   ——清空名字就回來)。線索是拿來認人的,認完就只剩佔位:實測每列 50px,
+   十位講者填到第八位時畫面上有 400px 是已經用不到的東西 */
+.name-row.clue-collapsed .info-text { display: none !important; }
+/* 「重新分群」按了也沒用時直接變灰(判斷在前端,見 CLUE_COLLAPSE_JS)。
+   ⚠️ 用 .is-blocked 而不是 :disabled 上色:gradio 自己也會在轉檔中把按鈕
+   設成 disabled,兩者混用的話「正在跑」與「不能按」會長得一樣 */
+#recluster-btn.is-blocked { opacity: .45; cursor: not-allowed; }
+/* 「改成幾位講者」那一區:標題、說明、輸入列各一行,最後一條分隔線
+   (使用者 2026-08-18 指定的排法)。
+   ⚠️ **輸入列的幾何照抄命名列**(同日再指定「跟下面的一樣」):欄位
+   `scale=1` 佔滿、按鈕接在右邊,兩列的左右緣自然對齊——所以這裡**不必**
+   再補 padding、width 或 min-width。先前那一版把標題也塞進同一列,才需要
+   一整串覆寫:gradio 的 `.block` 自帶 `width: 100%`,三個元素各要 422px、
+   加上按鈕 160px 共 1004px,直接爆出 438px 的卡片(用 Playwright 量出來的,
+   盲改三次都沒中——見 docs/dev/verification.md)。 */
+/* 標題與說明**照抄命名列的兩段文字**(使用者 2026-08-18 指定;數值是量
+   出來的):「講者 N 的名字」= 14px / 600 / 灰,「共 N 段發言…」= 12px /
+   400 / 灰。⚠️ **顏色一律走主題變數**(深色模式;寫死會在暗底上變成黑字,
+   突變 M110 守的就是同一件事),量到的值只當 fallback。
+   ⚠️ 左緣:命名列的兩段文字都在 x=94,而 .block.pad-x.padded 是 96
+   ——pad-x 的 8px 收成 6px 就對齊了 */
+#recluster-box > .pad-x { padding-left: 6px !important; }
+/* ⚠️ **一定要連 `p` 一起指定**:markdown 的段落有自己的顏色
+   (量到 rgb(29,29,31) 黑),只設在 .md 容器上會被它蓋掉——而容器的
+   computed style 看起來是對的,所以光量容器會以為改好了(2026-08-18
+   就是這樣以為改完,截圖一看標題還是黑的) */
+.recluster-title .md,
+.recluster-title .md p {
+  font-size: var(--block-label-text-size, 14px) !important;
+  font-weight: 600 !important;
+  color: var(--body-text-color-subdued, #6e6e73) !important;
+}
+.recluster-hint .md,
+.recluster-hint .md p {
+  font-size: var(--block-info-text-size, 12px) !important;
+  color: var(--block-info-text-color, #6e6e73) !important;
+  line-height: 1.4 !important;
+}
+.recluster-hint .md strong { font-weight: 600; }
+.recluster-row {
+  align-items: center;
+  /* 輸入框的右緣要與下拉齊(量出來下拉是 94~384):輸入框 scale=1 吃掉
+     「可用寬 − 按鈕 − gap」,gradio 的預設 gap 是 20px,實測輸入框到 394
+     ——把 gap 拉到 30 剛好補上那 10px(使用者 2026-08-18:「輸入數字的
+     格子比較長一點」) */
+  gap: 30px;
+  /* 左右緣對齊命名列(量出來的):下拉的可見框 x=94、試聽鈕右緣 516,
+     而這一列的 Row 是 80~518——所以左邊補 14px、右邊補 2px */
+  padding: 0 2px 0 14px;
+}
+/* 按鈕縮到內容寬(同「試聽」的 100px 那種尺寸):gradio 的按鈕預設
+   min-width 160px,不放掉的話 size="sm" 只縮高度、寬度照樣 160
+   (使用者 2026-08-18:「做成像是試聽按鈕的大小」) */
+/* 輸入框的圓角要與下面的下拉一致(使用者 2026-08-18:「四個圓角的角度
+   不對」)。⚠️ **畫圓角的不是 input 自己**——它 radius 0、只有背景色;
+   圓的是外面那兩層(.block 與 .wrap)的 **22px** 在裁切。而下拉的可見框
+   (.wrap.svelte-1xfsv4t)量出來是 **10px**,所以三層都要指定,只改 input
+   一點作用都沒有 */
+.recluster-row .recluster-n,
+.recluster-row .recluster-n > .wrap,
+.recluster-row .recluster-n input {
+  border-radius: 10px !important;
+}
+/* 按鈕的尺寸與「試聽」完全一致(使用者 2026-08-18:「要跟試聽一樣長」)。
+   ⚠️ **抄的是 .aud-btn 的 font-size 與 padding,不是寫死寬度**:試聽的
+   100px 本來就是內容撐出來的,寫死寬度只會在換字樣或換字型時對不上。
+   gradio 的 size="sm" 給的是更小的一號,所以要蓋掉 */
+#recluster-btn {
+  min-width: auto !important;
+  /* ⚠️ 只放掉 min-width 是不夠的:輸入框 scale=1 會把空間全吃走,按鈕被
+     壓成 28px 寬、文字直排(2026-08-18 量到)。要同時擋住收縮 */
+  flex: 0 0 auto !important;
+  white-space: nowrap;
+  font-size: 13px !important;
+  padding: 4px 14px !important;
+}
+/* 與下面的命名列之間畫一條線——**與命名列彼此之間那條同一個樣式**
+   (`.name-row + .name-row`),不要另外發明一種灰 */
+#recluster-box {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--input-border-color);
+  /* 三行(標題/說明/輸入列)之間收緊,讀起來才是**一組**功能:預設是
+     layout-gap 20px + #name-box .pad-x 的 10px = 每行之間 30px,實測那樣
+     鬆到像三件不相干的東西 */
+  gap: 6px !important;
+}
+#recluster-box .pad-x { margin-bottom: 0 !important; }
 .name-row:not(:has(.block)) { display: none !important; }
 /* 按鈕列整列空(該列的鈕全隱藏)時收掉,不留 layout_gap 疊出的空白
    (同 .name-row 的 :has 技巧)。判斷用 <button> 而非 .block:
@@ -973,6 +1061,67 @@ def rival_classes(count: int) -> list[str]:
 # #theme-menu(右上齒輪)設定:點選當下就寫 localStorage,「深色/淺色」帶
 # __theme 參數重載讓 gradio 原生套用(官方支援、優先於系統偏好),「系統」
 # 移除參數、交還給系統偏好;下次開頁網址沒帶參數時,自動用存檔值補上還原。
+# 「填好名字的那一列收起線索」——**純前端**(使用者 2026-08-18 選定)。
+#
+# ⚠️ **為什麼不在伺服器端做**(2026-08-18 實機驗過才知道):gradio 6.20 對
+# Dropdown 的 `gr.update(info=…)` **不會重繪**——事件有跑、佇列有進
+# (Playwright 看得到兩個 join)、同一批送的 `label` 也確實變了,就只有
+# info 不動。要讓它吃下去得連 `choices`/`visible` 一起送(等於整欄重建,
+# 還會把候選的琥珀排序一起洗掉),為了收合一行字不值得。
+#
+# 前端切一個 class 就好:DOM 一直帶著線索,只是被 CSS 藏起來——所以
+# **清空名字就會回來**,而且不必來回伺服器。
+CLUE_COLLAPSE_JS = """
+() => {
+  const apply = () => {
+    document.querySelectorAll('#name-box .name-row').forEach((row) => {
+      const inp = row.querySelector('input');
+      if (inp) row.classList.toggle('clue-collapsed', !!inp.value.trim());
+    });
+    // 「重新分群」按了也沒用的兩種情況,**在前端就擋住**(使用者
+    // 2026-08-18:送到後端才擋,錯誤跳出來時畫面已經被復位、要按 F5)。
+    // 現在幾位由伺服器以 now-N 這個 class 送進來——不能拿欄位的值當基準,
+    // 那個值正是使用者要改的東西
+    const box = document.querySelector('#recluster-box');
+    const btn = document.querySelector('#recluster-btn');
+    const num = box && box.querySelector('.recluster-n input');
+    if (btn && num) {
+      const cls = [...box.querySelectorAll('.recluster-n')]
+        .flatMap((e) => [...e.classList]).find((c) => c.startsWith('now-'));
+      // 上下箭頭的下限(使用者 2026-08-18 按到負數)。⚠️ 不能改用
+      // gr.Number 的 minimum:gradio 的 preprocess 會拋英文錯誤
+      if (num.getAttribute('min') !== '2') num.setAttribute('min', '2');
+      const now = cls ? parseInt(cls.slice(4), 10) : NaN;
+      const v = parseInt(num.value, 10);
+      let why = '';
+      if (!(v >= 2)) why = '請填 2 以上的講者人數';
+      else if (v === now) why = '這份逐字稿現在就是 ' + now + ' 位講者';
+      btn.title = why;
+      // ⚠️ **只解除自己設下的 disabled**:別人(gradio 自己、之後加的
+      // 「轉檔中不給按」)也會動這個屬性,無條件寫 false 等於把別人的
+      // 鎖一起打開
+      if (why) { btn.disabled = true; btn.classList.add('is-blocked'); }
+      else if (btn.classList.contains('is-blocked')) {
+        btn.disabled = false; btn.classList.remove('is-blocked');
+      }
+    }
+  };
+  apply();
+  if (!window.__msClueWatch) {
+    window.__msClueWatch = true;
+    // 命名區是轉檔完才長出來的,而且每次重繪都是新節點——觀察 DOM 才接得住
+    // ⚠️ 一併盯 min:svelte 重繪會照自己的 props 把屬性洗掉(它的
+    // minimum 是空的),只看 childList 補不回來
+    new MutationObserver(apply).observe(document.body,
+      {subtree: true, childList: true,
+       attributes: true, attributeFilter: ['min']});
+    // 打字與選單都要即時反應(capture:gradio 的元件會擋掉冒泡)
+    document.addEventListener('input', apply, true);
+    document.addEventListener('change', apply, true);
+  }
+}
+"""
+
 THEME_PERSIST_HEAD = """
 <script>
 (function () {

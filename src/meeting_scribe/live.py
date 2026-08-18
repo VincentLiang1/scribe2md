@@ -311,6 +311,7 @@ class LiveDiarizer:
         total_sec: float,
         num_speakers: int = 0,
         progress: Callable[[float], None] | None = None,
+        features_out: Path | None = None,
     ) -> tuple[list[SpeakerTurn], dict, list]:
         """該軌的講者分析結果(補完剩餘的塊 + 全域重聚 + 分群品質)。
 
@@ -318,13 +319,18 @@ class LiveDiarizer:
         重疊佔比較高),不該讓純 CPU 機為了共用路徑多付一成切分成本。
         子行程中途死掉也走這條——結果完全正確,只是白做了前面那些塊。"""
         if self._proc is None or kind not in self._paths:
-            return diarize.diarize(path, num_speakers=num_speakers, progress=progress)
+            return diarize.diarize(
+                path, num_speakers=num_speakers, progress=progress,
+                features_out=features_out)
         try:
             self._proc.on_progress = progress
-            return self._proc.finish(kind, path, total_sec, num_speakers)
+            return self._proc.finish(
+                kind, path, total_sec, num_speakers, features_out=features_out)
         except Exception:
             logger.warning("講者分析子行程收尾失敗,改在主行程重算", exc_info=True)
-            return diarize.diarize(path, num_speakers=num_speakers, progress=progress)
+            return diarize.diarize(
+                path, num_speakers=num_speakers, progress=progress,
+                features_out=features_out)
         finally:
             self._proc.on_progress = None
 
@@ -688,6 +694,14 @@ def run_live_finish(
         by_kind = {t.kind: t for t in tracks}
         n_tracks = len(tracks)
         per_track = num_speakers if n_tracks == 1 else 0
+        # 分群特徵檔跟著成品音檔走(成品與逐字稿都在 out_dir、同名)。
+        # ⚠️ **只有單軌才存**:線上會議是兩軌各自分群再合併,一份 npz
+        # 表達不了那個結果——事後拿它重分群會得到跟成品不一樣的東西,
+        # 那比不給還糟(同 per_track 只在單軌才傳的理由)
+        features_out = (
+            diarize.features_path(out_dir / f"{stem}.wav") if n_tracks == 1
+            else None
+        )
 
         def diarize_all(progress_fn: Callable[[float], None]) -> list[tuple]:
             # 錄音中的增量切分先收工:sherpa 引擎不可兩條執行緒併用。進行中
@@ -713,6 +727,7 @@ def run_live_finish(
                     progress=lambda f, i=i: progress_fn(
                         0.1 + 0.9 * (i + f) / n_tracks
                     ),
+                    features_out=features_out,
                 )
                 out.append((t, turns, vps, quality))
             return out

@@ -22,13 +22,14 @@ quality 是每位講者的分群品質(段數/時長/群內一致性),寫進逐�
 2、3);兩條路共用同一份塊界/擁有權(_ChunkAccum)與重聚邏輯。
 """
 import ctypes
+import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 
-from meeting_scribe import audio, cancel, models
+from meeting_scribe import audio, cancel, filelog, models
 from meeting_scribe.errors import UserFacingError
 from meeting_scribe.types import (
     MAX_SPEAKERS,
@@ -36,6 +37,8 @@ from meeting_scribe.types import (
     SpeakerQuality,
     SpeakerTurn,
 )
+
+logger = logging.getLogger(__name__)
 
 ProgressFn = Callable[[float], None]
 
@@ -801,6 +804,7 @@ def diarize(
     wav_path: str | Path,
     num_speakers: int = 0,
     progress: ProgressFn | None = None,
+    features_out: str | Path | None = None,
 ) -> tuple[list[SpeakerTurn], dict[int, np.ndarray], list[SpeakerQuality]]:
     """num_speakers=0 表示自動偵測人數。回傳 (turns, voiceprints, quality):
     voiceprints = {講者標籤: 原始聲紋質心},供聲紋庫登記/辨識;
@@ -811,6 +815,11 @@ def diarize(
     全程可見進度、控制記憶體),再對全部聲紋做全域重聚(剩下那一段)決定
     「誰是誰」,見 _ChunkAccum / _cluster docstring。現場收音走增量版
     (IncrementalDiarizer),兩者共用同一份塊界與重聚邏輯。
+
+    features_out 給了就把「切分 + 聲紋」落檔(見 save_features),事後改人數
+    才不必重跑這一趟。⚠️ **由跑分群的這一端寫檔,不要把 vecs 送回呼叫端**
+    ——檔案轉檔時這支跑在 diarproc 子行程裡,而那條回應是手寫的 JSON 陣列,
+    幾 MB 的 float 陣列塞不進去也不該塞。
     """
     sd = _get_diarizer()
     samples = audio.read_wav16k(wav_path)
@@ -819,6 +828,8 @@ def diarize(
         (lambda f: progress(_SEG_TOTAL_FRAC * f)) if progress is not None else None
     )
     accum = _segment_and_embed(sd, samples, seg_progress)
+    if features_out is not None:
+        save_features(features_out, accum, num_speakers)
     turns, voiceprints, quality = _labels_and_voiceprints(
         accum, num_speakers,
         lambda a, b: samples[int(a * 16000): int(b * 16000)],
@@ -865,6 +876,180 @@ def voiceprints_for_spans(
     # 借用同一份質心邏輯:emb_idx 是「第 k 個向量對應 labels 的哪一格」,
     # 這裡一對一,所以 labels 直接就是 owners
     return _speaker_voiceprints(list(range(len(owners))), vecs, owners)
+
+
+# ---- 分群特徵檔(.分群.npz):讓「改人數重新分群」不必重跑整支 ----
+#
+# 存的是**切分結果 + 每段聲紋**,不是分群結果。整條管線最貴的就是那一段
+# (95 分鐘的對談實測 25~73 分鐘),而重聚只要 0.3 秒——把貴的那一半留在
+# 錄音檔旁邊,事後改人數就是秒級的事,連轉錄都不必重跑。
+# `scripts/dump_diarize.py` 早就在做同一件事(離線調參用),差別在那支要
+# 另外跑一趟、還得靠 --live 去對齊當初的塊界;這裡是**轉檔當下**順手落檔,
+# 塊界天生就對得上,重分群的結果與「當初就填那個人數」逐段相同
+# (test_features_recluster_matches_a_full_run 守著)。
+#
+# ⚠️ **一定要記下聲紋模型**:vecs 出自 models.embedding_model()(eres2netv2),
+# 換了模型舊檔的向量就失效——而重分群照樣算得出東西、只是全錯,成品上
+# 看不出來。對不上就拒絕並說明,不要「盡量用」(同 data/voiceprints.npz
+# 換模型即整個失效的道理)。
+_FEATURES_SUFFIX = ".分群.npz"
+# 檔案格式版號:欄位增減時 +1。讀不動就明說,不要猜
+_FEATURES_FORMAT = 1
+
+
+def features_path(media: str | Path) -> Path:
+    """錄音檔 → 它的分群特徵檔路徑(同層、同主檔名)。
+
+    帶中文的「.分群.npz」是使用者 2026-08-18 選的:錄音旁邊多一個看不懂的
+    `.npz` 一定會被問,而這個檔名同仁看一眼就知道那是什麼、也知道不要刪。"""
+    p = Path(media)
+    return p.with_name(p.stem + _FEATURES_SUFFIX)
+
+
+class Features:
+    """一支錄音的分群特徵(自 .分群.npz 讀回)。
+
+    spans/emb_idx/vecs 三者的關係與 _ChunkAccum 相同:spans 是全部說話
+    區段,emb_idx 是其中「有抽聲紋」者的索引,vecs 與 emb_idx 等長且同序。"""
+
+    __slots__ = ("spans", "emb_idx", "vecs", "chunk_sec", "num_speakers", "model")
+
+    def __init__(self, spans, emb_idx, vecs, chunk_sec, num_speakers, model):
+        self.spans = spans
+        self.emb_idx = emb_idx
+        self.vecs = vecs
+        self.chunk_sec = chunk_sec
+        self.num_speakers = num_speakers  # 當初轉檔時填的人數(0 = 自動偵測)
+        self.model = model
+
+
+def save_features(
+    path: str | Path, accum: "_ChunkAccum", num_speakers: int,
+) -> None:
+    """把 accum 的「切分 + 聲紋」落檔(見上方常數說明)。
+
+    ⚠️ **先寫暫存檔再原子改名**,絕不就地截斷:這支跟在一趟數十分鐘的
+    講者分析後面跑,斷電/防毒鎖檔/闔蓋進 Modern Standby 留下半個 zip 的話,
+    下次讀它會壞在載入那一刻(同 voiceprints._save 的理由)。
+
+    ⚠️ **失敗不得往上拋**:少了這個檔只是「事後不能改人數」,而它後面
+    接的是已經跑完的逐字稿——為了它讓整支轉檔失敗完全不划算。"""
+    p = Path(path)
+    try:
+        vecs = accum.vectors()
+        if not accum.spans or vecs.size == 0:
+            return  # 沒有語音或全部太短:存了也重分不了群
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(p.name + ".part")
+        with open(tmp, "wb") as fh:
+            np.savez(
+                fh,
+                spans=np.asarray(accum.spans, dtype=np.float64).reshape(-1, 2),
+                emb_idx=np.asarray(accum.emb_idx, dtype=np.int64),
+                vecs=np.asarray(vecs, dtype=np.float32),
+                # 純量與字串各存一格:名字**不可以**用 dtype=object,那會讓
+                # npy 變成 pickle、讀檔非開 allow_pickle 不可(同 voiceprints._save)
+                fmt=np.asarray(_FEATURES_FORMAT, dtype=np.int64),
+                chunk_sec=np.asarray(accum.chunk_sec, dtype=np.float64),
+                num_speakers=np.asarray(num_speakers, dtype=np.int64),
+                model=np.asarray(models.embedding_model().name),
+                app_version=np.asarray(filelog.code_version()),
+            )
+        tmp.replace(p)
+    except Exception:  # noqa: BLE001 - 見 docstring:少這個檔不該拖垮整支轉檔
+        logger.exception("分群特徵檔寫入失敗(不影響逐字稿):%s", p)
+        try:
+            p.with_name(p.name + ".part").unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def load_features(path: str | Path) -> Features:
+    """讀回分群特徵檔。讀不動一律拋繁中的 UserFacingError(見各分支)。"""
+    p = Path(path)
+    if not p.exists():
+        raise UserFacingError(f"找不到分群檔「{p.name}」。")
+    try:
+        with np.load(p, allow_pickle=False) as z:
+            fmt = int(z["fmt"])
+            if fmt != _FEATURES_FORMAT:
+                raise UserFacingError(
+                    f"分群檔「{p.name}」是舊版格式(第 {fmt} 版,"
+                    f"這個版本讀第 {_FEATURES_FORMAT} 版),不能用來改人數;"
+                    "要改人數請把這個錄音重轉一次。"
+                )
+            model = str(z["model"])
+            current = models.embedding_model().name
+            if model != current:
+                # 換過聲紋模型:舊向量在新模型的空間裡沒有意義,而重分群
+                # 照樣算得出東西——成品上看不出錯,所以這裡必須擋掉
+                raise UserFacingError(
+                    f"分群檔「{p.name}」是用另一個聲紋模型產生的"
+                    f"({model}),不能用來改人數;要改人數請把這個錄音重轉一次。"
+                )
+            return Features(
+                spans=[(float(a), float(b)) for a, b in z["spans"]],
+                emb_idx=[int(i) for i in z["emb_idx"]],
+                vecs=np.asarray(z["vecs"], dtype=np.float64),
+                chunk_sec=float(z["chunk_sec"]),
+                num_speakers=int(z["num_speakers"]),
+                model=model,
+            )
+    except UserFacingError:
+        raise
+    except Exception as e:
+        raise UserFacingError(
+            f"分群檔「{p.name}」讀不開,可能已經損壞;"
+            "要改人數請把這個錄音重轉一次。"
+        ) from e
+
+
+def block_vectors(feat: Features, spans) -> np.ndarray:
+    """每個時間區間的聲紋質心,**直接取自特徵檔——不碰音檔、不跑模型**。
+
+    「重設講者」要算兩件事:每位講者的聲紋質心(供 enroll)、每一輪發言
+    「像不像自己那一群」(核對表那一欄)。原本兩件都是回頭把音訊再抽一次
+    ——而那些向量**轉檔當下就抽好了**,就存在 .分群.npz 裡。實測一份
+    95 分鐘的逐字稿有 417 輪發言,重抽要數十秒,這裡是毫秒級。
+
+    回傳 (len(spans), 維度);區間內一段聲紋都沒有的那一列給零向量,
+    呼叫端自行視為「算不出來」(相似度是輔助,不該為它擋掉整個流程)。"""
+    est = np.array([feat.spans[i] for i in feat.emb_idx], dtype=float)
+    mids = (est[:, 0] + est[:, 1]) / 2
+    w = est[:, 1] - est[:, 0]
+    vecs = np.asarray(feat.vecs, dtype=np.float64)
+    out = np.zeros((len(spans), vecs.shape[1]), dtype=np.float64)
+    for k, (lo, hi) in enumerate(spans):
+        m = (mids >= lo) & (mids < hi)
+        if m.any():
+            out[k] = _wcentroid(vecs[m], np.maximum(w[m], 0.01))
+    return out
+
+
+def recluster(
+    feat: Features, num_speakers: int,
+) -> tuple[list[SpeakerTurn], dict[int, np.ndarray], list[SpeakerQuality]]:
+    """拿現成的特徵重新分群(**不碰音檔、不碰模型**),回傳與 diarize() 同款的
+    (turns, voiceprints, quality)。
+
+    ⚠️ **走的是 _labels_and_voiceprints 這個正門**,不是自己組 _speech_blocks
+    + _cluster:自己組等於把生產程式再寫一次,聚塊那一行被拿掉照樣全綠
+    (同 tests/test_diarize_realmeeting.py 檔頭那段教訓)。走正門還換來一個
+    更強的保證——重分群的結果與「當初就填這個人數」**逐段相同**。
+
+    read 給不出東西:它只在「所有區段都短於門檻」的退化路徑用得到,而那種
+    檔案 save_features 根本不會落檔(vecs 為空就直接 return)。"""
+    if not feat.emb_idx:
+        raise UserFacingError("這個分群檔沒有可用的聲紋資料,不能改人數。")
+    accum = _ChunkAccum(feat.chunk_sec)
+    accum.spans = list(feat.spans)
+    accum.emb_idx = list(feat.emb_idx)
+    accum.vec_blocks = [feat.vecs]
+
+    def _no_read(a: float, b: float) -> np.ndarray:  # pragma: no cover - 見 docstring
+        raise AssertionError("重分群不該回頭讀音檔")
+
+    return _labels_and_voiceprints(accum, num_speakers, _no_read)
 
 
 class IncrementalDiarizer:
@@ -924,6 +1109,7 @@ class IncrementalDiarizer:
         total_sec: float,
         num_speakers: int = 0,
         progress: ProgressFn | None = None,
+        features_out: str | Path | None = None,
     ) -> tuple[list[SpeakerTurn], dict[int, np.ndarray], list[SpeakerQuality]]:
         """收尾:補完還沒做的塊(含尾塊)+ 全域重聚 → (turns, voiceprints, quality)。
 
@@ -950,6 +1136,8 @@ class IncrementalDiarizer:
                 c * step / 16000, min((c * step + window) / 16000, total_sec),
             )
             self._accum.process_chunk(sd, seg, c, is_last=is_last, progress=sub)
+        if features_out is not None:
+            save_features(features_out, self._accum, num_speakers)
         out = _labels_and_voiceprints(self._accum, num_speakers, read)
         if progress is not None:
             progress(1.0)
