@@ -1455,9 +1455,6 @@ def _has_macros(src: Path) -> bool:
 # VBA 模組的樣板行:`Attribute VB_Name`、`VB_Base`、`VB_GlobalNameSpace` 等
 # 是 VBA 自己的中繼資料,不是使用者寫的程式。全部只有這些 = 空模組
 _VBA_ATTR_RE = re.compile(r"^\s*Attribute\s+VB_\w+\s*=", re.IGNORECASE)
-# 單一活頁簿的巨集總量上限(字元)。這是安全閥不是截斷政策:超過就只留
-# 標記,而且**說清楚**——無聲截斷比不轉更糟
-_VBA_MAX_CHARS = 2_000_000
 
 
 def _clean_vba(code: str) -> str:

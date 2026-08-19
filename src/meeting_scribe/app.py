@@ -3261,7 +3261,7 @@ def build_ui() -> gr.Blocks:
                                 # 不是當下的狀態
                                 src_hint = gr.Markdown(
                                     _SRC_MODE_HINT, visible=False,
-                                    elem_id="src-mode-hint", elem_classes=["pad-x"],
+                                    elem_classes=["pad-x"],
                                 )
                                 # 「開始轉檔/停止」**排在「講者人數」之前**(設計稿
                                 # 選案 B,使用者 2026-08-15 選定):在「轉錄音檔」模式
@@ -3723,9 +3723,7 @@ def build_ui() -> gr.Blocks:
                                 # 不顯示也不佔版面:gradio 6.20 對開頁就
                                 # visible=False 的元件是**整個不渲染**。
                                 # 建構值是空字串,而空字串 = 不清除
-                                vp_clear_flag = gr.Textbox(
-                                    visible=False, value="", elem_id="vp-clear-flag",
-                                )
+                                vp_clear_flag = gr.Textbox(visible=False, value="")
                                 # 健檢結果(設計稿方案 A,使用者 2026-08-07 選定:
                                 # 就地展開、不另開分頁)。三個都是**葉子元件**,
                                 # 切 visible 是安全的——ui.md 那條「visible 會切換
@@ -4630,11 +4628,18 @@ def build_ui() -> gr.Blocks:
                 _doc_preview, inputs=[doc_src, doc_recursive],
                 outputs=[doc_summary], show_progress="hidden",
             )
-        # 連點空窗:js-only 先在前端 disable(同 run_btn 的作法)
+        # 連點空窗:js-only 先在前端 disable(同 run_btn 的作法)。
+        # ⚠️ **這四顆的 elem_id 只有這裡在用**(沒有樣式、測試也不全靠它),
+        # 看起來像死鉤子——2026-08-19 清死 id 時差點連 `doc-clear-btn` 一起刪,
+        # 查下去才發現是**漏列**:四顆都在 `doc_lock_outputs` 裡、伺服器端本來
+        # 就會鎖,這段補的是「鎖落地之前」那個空窗,漏掉哪一顆那一顆在空窗期
+        # 就還按得下去。而「清空」清掉的正是 doc_src——`_doc_convert` 要讀的
+        # 那個路徑欄(聲音分頁的清單一直都含 clear-src-btn,兩邊本來就該一樣)
         doc_run_btn.click(None, js="""
         () => {
           window.__msBusy = true;
-          for (const id of ['doc-run-btn', 'doc-pick-files-btn', 'doc-pick-folder-btn']) {
+          for (const id of ['doc-run-btn', 'doc-pick-files-btn', 'doc-pick-folder-btn',
+                            'doc-clear-btn']) {
             const b = document.getElementById(id);
             if (b) b.disabled = true;
           }
