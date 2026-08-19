@@ -75,6 +75,7 @@ def convert_audio(
     *,
     model_key: str = "fast",
     num_speakers: int = 0,
+    keep_features: bool = True,
     on_inner=None,
 ) -> list[Block]:
     """音訊/影片 → Block 清單(逐字稿本文 + 跳針標記)。
@@ -93,6 +94,11 @@ def convert_audio(
         src,
         model_key=model_key,
         num_speakers=num_speakers,
+        # 集中輸出(--out-dir)時不留分群檔:它跟不到 md 旁邊,而 relabel 是
+        # 從 md 找同層同名的(使用者 2026-08-19 指定,理由見 pipeline)
+        features_out=(
+            pipeline.FEATURES_BESIDE_SRC if keep_features else None
+        ),
         on_stage=(
             (lambda _stage, frac: on_inner(frac)) if on_inner else None
         ),

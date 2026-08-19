@@ -1598,7 +1598,15 @@ def _check_recluster(count, features, paths) -> None:
 
     ⚠️ **前端已經先擋了一層**(按鈕會變灰,見 `NAME_PANEL_JS`),這一支是
     安全網:前端的判斷可以被繞過(改 DOM、舊分頁),而「按了也沒用」的兩種
-    情況都會讓使用者付出代價(畫面重來、名字清掉),不能只靠畫面把關。"""
+    情況都會讓使用者付出代價(畫面重來、名字清掉),不能只靠畫面把關。
+
+    ⚠️ **比對的是「試算出來的位數」,不是使用者填的數字**(2026-08-19 實機
+    回報:填 13、14、15、16、17 全都得到 10 位)。md 的段落是原子的,新分出
+    來的一兩秒碎群拿不到任何段落,就不會出現在逐字稿上——拿填的數字去比,
+    那五次全部放行,每一次都白跑一趟、又把已填的名字清光。試算走
+    `relabel.count_after_recluster`(= `recluster_md` 本人,不另算一份),
+    代價是這裡與 `_run_recluster` 各讀一次分群檔(各 0.3 秒),換掉的是
+    「整頁重跑一遍才發現什麼都沒變」。"""
     if not features or not paths:
         raise gr.Error(
             "找不到這份逐字稿的分群檔,不能改人數。", title="提醒",
@@ -1613,14 +1621,28 @@ def _check_recluster(count, features, paths) -> None:
             "1 等於把整份逐字稿都算成同一個人,不必經過重新分群。",
             title="提醒", print_exception=False,
         )
-    now = len([x for x in relabel.parse(relabel.read(Path(paths[0]))).order
-               if x != "未知"])
+    md_text = relabel.read(Path(paths[0]))
+    now = len([x for x in relabel.parse(md_text).order if x != "未知"])
+    try:
+        feat = diarize.load_features(features)
+        turns, _vps, _quality = diarize.recluster(feat, n)
+    except UserFacingError as e:
+        raise gr.Error(str(e), title="提醒", print_exception=False) from None
+    if relabel.count_after_recluster(md_text, turns) != now:
+        return
     if n == now:
         raise gr.Error(
             f"這份逐字稿現在就是 {now} 位講者,不必重新分群。"
             "要改成別的位數再按一次。",
             title="提醒", print_exception=False,
         )
+    raise gr.Error(
+        f"填 {n} 位,在這份逐字稿上分出來還是 {now} 位——跟現在一樣,所以"
+        "沒有重跑,已經填好的名字都還在。逐字稿的段落是當初那次分群切出來"
+        "的,一個段落只能歸一位;多分出來的都是一兩秒的碎段,會被併回鄰近"
+        "的講者。要再分出更多人只能重轉一次。",
+        title="提醒", print_exception=False,
+    )
 
 
 def _run_recluster(count, features, paths, cpu_cores, progress=gr.Progress()):

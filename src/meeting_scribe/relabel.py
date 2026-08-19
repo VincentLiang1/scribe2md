@@ -21,7 +21,7 @@ md 只有「講者 1／2／3」、當初命名時打錯字、以及當初跳過�
 """
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from meeting_scribe import diarize, export, srcfile
@@ -195,6 +195,49 @@ def _labels_for_blocks(t: Transcript, turns: list) -> list[int]:
     return out
 
 
+def count_after_recluster(md_text: str, turns: list) -> int:
+    """這批新分群貼回這份逐字稿之後,**實際**看得到幾位講者。
+
+    給「重新分群」的把關試算用(`app._check_recluster`):使用者填的數字
+    不等於他會拿到的位數——md 的段落是原子的,拿不到任何段落的群不會出現
+    在逐字稿上(2026-08-19 實機:一份 881 個段落的稿子,填 13~17 全都得到
+    10 位,而分群本身每次都確實分出了 13~17 群,掉的是最後這一步)。
+
+    ⚠️ **走的就是 `recluster_md` 本人,不另外算一份**:兩邊各算一次的話,
+    「把關說不會變、按下去卻變了」(或反過來)只是時間問題,而那種不一致
+    比不擋更糟——使用者會學到這個提醒不可信。診斷區塊在試算時用不到,
+    quality 傳空的。
+    """
+    return len([
+        n for n in parse(recluster_md(md_text, turns, [])).order if n != "未知"
+    ])
+
+
+def _renumber_quality(quality: list, order: dict[int, int]) -> list:
+    """分群品質改用**md 上的講者編號**,並丟掉沒有分到任何區塊的群。
+
+    ⚠️ **兩件事都是正確性,不是順手整理**(2026-08-19 實機:一份填 11 位
+    重新分群的逐字稿,檔尾寫「共 11 位」而內文只有 9 位,一致性還整排掛在
+    別人身上)。`recluster_md` 依「首次出現」重編號標籤,`quality` 帶的卻是
+    分群自己的編號——**只要有任何一群沒拿到區塊,後面全部錯開**。那次量到的
+    映射是 {0:0, 2:1, 1:2, 3:3, 4:4, 7:5, 8:6, 10:7, 5:8}:檔尾「講者 2」
+    印的是內文「講者 3」的數字,而「建議優先核對」(export.check_first 也吃
+    這份 quality)跟著指錯人。⚠️ 表上的「發言輪次」是從 spoken 數的、早就
+    是新編號,所以錯開時**同一列裡的輪次與一致性分屬兩個人**,看不出異狀。
+
+    沒分到區塊的群一定要**整筆丟掉**而不是留著:md 的區塊是原子的,往多的
+    方向改時分出來的群不保證每一群都拿得到區塊(表上長成「發言輪次 0」),
+    留著會讓「共 N 位」與內文對不起來——而使用者正是看那個數字判斷
+    「我填的人數有沒有生效」(那次的回報就是「改 11 但只分出 10」)。
+
+    轉檔當下那條路沒有這個問題:`quality` 與 `spoken` 同源、編號本來就一致,
+    所以修在這裡而不是 export(診斷區塊只能有一份格式,見 speaker_diagnostics)。
+    """
+    return [
+        replace(q, speaker=order[q.speaker]) for q in quality if q.speaker in order
+    ]
+
+
 def recluster_md(md_text: str, turns: list, quality: list) -> str:
     """拿新的分群結果改寫逐字稿的講者標籤,**內文一個字都不動**。
 
@@ -213,7 +256,8 @@ def recluster_md(md_text: str, turns: list, quality: list) -> str:
     比「改壞了救不回來」便宜太多。
 
     檔尾的診斷區塊整塊換成新的:群數、輪次、一致性全變了,留著舊的比
-    沒有更糟。"""
+    沒有更糟。⚠️ 那些數字要跟著這裡的重編號一起換算,見 `_renumber_quality`
+    ——不換算的話表格會安靜地掛在別人身上。"""
     t = parse(md_text)
     labels = _labels_for_blocks(t, turns)
     # 依「在檔案裡第一次出現」重編號,讀者看到的順序才與編號一致
@@ -250,7 +294,8 @@ def recluster_md(md_text: str, turns: list, quality: list) -> str:
         out.append(
             f"**{label_name(lab)}** ({m.group(2)}:{m.group(3)}:{m.group(4)})")
     text = "\n".join(out).rstrip("\n")
-    diag = export.speaker_diagnostics(quality, spoken)
+    diag = export.speaker_diagnostics(
+        _renumber_quality(quality, order), spoken)
     return text + ("\n\n" + "\n".join(diag) if diag else "\n")
 
 

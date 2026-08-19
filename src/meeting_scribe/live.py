@@ -697,7 +697,9 @@ def run_live_finish(
         # 分群特徵檔跟著成品音檔走(成品與逐字稿都在 out_dir、同名)。
         # ⚠️ **只有單軌才存**:線上會議是兩軌各自分群再合併,一份 npz
         # 表達不了那個結果——事後拿它重分群會得到跟成品不一樣的東西,
-        # 那比不給還糟(同 per_track 只在單軌才傳的理由)
+        # 那比不給還糟(同 per_track 只在單軌才傳的理由)。
+        # ⚠️ 2026-08-19 討論過要不要支援雙軌(結論:先不做),真要做得處理的
+        # 四件事與那次的調查結論記在 docs/dev/recording.md,別再從頭查一遍
         features_out = (
             diarize.features_path(out_dir / f"{stem}.wav") if n_tracks == 1
             else None

@@ -410,11 +410,18 @@ def run_pipeline(
         )
 
 
+# 「沒有指定」與「指定為不要」是兩回事(同 app._DERIVE_FEATURES 的理由):
+# **預設不能是靜默不存**——分群檔是「分壞了事後改人數」唯一的救,而漏傳
+# 一個參數就再也救不回來,那種錯誤在成品上完全看不出來
+FEATURES_BESIDE_SRC = object()
+
+
 def transcribe_to_markdown(
     src: Path,
     model_key: str = "fast",
     num_speakers: int = 0,
     on_stage: StageFn | None = None,
+    features_out: "Path | None | object" = FEATURES_BESIDE_SRC,
 ) -> RenderedTranscript:
     """批次入口:單一來源檔 → 逐字稿 md 內容(**不落檔、不做命名線索**)。
 
@@ -428,7 +435,13 @@ def transcribe_to_markdown(
     「當場」可言,硬做只會把這一檔的名字寫進別檔。單檔模式因此維持原樣。
 
     num_speakers 由呼叫端逐檔決定(GUI 把欄位值套用到整批、CLI 預設 0 =
-    自動偵測);其餘固定項(md 輸出、中文、一律做講者分析)同 run_pipeline。"""
+    自動偵測);其餘固定項(md 輸出、中文、一律做講者分析)同 run_pipeline。
+
+    features_out 不給就落在**來源檔旁邊**(見 FEATURES_BESIDE_SRC);傳 None
+    是明確的「這一趟不要留分群檔」——`doc2md --out-dir` 走的就是它(使用者
+    2026-08-19 指定):那個模式是把 md 集中出去餵知識庫,分群檔既跟不到 md
+    旁邊(relabel 從 md 找同層同名,分家就等於白存),留在原始音檔旁邊也
+    違反 --out-dir「不要在別人的資料夾裡留東西」的用意。"""
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
             start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
@@ -451,7 +464,10 @@ def transcribe_to_markdown(
                 # 逐份回頭看——分壞了,事後改人數是唯一的救
                 segments, _device, turns, _vp, quality = _transcribe_and_diarize(
                     wav, model_key, num_speakers, report,
-                    features_out=diarize.features_path(src),
+                    features_out=(
+                        diarize.features_path(src)
+                        if features_out is FEATURES_BESIDE_SRC else features_out
+                    ),
                 )
 
         report("輸出")

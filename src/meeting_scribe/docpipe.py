@@ -418,6 +418,18 @@ def convert_file(
     # 不認得的具名參數會直接 TypeError
     if route.wants_options:
         kwargs.update(options or {})
+    if reader is docaudio.convert_audio:
+        # 分群檔只在「relabel 真的找得到它」時才留(使用者 2026-08-19 指定):
+        # 那支是從 md 出發找**同層同名**的檔,--out-dir 把 md 集中出去之後
+        # 它既找不到,留在原始音檔旁邊又正好違反 --out-dir 的用意(不要在
+        # 別人的資料夾裡留東西)。
+        # ⚠️ **同層還不夠,檔名也要對得上**:--out-dir 模式的 md 帶一段內容
+        # 雜湊(`週會-3f9a2b71.md`,見 docmd.md_path_for),而分群檔的名字是
+        # 照**來源檔**取的——`--out-dir` 指回原資料夾時兩者同層、名字卻對不
+        # 上,只比對目錄就會留下一個永遠不會被讀到的檔
+        kwargs["keep_features"] = (
+            dest.parent == src.parent and dest.stem == src.stem
+        )
     blocks = list(reader(src, assets, **kwargs))
     # 寫不進去的圖片要留下痕跡(政策在 AssetsDir,不交辦給各 reader)
     blocks.extend(assets.failure_note())
