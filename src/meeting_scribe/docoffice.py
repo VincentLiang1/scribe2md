@@ -7,6 +7,7 @@ r"""Office 新格式(docx / pptx / xlsx / xlsm)→ Block 清單。
 失真一律標註,不安靜丟棄——合併儲存格、底色語意、圖表、追蹤修訂等,
 在 md 裡都會留下〔〕標記並進 frontmatter 的 lossy_kinds。理由見 docmd。
 """
+import bisect
 import hashlib
 import html
 import logging
@@ -1216,6 +1217,15 @@ def _pptx_shape(
 
 # ---- xlsx ----
 
+def _merged_ranges(ws) -> list:
+    """工作表的合併範圍。
+
+    防呆集中在這裡:`ws` 可能是測試的假物件、或沒有 `merged_cells` 的
+    read_only 變體。兩個呼叫端本來各寫了一種 getattr 拼法,防的是同一件事
+    ——測試 monkeypatch 只會踩到其中一種,另一種等到真檔案才爆。"""
+    return list(getattr(getattr(ws, "merged_cells", None), "ranges", None) or [])
+
+
 def _merge_map(ws) -> tuple[dict[tuple[int, int], object], int]:
     """合併儲存格 → {(列, 欄): 左上角的值},以及合併範圍數。
 
@@ -1223,7 +1233,7 @@ def _merge_map(ws) -> tuple[dict[tuple[int, int], object], int]:
     ——這一定失真(讀的人分不出「本來就重複」與「本來是合併」),所以
     呼叫端一定要下 Note。"""
     filled: dict[tuple[int, int], object] = {}
-    ranges = list(getattr(ws, "merged_cells", None).ranges) if getattr(ws, "merged_cells", None) else []
+    ranges = _merged_ranges(ws)
     for rng in ranges:
         span = (rng.max_row - rng.min_row + 1) * (rng.max_col - rng.min_col + 1)
         if span > _MAX_MERGE_CELLS:
@@ -1290,8 +1300,222 @@ def _chart_notes(ws) -> list[Block]:
     return out
 
 
-def _sheet_blocks(ws, ws_formula, huge: bool) -> list[Block]:
-    """單一工作表 → Blocks。huge=True 時只讀值、跳過所有 metadata 檢查。"""
+# ---- 並排版面(為列印排的寬表)----
+#
+# 為列印排版的表很常把數個獨立區塊**左右並排**:2026-08-19 的實例是一份
+# 公司分機表,24 欄其實是 6 個部門各佔 3~6 欄,「這個人屬於哪一部門」只靠
+# 版面位置表達、欄位名裡一個字都沒有。照列讀會把不同區塊的內容綁成同一
+# 筆——那份轉出來每一「筆」都混了 6 個部門的人,而且錯得看不出來(使用者
+# 只好自己用 xlrd 逐格取座標還原)。
+#
+# 線索是**區塊標題的水平合併**:標題橫跨整個區塊,它的左右邊界就是區塊的
+# 邊界,而且同一組邊界會在不同列反覆出現(每個部門一次)。反過來,一般表格
+# 的合併集中在最上面幾列(多層表頭),不會散在整張表。
+
+_LAYOUT_MIN_TITLE_ROWS = 2   # 同一組欄邊界至少要重複出現在幾列
+_LAYOUT_MIN_SIDE_ROWS = 2    # 至少幾列「同一列並排 >=2 個標題」——並排的鐵證
+_LAYOUT_SPREAD = 0.2         # 區塊標題要橫跨整張表的比例(排除多層表頭)
+_LAYOUT_MIN_SOLO = 0.3       # 至少幾成的標題列上「只有一個」區塊標題
+_LAYOUT_MIN_FILLED = 0.5     # 至少幾成的區塊標題,底下真的有屬於它的資料列
+_LAYOUT_MAX_ORPHAN = 0.2     # 最多幾成的格子可以不屬於任何區塊
+
+
+def _title_spans(ws, first_row: int, last_row: int) -> dict[tuple[int, int], set[int]]:
+    """區塊標題的水平合併 → {(起欄, 迄欄): 出現在哪些列}。
+
+    只認「單列高、有值」的水平合併:區塊標題就長這樣。垂直合併是儲存格
+    的縱向跨列(常見於「同一個部門的多列共用一格」),與版面分欄無關。"""
+    spans: dict[tuple[int, int], set[int]] = {}
+    ranges = _merged_ranges(ws)
+    for rng in ranges:
+        if rng.max_col <= rng.min_col or rng.max_row != rng.min_row:
+            continue
+        if not first_row <= rng.min_row <= last_row:
+            continue
+        value = ws.cell(rng.min_row, rng.min_col).value
+        if value is None or not str(value).strip():
+            continue
+        spans.setdefault((rng.min_col, rng.max_col), set()).add(rng.min_row)
+    return spans
+
+
+def _is_side_by_side(spans: dict[tuple[int, int], set[int]], extent: int) -> bool:
+    """這張表是不是並排版面?
+
+    這裡是**前四關**(每一關都擋掉一整類的誤判,拿使用者的 205 個真實工作表
+    校準):同一組欄邊界**反覆出現**、同一列上**並排**好幾個標題、標題
+    **分散在整張表**、各區塊的標題**不是永遠成對出現在同一列**。
+
+    另外兩關**要還原完才判得出來**,在 `_layout_blocks` 裡:區塊底下真的
+    有資料列、以及沒有一大票格子無家可歸。"""
+    cand = {k: v for k, v in spans.items() if len(v) >= _LAYOUT_MIN_TITLE_ROWS}
+    chosen: list[tuple[int, int]] = []
+    # 重疊時取「標題列數多」的:版面中途換配置時會有跨好幾群的大標題
+    # (分機表第 45 列的 A:L),不能讓那種零星的標題吃掉主結構
+    for span in sorted(cand, key=lambda k: (-len(cand[k]), k)):
+        if any(not (span[1] < c[0] or span[0] > c[1]) for c in chosen):
+            continue
+        chosen.append(span)
+    # 並排的鐵證:同一列上同時有 >=2 個區塊的標題。⚠️ 這條**順帶保證了
+    # 「至少有兩組欄邊界」**(同一列要放得下兩個標題,就得有兩組)——原本
+    # 另外寫的 `_LAYOUT_MIN_GROUPS` 是死的,2026-08-19 code review 指出它
+    # 沒有任何測試守得住,查下去才發現根本推不動:拿掉它結果一模一樣。⚠️ 這條與下面兩關在
+    # 使用者那 205 個真實工作表上**結果重疊**(拿掉它命中的還是同樣兩個),
+    # 留著是因為代價不對稱:切錯的失敗方式是安靜的,而它擋的是「左右兩疊
+    # 標題從不對齊」這種其實不確定該不該切的版面
+    per_row: dict[int, int] = {}
+    for span in chosen:
+        for r in cand[span]:
+            per_row[r] = per_row.get(r, 0) + 1
+    if sum(1 for n in per_row.values() if n >= 2) < _LAYOUT_MIN_SIDE_ROWS:
+        return False
+    # 各區塊的標題若**永遠成對出現在同一列**,那是「每隔幾十列重印一次的
+    # 多層表頭」不是並排區塊(2026-08-19 實測誤傷:一份權限表的「檔案存取
+    # 權限」E:H 與「目錄存取權限」I:M 成對出現 11 次,前三關全被騙過,切出
+    # 來的東西比不切還糟)。真的並排時,各區塊各自換標題、很少對齊
+    if sum(1 for n in per_row.values() if n == 1) < len(per_row) * _LAYOUT_MIN_SOLO:
+        return False
+    # 標題要分散在整張表:多層表頭的合併全擠在最上面那幾列,那是表頭不是
+    # 並排區塊。⚠️ extent 是「**實際有內容的列數**」不是列號範圍:分機表的
+    # 標題橫跨第 1~52 列、內容只有 65 列,但第 280 列有一格孤兒儲存格,拿
+    # 列號範圍當分母(280)會讓真正的並排表過不了這一關
+    rows = {r for span in chosen for r in cand[span]}
+    return (max(rows) - min(rows)) >= extent * _LAYOUT_SPREAD
+
+
+def _detect_side_by_side(ws, rows: list[list[str]]) -> dict[tuple[int, int], set[int]] | None:
+    """並排版面的偵測**單一入口**:是的話回區塊標題的合併範圍,不是回 None。
+
+    ⚠️ 只能有這一個入口。huge 模式為了記憶體不做還原、但仍要示警,本來在
+    那條路上自己抄了一份偵測,`extent` 卻傳成 `len(rows)`(含中段空列)而不是
+    「實際有內容的列數」——兩邊分母不同,同一張表在兩條路徑上可能得到相反
+    的判定,而空白列多得離譜正是這種檔案的特徵(那份分機表 279 列裡 215 列
+    全空),於是警告在最需要它的檔案上最容易失靈。2026-08-20 /simplify 抓到。"""
+    last_row = len(rows)
+    max_col = max((len(r) for r in rows), default=0)
+    if last_row < 5 or max_col < 4:
+        return None
+    spans = _title_spans(ws, 1, last_row)
+    extent = sum(1 for r in rows if docmd.row_has_content(r))
+    return spans if _is_side_by_side(spans, extent) else None
+
+
+def _layout_blocks(ws, rows: list[list[str]]) -> list[Block]:
+    """並排版面 → 一個區塊一小節;不是並排版面就回 []。
+
+    歸屬規則只有一條:**一格屬於「涵蓋它、且離它最近的上方標題」**。
+
+    ⚠️ 不可改用「先把工作表切成幾個垂直欄群」那種做法(2026-08-19 試過,
+    28 格無聲消失):版面會中途換配置——分機表第 45 列的「數位增長部」佔
+    A:L,一口氣跨掉左邊三個欄群,但**同一列 M 欄以右另有六個人**。以列為
+    單位分段就會把那些人連同第 1 列右上角的製表日期一起丟掉,而欄群模型
+    無論怎麼補都補不回這種「標題只管自己那幾欄」的語意。"""
+    spans = _detect_side_by_side(ws, rows)
+    if spans is None:
+        return []
+    max_col = max((len(r) for r in rows), default=0)
+
+    titles = sorted(
+        (r, lo, hi, docmd.one_line(rows[r - 1][lo - 1]))
+        for (lo, hi), rs in spans.items()
+        for r in rs
+    )
+    first_title_row = titles[0][0]
+    # 每一欄各自的標題,用來 O(log n) 找「上方最近的標題」。titles 已經排過
+    # 序、又是照順序附加的,所以每一串天生遞增,不必再 sort
+    by_col: dict[int, list[tuple[int, int]]] = {}
+    # 標題自己佔的格不是資料(合併展開後整段都是標題文字)
+    is_title_cell: set[tuple[int, int]] = set()
+    for i, (r, lo, hi, _text) in enumerate(titles):
+        for c in range(lo, hi + 1):
+            by_col.setdefault(c, []).append((r, i))
+            is_title_cell.add((r, c))
+
+    # 標題 → 列 → 該區塊那幾欄的值。⚠️ 內層是**預先配好的 list** 不是 dict:
+    # 一格一個 dict 項目在接近降級門檻的表上要多吃 90MB(8GB 基準機),而且
+    # 輸出時本來就要攤成 list——實測換成 list 快 28%、記憶體少 3.4 倍
+    owned: dict[int, dict[int, list[str]]] = {}
+    orphan: dict[int, dict[int, str]] = {}             # 沒有標題涵蓋的格
+    kept = orphan_cells = 0
+    for r, row in enumerate(rows, start=1):
+        for c, value in enumerate(row, start=1):
+            if not value.strip() or (r, c) in is_title_cell:
+                continue
+            kept += 1
+            seq = by_col.get(c) or []
+            pos = bisect.bisect_left(seq, (r, -1)) - 1
+            if pos < 0:
+                orphan.setdefault(r, {})[c] = value
+                orphan_cells += 1
+                continue
+            i = seq[pos][1]
+            by_row = owned.setdefault(i, {})
+            line = by_row.get(r)
+            if line is None:
+                lo, hi = titles[i][1], titles[i][2]
+                line = by_row[r] = [""] * (hi - lo + 1)
+            line[c - titles[i][1]] = value
+
+    # 最後兩道關卡,而且是**還原完才判得出來**的:
+    # ① 表單版面(「標籤 | 值」左右並排的申請表)合併特徵與並排區塊幾乎
+    #    一樣,但它合併起來的是**值**——底下沒有屬於它的明細。硬切會把標籤
+    #    與值拆到不同小節、把明細表砍掉幾欄,比不切糟得多(2026-08-19 拿
+    #    使用者的暫借款申請表實測)。區塊標題底下大多真的有人才算還原成功
+    # ② 而且**不能有一大票格子無家可歸**:表單的「標籤」欄從頭到尾不被任何
+    #    合併涵蓋,一混進來就是整整一欄落單;區塊標題比資料窄的表(電話欄
+    #    凸出去一格)也一樣。兩種都會把人的資料從他自己那一列扯出來
+    # 不合格就退回原本的整表
+    if len(owned) < len(titles) * _LAYOUT_MIN_FILLED:
+        return []
+    if orphan_cells > kept * _LAYOUT_MAX_ORPHAN:
+        return []
+
+    # 有資格當上層的只有「第一列」那幾個標題(見下)。條件是迴圈不變量,
+    # 先挑出來——放在迴圈裡就是 O(標題數²),實測 8000 個標題要 2.8 秒,
+    # 全花在一個 H2/H3 的排版決定上(2026-08-20 /simplify 實測)
+    top_titles = [t for t in titles if t[0] == first_title_row]
+
+    out: list[Block] = []
+    if orphan:
+        # 不屬於任何區塊的格子。**一定要輸出**:轉不出來可以標記,安靜消失
+        # 不行。⚠️ caption 不可以說成「區塊標題之前的內容」——它們未必在
+        # 前面(整欄沒有標題的話,來源可能是表格中段)
+        body = [
+            [cells.get(c, "") for c in range(1, max_col + 1)]
+            for _r, cells in sorted(orphan.items())
+        ]
+        out.append(Table(body, has_header=False, caption=f"{ws.title}(不屬於任何區塊的內容)"))
+    for i, (row_no, lo, hi, text) in enumerate(titles):
+        # 只有「**第一列**那個更寬的標題」才算上層(分機表:表名底下才是各
+        # 部門)。⚠️ 不可以認任何更寬的標題:版面中段跨好幾個區塊的標題是
+        # **兄弟**不是父母,認了會把後面的區塊都掛到它底下,宣告一個原檔
+        # 根本沒表達的從屬關係——而 render 的規則 1 說「錯的階層比沒有階層
+        # 更糟」(2026-08-19 code review 拿本檔自己的 fixture 重現)
+        wider = row_no > first_title_row and any(
+            o[1] <= lo and o[2] >= hi for o in top_titles
+        )
+        name = text or f"第 {lo}–{hi} 欄"
+        out.append(Heading(3 if wider else 2, name))
+        cells = owned.get(i)
+        if not cells:
+            continue   # 有標題、底下沒人:標題本身也是內容,留著就好
+        body = [line for _rr, line in sorted(cells.items())]
+        # caption 帶區塊名是**必要的**,不是重複(2026-08-19 code review):
+        # 超過 12 欄的區塊會走 `render_records`,而那條路徑用 caption 當每
+        # 一筆的前綴——沒有它,「### 第 N 筆」與區塊標題同級,切塊器會把那
+        # 些人切成一個不知道屬於哪一部門的 chunk
+        out.append(Table(body, has_header=False, caption=f"{ws.title} · {name}"))
+    return out
+
+
+def _sheet_blocks(ws, ws_formula, huge: bool) -> tuple[list[Block], bool]:
+    """單一工作表 → (Blocks, 有沒有拆成並排區塊)。
+
+    huge=True 時只讀值、跳過所有 metadata 檢查。⚠️ 「有沒有拆」要**由這裡
+    回報**,不可以讓呼叫端回頭去嗅輸出裡的 `KIND_*`:那些 token 是給 RAG 端
+    篩 `lossy_kinds` 用的,拿它當內部控制訊號的話,以後任何人為了多說一句話
+    而增減一個 Note 都會遠端改到版面(huge 模式同樣會放 KIND_SIDE_BY_SIDE
+    的警告 Note,卻**沒有**拆——2026-08-20 /simplify 抓到的實例)。"""
     blocks: list[Block] = [Heading(1, str(ws.title))]
     if huge:
         blocks.append(Note(
@@ -1337,21 +1561,73 @@ def _sheet_blocks(ws, ws_formula, huge: bool) -> list[Block]:
         rows.pop()
     if not rows:
         blocks.append(Note("這個工作表是空的", docmd.KIND_BLANK_PAGE, lossy=False))
-        return blocks
+        return blocks, False
 
+    # 並排版面(為列印排的寬表)要先依區塊還原,否則同一列會把不同區塊的
+    # 內容綁成一筆。
+    # ⚠️ huge 模式跳過的理由是**記憶體**,不是「讀不到合併範圍」(2026-08-19
+    # code review 更正:活頁簿在 huge 模式下同樣不是 read_only,合併範圍讀
+    # 得到)——還原要為每個非空格建一筆歸屬,那正是 huge 模式在省的東西。
+    # 但不能就這樣安靜地轉錯:偵測本身只看合併範圍、很便宜,照做,發現是
+    # 並排版面就明講「這次沒有還原」
+    layout = _layout_blocks(ws, rows) if not huge else []
+    if huge and _detect_side_by_side(ws, rows) is not None:
+        blocks.append(Note(
+            "本工作表看起來是為列印排的並排版面(數個區塊左右並排),但資料量"
+            "太大、這次沒有依區塊還原——**同一列的內容可能分屬不同區塊**,"
+            "不要當成同一筆資料",
+            docmd.KIND_SIDE_BY_SIDE,
+        ))
+    if layout:
+        # 右往左掃、掃到目前最寬就收手:整片掃過去是一趟不會短路的 O(格數),
+        # 只為了 Note 裡的一個數字(實測 230k 格 10.1ms → 0.14ms)
+        width = 0
+        for r in rows:
+            for i in range(len(r) - 1, width - 1, -1):
+                if r[i].strip():
+                    width = i + 1
+                    break
+        blocks.append(Note(
+            f"本工作表是為列印排的並排版面({width} 欄其實是數個左右並排的"
+            "區塊),已依區塊還原成各自獨立的小節——原檔同一列的內容分屬"
+            "不同區塊,不是同一筆資料",
+            docmd.KIND_SIDE_BY_SIDE,
+            lossy=False,
+        ))
+        blocks.extend(layout)
+        return blocks, True
+
+    # 中段的整列空白也剪掉(尾端那個 while 只咬得到最後面)。Excel 的
+    # max_row 常被遠處一格沒清掉的舊資料撐開,中間就多出整片空列——留著的話
+    # 表格是幾百列 `|  |  |`、寬表則是幾百個只有標題沒有內容的「第 N 筆」。
+    # ⚠️ 要放在 `_formula_blocks` **之後**:那支拿 rows 當「第 N 列第 M 欄」
+    # 的索引查快取值,先抽掉列會讓它對到別格
+    rows = docmd.drop_blank_rows(rows)
     caption = f"{ws.title}(共 {len(rows)} 列)"
-    # 跨欄的標題列(例如 A1:D1 合併成「第三季各區營收」)展開後會變成
-    # 「整列同一個值」,直接當表頭的話,**真正的欄名會掉成第一列資料**
-    # ——AI 之後引用欄位就全錯了。把它提升成表格說明,讓下一列當表頭
+    # 跨欄的標題列(例如 A1:D1 合併成「第三季各區營收」)直接當表頭的話,
+    # **真正的欄名會掉成第一列資料**——AI 之後引用欄位就全錯了。把它提升
+    # 成表格說明,讓下一列當表頭。
+    # ⚠️ 判準是「非空的格全都被水平合併涵蓋」,不是「整列同一個值」:標題
+    # 列常常不只一段(2026-08-19 的分機表,左邊 A:U 是表名、右邊 V:X 是製表
+    # 日期),兩個值就過不了同值那一關,於是 24 個欄名全變成表名、等於零
+    # 資訊。反向保護還在:單欄表的第一列不在任何合併裡,不會被吃掉
     if len(rows) > 1:
-        first = [c for c in rows[0] if c.strip()]
-        if len(first) > 1 and len(set(first)) == 1:
-            caption = f"{ws.title} — {first[0]}(共 {len(rows) - 1} 列)"
+        titles = _title_spans(ws, 1, 1)
+        covered = {c for lo, hi in titles for c in range(lo, hi + 1)}
+        filled = {i + 1 for i, c in enumerate(rows[0]) if c.strip()}
+        # ⚠️ 還要求「有一段寬到佔掉半列以上」(2026-08-19 code review 補):
+        # 只看「非空的格全被合併涵蓋」會誤殺**每個欄名各自合併兩欄**的表頭
+        # ——那種第一列會被整列刪掉、第一筆資料被拱上去當欄名,比原本的毛病
+        # 嚴重得多。真正的大標題是「少少幾段、每段很寬」
+        widest = max((hi - lo + 1 for lo, hi in titles), default=0)
+        if len(filled) > 1 and filled <= covered and widest * 2 > len(filled):
+            names = [docmd.one_line(rows[0][lo - 1]) for lo, _hi in sorted(titles)]
+            caption = f"{ws.title} — {'、'.join(names)}(共 {len(rows) - 1} 列)"
             rows = rows[1:]
 
     # 寬表要不要改逐筆區塊由 docmd.render 決定(渲染政策只有一個出處)
     blocks.append(Table(rows, has_header=True, caption=caption))
-    return blocks
+    return blocks, False
 
 
 def _formula_blocks(ws, ws_formula, rows: list[list[str]]) -> list[Block]:
@@ -1601,12 +1877,20 @@ def convert_xlsx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
         ws_formula = None
         if wb_formula is not None and ws.title in wb_formula.sheetnames:
             ws_formula = wb_formula[ws.title]
-        blocks.extend(_sheet_blocks(ws, ws_formula, huge))
-        blocks.extend(_sheet_images(ws, assets, ocr_enabled))
+        sheet_blocks, split = _sheet_blocks(ws, ws_formula, huge)
+        blocks.extend(sheet_blocks)
+        extras: list[Block] = _sheet_images(ws, assets, ocr_enabled)
         # 圖形/文字方塊裡的字 openpyxl 讀不到(見 _sheet_drawing_texts)
         shape_text = _clean(" ".join(drawing_texts.get(ws.title, [])))
         if shape_text:
-            blocks.append(Para(f"工作表上圖形的文字:{shape_text}"))
+            extras.append(Para(f"工作表上圖形的文字:{shape_text}"))
+        # 並排版面已經把工作表拆成一個個小節,這些**整張表**的附屬內容再
+        # 直接接上去,就會變成「最後那一個區塊的東西」——機櫃圖正是重災區
+        # (`_sheet_drawing_texts` 記著:有兩個機櫃編號只存在圖形裡)。給它
+        # 們一個自己的小節,歸屬才不會被誤讀(2026-08-19 code review)
+        if extras and split:
+            blocks.append(Heading(2, f"{ws.title}:整張工作表的圖片與圖形文字"))
+        blocks.extend(extras)
     # 巨集放最後:它是附屬內容,不該把工作表的資料擠到下面去
     blocks.extend(_macro_blocks(src))
     return blocks

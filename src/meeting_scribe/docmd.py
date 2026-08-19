@@ -36,6 +36,7 @@ KIND_PIVOT = "pivot"
 KIND_COND_FORMAT = "conditional_format"
 KIND_FORMULA_NO_CACHE = "formula_no_cache"
 KIND_HUGE_SHEET = "huge_sheet"
+KIND_SIDE_BY_SIDE = "side_by_side_layout"
 KIND_TRACKED_CHANGES = "tracked_changes"
 KIND_NESTED_TABLE = "nested_table"
 KIND_SMARTART = "smartart"
@@ -121,7 +122,11 @@ class Table:
 
 @dataclass(frozen=True)
 class Records:
-    """超寬表的逐筆區塊表示(欄數 > WIDE_TABLE_COLS 時由 reader 改用此型別)。"""
+    """超寬表的逐筆區塊表示。
+
+    ⚠️ **reader 一律給 `Table`**,由 `render` 依 `WIDE_TABLE_COLS` 決定要不要
+    改用逐筆區塊(渲染政策只有一個出處,見 `render`)——目前沒有任何 reader
+    產生這個型別,只有 `docpipe.traditionalize` 原地重建時用得到。"""
     header: list[str]
     rows: list[list[str]]
     context: str = ""
@@ -348,6 +353,35 @@ def _frontmatter(meta: DocMeta, notes: list[Note]) -> list[str]:
     return lines
 
 
+def one_line(text) -> str:
+    r"""標題/caption 用的文字 → 單行。
+
+    「標題不可以含換行」是 **markdown 渲染**的性質、不是哪一種來源檔的性質:
+    表格內的換行由 `_cell` 換成 `<br>`,但標題與 caption 不走那條路——原樣
+    塞進 `### ` 會斷成兩行,小節名被截掉、後半截變成表格前面的孤兒文字
+    (2026-08-19 實例:為列印排的 Excel 很常把部門寫成「資訊部\n(3F)」)。
+
+    ⚠️ 放在這裡是因為每個 reader 都會踩到:docpdf 用 `" ".join(parts)`、
+    docweb 用 `get_text(" ")`、docmail 靠自組字串,各自私下解決過一次,而
+    docoffice 就是漏了才被 code review 抓到。下一個 reader 直接用這支。"""
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def row_has_content(row) -> bool:
+    """這一列有沒有東西。
+
+    「什麼算空白列」全 repo 只能有一份定義:2026-08-20 清點時,同樣的判準
+    已經散成六種寫法(`c.strip()`、`(c or "").strip()`、`v.strip()`…),而
+    它們對「唯一的值是數字 0」處理**已經不一致**。改任何一處都得記得另外
+    五處,漏掉的那幾處是安靜地少一列資料。"""
+    return any(v is not None and str(v).strip() for v in row)
+
+
+def drop_blank_rows(rows: list) -> list:
+    """剪掉整列空白的列(見 `row_has_content`)。"""
+    return [r for r in rows if row_has_content(r)]
+
+
 def _cell(text) -> str:
     """儲存格文字 → 可安插進 markdown 表格的一格。
 
@@ -393,6 +427,13 @@ def render_records(header: list[str], rows: list[list[str]], context: str = "") 
     代價是每列重複欄名(數千列 × 數十欄會多出數十萬 token)。RAG 是檢索後
     只取命中的 chunk、不是整份塞進 context,所以這個代價付得值——**但若
     日後改成「貼進對話」的用法,這個取捨要重新評估**。"""
+    # 整列空白的不給區塊:它產出的是一個只有標題、底下什麼都沒有的 chunk
+    # ——對 RAG 是純雜訊,而「共 N 筆」把它算進去更是誤導。實例
+    # (2026-08-19 的分機表):279 筆裡有 215 筆全空,因為表格中間有整片
+    # 空列(Excel 的 max_row 被遠處的孤兒儲存格撐開,尾端裁切剪不掉中間)。
+    # xlsx 那條路在 `docoffice._sheet_blocks` 就先剪掉了(caption 的「共 N
+    # 列」要跟著一起對),這裡是**所有 reader 共用的**最後一道
+    rows = drop_blank_rows(rows)
     if not rows:
         return ""
     head = [str(h).strip() if h is not None else "" for h in (header or [])]
@@ -455,7 +496,12 @@ def render(blocks: list[Block], meta: DocMeta) -> str:
             # xlsx 直接轉與匯出成 HTML 再轉會得到不同結果
             width = max((len(r) for r in b.rows), default=0)
             if width > WIDE_TABLE_COLS and len(b.rows) > 1:
-                text = render_records(b.rows[0], b.rows[1:], b.caption)
+                # ⚠️ `has_header=False` 的寬表**不可以**拿第一列當欄名:那一列
+                # 是資料,吃掉它等於無聲少一筆,而且它的值會變成別人的欄名
+                # (2026-08-19 code review 抓到:並排版面還原是全 repo 第一個
+                # 產生「寬且無表頭」表格的地方,在那之前這條路徑碰不到)
+                head, body = (b.rows[0], b.rows[1:]) if b.has_header else ([], b.rows)
+                text = render_records(head, body, b.caption)
             else:
                 text = render_table(b.rows, b.has_header, b.caption)
             if text:
