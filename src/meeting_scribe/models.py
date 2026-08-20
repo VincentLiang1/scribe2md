@@ -14,6 +14,7 @@ r"""AI 模型的下載與快取——整個工具唯一會連網的模組,且只
 """
 import logging
 import shutil
+import ssl
 import tarfile
 import time
 import urllib.request
@@ -132,6 +133,112 @@ def seed_missing() -> list[str]:
     return filled
 
 
+# ---- HTTPS 憑證:公司網路有兩種壞法,各有各的解 ----
+# 第一層(套件 __init__ 的 _trust_bundled_certificates)已把 certifi 疊上去,
+# 治的是「Windows 的根憑證用到才補、Python 看不到」。這裡是第二層:公司代理
+# 做 TLS 攔截(中間人)時,對方憑證由**公司自己的 CA** 簽——certifi 裡不可能
+# 有,但那張 CA 一定裝在 Windows 憑證存放區(否則員工的瀏覽器也上不了網)。
+# truststore 把驗證整個交給 Windows 原生 API,那種網路才連得出去。
+# ⚠️ **不預先切換,只在真的撞到憑證錯誤時才換**:OS 原生驗證反過來會讓
+# 「根憑證沒補到 + 群組原則關掉自動更新」的機器失去 certifi 這條活路,無條件
+# 套用等於拿一種壞法換另一種。換完再失敗就還原,不留下比原本更糟的狀態。
+_CERT_HINT = (
+    "這台電腦不信任下載網站的安全憑證(公司網路做連線檢查時最常見)。"
+    "請把這句話轉給資訊人員:需要把公司的根憑證匯入 Windows 的"
+    "「受信任的根憑證授權單位」。"
+)
+
+# None=還沒試過、True=已改用系統憑證、False=試過但沒用(不再重試)
+_os_certs: bool | None = None
+
+
+def _is_cert_error(e: BaseException) -> bool:
+    """這個例外是不是「憑證驗不過」?
+
+    ⚠️ **要走整條例外鏈**:原始的 ssl.SSLCertVerificationError 會被 urllib
+    包成 URLError(藏在 args)、被 requests 包成自家的 SSLError(藏在 __cause__/
+    __context__),直接 isinstance 判一層一定漏。字串比對是最後一道——第三方
+    有時已經把例外換成純自家型別,只剩訊息還帶著 CERTIFICATE_VERIFY_FAILED。
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = e
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, ssl.SSLCertVerificationError):
+            return True
+        if any(isinstance(a, ssl.SSLCertVerificationError) for a in getattr(cur, "args", ())):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return "CERTIFICATE_VERIFY_FAILED" in str(e)
+
+
+def _use_os_certificates() -> bool:
+    """改用作業系統原生的憑證驗證(Windows 憑證存放區),回傳有沒有換成功。
+
+    truststore.inject_into_ssl() 是行程級的:urllib(本模組與 soffice)、
+    requests(huggingface_hub 下載 Whisper)、httpx 一起受惠,所以只要換一次。
+    """
+    global _os_certs
+    if _os_certs is not None:
+        return _os_certs
+    _os_certs = False
+    try:
+        import truststore
+
+        truststore.inject_into_ssl()
+    except Exception:
+        logger.warning("憑證驗證失敗,而且改不成系統憑證驗證", exc_info=True)
+        return False
+    _os_certs = True
+    logger.info("改用 Windows 憑證存放區驗證連線(公司網路做連線檢查時需要)")
+    return True
+
+
+def _revert_os_certificates() -> None:
+    """換了系統憑證還是驗不過:還原成原本的驗證方式。
+
+    這個行程後面還有別的下載(Whisper 模型、LibreOffice),不還原等於讓
+    certifi 本來走得通的路一起賠進去。"""
+    global _os_certs
+    try:
+        import truststore
+
+        truststore.extract_from_ssl()
+    except Exception:
+        logger.debug("還原憑證驗證方式失敗", exc_info=True)
+    _os_certs = False  # 標記成「試過沒用」,不再重試
+
+
+def with_tls_rescue(fn, what: str = ""):
+    """跑 fn();若敗在「憑證驗不過」,改用系統憑證驗證再跑一次。
+
+    ⚠️ **只重試憑證那一種錯**:網路不通、404、逾時重跑一次只是讓使用者
+    多等一倍時間。"""
+    try:
+        return fn()
+    except Exception as e:
+        if not _is_cert_error(e) or not _use_os_certificates():
+            raise
+        logger.warning("%s憑證驗證失敗,改用系統憑證重試一次", what)
+        try:
+            return fn()
+        except Exception as e2:
+            if _is_cert_error(e2):
+                _revert_os_certificates()
+            raise
+
+
+def download_failed(what: str, target: str, e: Exception) -> UserFacingError:
+    """把下載例外翻成使用者看得懂的繁中訊息(spec §8)。
+
+    ⚠️ **憑證錯誤不可混進「請確認網路連線」**:那台電腦的網路好得很,
+    瀏覽器開得了同一個網址,照著訊息去檢查網路只會白花一小時——而真正
+    要做的事(請 IT 匯入根憑證)完全不在那個方向上。"""
+    if _is_cert_error(e):
+        return UserFacingError(f"{what}下載失敗:{_CERT_HINT}({target})")
+    return UserFacingError(f"{what}下載失敗,請確認網路連線後重試:{target}")
+
+
 def download(
     url: str, dest: Path, min_bytes: int = _MIN_MODEL_BYTES, what: str = "模型",
 ) -> Path:
@@ -173,8 +280,13 @@ def download(
             # 絕不能讓 urlretrieve 中止下載、誤報成下載失敗
             pass
 
-    try:
+    def _fetch() -> None:
+        nonlocal last_pct, last_at
+        last_pct, last_at = -_PROGRESS_PCT_STEP, 0.0  # 重試時進度要從頭數起
         urllib.request.urlretrieve(url, tmp, reporthook=_hook)
+
+    try:
+        with_tls_rescue(_fetch, what)
         if tmp.stat().st_size < min_bytes:
             raise UserFacingError(f"下載的檔案過小,可能下載失敗,請重試:{url}")
     except UserFacingError:
@@ -182,7 +294,7 @@ def download(
         raise
     except Exception as e:
         tmp.unlink(missing_ok=True)
-        raise UserFacingError(f"{what}下載失敗,請確認網路連線後重試:{url}") from e
+        raise download_failed(what, url, e) from e
     tmp.replace(dest)
     return dest
 
@@ -289,9 +401,10 @@ def ov_whisper_dir(model_key: str) -> Path:
         from huggingface_hub import snapshot_download
 
         try:
-            snapshot_download(repo, local_dir=target)  # 原生支援中斷續傳
+            # 原生支援中斷續傳;with_tls_rescue 兜公司網路的 TLS 攔截
+            with_tls_rescue(lambda: snapshot_download(repo, local_dir=target), "模型")
         except Exception as e:
-            raise UserFacingError(f"模型下載失敗,請確認網路連線後重試:{repo}") from e
+            raise download_failed("模型", repo, e) from e
         if not _ov_cache_complete(target):
             # 防呆:下載「成功」但必要檔案組不齊(上游 repo 結構改變等)
             raise UserFacingError(f"模型下載內容不完整,請重試:{repo}")

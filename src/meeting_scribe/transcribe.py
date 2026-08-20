@@ -22,7 +22,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 from meeting_scribe import cancel, hotwords, models
-from meeting_scribe.errors import UserFacingError
 from meeting_scribe.types import TranscriptSegment
 
 # 轉錄語言(產品決定,非引擎細節):faster-whisper 直接吃,OV 路徑包成
@@ -165,9 +164,10 @@ def _model_dir(name: str) -> str:
         except Exception:
             pass  # 主控台顯示問題絕不能中止下載
         try:
-            path = snapshot_download(repo, **kwargs)
+            # with_tls_rescue:公司網路做 TLS 攔截時改用系統憑證再試一次
+            path = models.with_tls_rescue(lambda: snapshot_download(repo, **kwargs), "模型")
         except Exception as e:
-            raise UserFacingError(f"模型下載失敗,請確認網路連線後重試:{name}") from e
+            raise models.download_failed("模型", name, e) from e
     _model_dirs[name] = path
     return path
 

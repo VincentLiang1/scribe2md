@@ -70,6 +70,36 @@ def _bypass_proxy_for_localhost() -> None:
     os.environ["NO_PROXY"] = ",".join(listed + [h for h in _LOCAL_HOSTS if h not in lowered])
 
 
+def _trust_bundled_certificates() -> None:
+    r"""把 certifi 的公開根憑證**疊加**到 Python 的驗證清單上——不這樣做,
+    有些公司電腦一下載 AI 模型就死在憑證驗證,而瀏覽器明明開得了同一個網址。
+
+    Python 在 Windows 上驗 https 是把「Windows 憑證存放區」裡的根憑證 dump
+    出來比對,而 Windows 的根憑證是**用到才補**的(Automatic Root Certificates
+    Update):瀏覽器經 SChannel 連線時會即時下載那張根,Python 卻只看得到
+    已經躺在存放區裡的那幾十張(開發機實測 58 張,certifi 有 150+)。於是同
+    一台電腦「Chrome 開得了 github,Python 報 unable to get local issuer
+    certificate」——2026-08-20 另一台電腦實際回報,症狀是重設講者按下去
+    只剩手動命名。公司若用群組原則關掉根憑證自動更新,那台會**永遠**補不到。
+
+    ⚠️ **是疊加不是取代**(開發機實測 61 → 154 張):`load_default_certs()`
+    先載 Windows 存放區、再吃 `SSL_CERT_FILE`,所以公司自己派下來的憑證不會
+    因為這一行失效——對本來就正常的電腦零風險,這也是它敢無條件執行的理由。
+    ⚠️ **IT 或使用者自己設過就不覆蓋**:那個值通常正是公司的 CA 包。
+
+    純本機的環境變數操作,不連任何網路。另一種壞法(公司代理做 TLS 攔截、
+    憑證由公司自己的 CA 簽)certifi 救不了,由 models.with_tls_rescue 在
+    真的撞到時改用作業系統原生驗證兜底。
+    """
+    if os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR"):
+        return
+    try:
+        import certifi
+    except Exception:
+        return  # best-effort:沒有 certifi 就維持 Python 預設,不影響啟動
+    os.environ["SSL_CERT_FILE"] = certifi.where()
+
+
 def _disable_openvino_telemetry() -> None:
     # OpenVINO consent 檔(Windows):%LOCALAPPDATA%\Intel Corporation\openvino_telemetry
     # 內容 "0" = 拒絕(不送任何遙測)、"1" = 同意。不存在才會觸發 GA ping。
@@ -87,4 +117,5 @@ def _disable_openvino_telemetry() -> None:
 
 
 _bypass_proxy_for_localhost()
+_trust_bundled_certificates()
 _disable_openvino_telemetry()

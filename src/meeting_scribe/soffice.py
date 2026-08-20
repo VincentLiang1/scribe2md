@@ -204,9 +204,12 @@ def _parse_versions(html: str) -> list[str]:
 
 def _stable_versions() -> list[str]:
     """TDF 的 stable/ 目錄現在有哪些版本,新到舊。讀不到就回退路那一個。"""
-    try:
+    def _read() -> str:
         with urllib.request.urlopen(_LO_INDEX, timeout=30) as resp:
-            html = resp.read(1 << 20).decode("utf-8", "replace")
+            return resp.read(1 << 20).decode("utf-8", "replace")
+
+    try:
+        html = models.with_tls_rescue(_read, "LibreOffice 版本清單")
     except Exception:
         logger.warning("讀不到 LibreOffice 版本清單,改用內建版本", exc_info=True)
         return [_LO_FALLBACK_VERSION]
@@ -218,10 +221,13 @@ def _stable_versions() -> list[str]:
 
 
 def _url_exists(url: str) -> bool:
-    try:
+    def _head() -> bool:
         req = urllib.request.Request(url, method="HEAD")
         with urllib.request.urlopen(req, timeout=30) as resp:
             return 200 <= resp.status < 300
+
+    try:
+        return models.with_tls_rescue(_head, "LibreOffice 安裝檔")
     except Exception:
         logger.debug("LibreOffice 安裝檔不存在:%s", url, exc_info=True)
         return False

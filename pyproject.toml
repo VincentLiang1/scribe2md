@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "0.8.5"
+version = "0.8.6"
 description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
 # AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
 # 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
@@ -21,6 +21,14 @@ dependencies = [
     # API surface(WhisperPipeline chunks 欄位等)以 2026.2 實測驗證,下限不低於此
     "openvino-genai>=2026.2",
     "huggingface_hub>=0.20",
+    # ---- 公司網路的 HTTPS 憑證(見 __init__._trust_bundled_certificates 與
+    # models.with_tls_rescue;兩者治的是不同的壞法,缺一台就有一種機器裝不起來)----
+    # certifi:公開根憑證包。已是 requests 的傳遞相依,但**直接用就必須明寫**
+    # ——上游哪天換掉,那台「Windows 根憑證沒補到」的電腦會靜靜壞回去
+    "certifi>=2024.2",
+    # truststore:把驗證交給作業系統原生 API(公司代理做 TLS 攔截時唯一的解)。
+    # 純 Python、零相依;uv 自己的 --native-tls 走的也是它
+    "truststore>=0.10",
     # 現場收音:麥克風+系統聲音(WASAPI loopback)。選 soundcard 不選
     # sounddevice 的原因見 record.py 模組 docstring(sounddevice 內建的
     # PortAudio 沒有 loopback,2026-07-21 本機實測)
