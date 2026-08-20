@@ -164,9 +164,11 @@ OUTPUT_DIR = paths.repo_root() / "output"
 # 使用手冊插圖:docs/ 隨 repo 版控,README(GitHub 上的手冊)與
 # 「使用說明」分頁共用同一份檔案,改圖只改一處
 _PRIVACY_IMG = paths.repo_root() / "docs" / "claude-privacy-setting.jpg"
-# 瀏覽器分頁的圖示。與標題列同一顆圖示的「App 磚」版(分頁只有 16px,
-# 線條版在那個尺寸會糊成一團——兩種畫法的理由見 scripts/make_icon.py)
-_FAVICON = paths.assets_dir() / "icon.ico"
+# 瀏覽器分頁的圖示:**白底磚**那一份(`favicon.ico`,不是去背的 `icon.ico`)。
+# ⚠️ 分頁列的底色多半是白或淺灰,透明的圖示貼上去只剩幾條細線、等於消失
+# (使用者 2026-08-20 實際回報)。桌面捷徑則相反,走去背的 icon.ico——
+# 兩個檔的底色需求相反,不可以合併,理由見 scripts/make_icon.py
+_FAVICON = paths.assets_dir() / "favicon.ico"
 
 
 def find_free_port(start: int = 7860, limit: int = 20) -> int:
@@ -4838,12 +4840,16 @@ def _launch_ui(port: int) -> None:
         # 執行前的那段空窗)+深淺色的還原/儲存與切換鈕的點擊行為
         # +轉檔中關頁確認+斷線提示橫幅(睡眠喚醒後 gradio session 已死、
         # 按鈕全無反應,前端毫無提示;使用者實際踩到,見 RECONNECT_HEAD)
+        # 第五段是分頁圖示的 <link>:gradio 只註冊 /favicon.ico 路由、
+        # **不插標籤**,而那條隱式路徑會被 Chrome 的 favicon 快取擋死
+        # (使用者 2026-08-20 實際踩到)。理由與雜湊的用途見 favicon_head
         head=(
             ui_style.SPLASH_HEAD
             + ui_style.THEME_PERSIST_HEAD
             + ui_style.UNLOAD_GUARD_HEAD
             + ui_style.RECONNECT_HEAD
             + ui_style.AUDIT_PLAYING_HEAD
+            + ui_style.favicon_head()
         ),
         # 試聽片段的落地副本在 %LOCALAPPDATA%\meeting-scribe\pending——不在
         # gradio 檔案白名單(僅 cwd/系統暫存/gradio 快取)內,不明列的話

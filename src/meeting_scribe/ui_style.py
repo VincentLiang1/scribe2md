@@ -9,6 +9,7 @@ js 常數,不含任何事件邏輯——接線都在 app.build_ui)。
 測試守著)。遙測環境變數由套件 __init__(與 app.py 開頭)在任何
 import gradio 之前設定,本模組可安全 import gradio。
 """
+import hashlib
 import urllib.parse
 
 import gradio as gr
@@ -1041,6 +1042,34 @@ body:has(#name-box .name-row .block) #adv-params { display: none !important; }
 }
 #reconnect-bar .rc-dismiss:hover { background: var(--background-fill-secondary); }
 """
+
+
+def favicon_head() -> str:
+    r"""分頁圖示的 `<link rel="icon">`,網址帶內容雜湊。圖檔缺失回空字串。
+
+    ⚠️ **gradio 6.20 不會插這個標籤**:它只註冊一條 `/favicon.ico` 路由
+    (`routes.py`),頁面 head 裡**連 favicon 這個字都沒有**(實測
+    `html.count("favicon")` 是 0,head 的 link 只有 manifest 與 css/js)
+    ——分頁圖示完全靠瀏覽器對 `/favicon.ico` 的**隱式**請求。
+
+    ⚠️ 而那條隱式路徑會被快取擋死:Chrome 的 favicon 快取以 **origin**
+    為單位,先前在同一個埠拿過 gradio 預設圖案的人,換了圖示也不會再去
+    要一次(使用者 2026-08-20 回報「瀏覽器的 ICON 還是不會出現」,而伺服器
+    端那條路由回的其實完全正確——`/favicon.ico` 回 200、bytes 與 assets 裡
+    的一模一樣。**症狀在瀏覽器,不在伺服器**,所以怎麼測路由都是綠的)。
+
+    修法是把隱式改成明示,並在網址後面帶**內容雜湊**:圖示一改 URL 就變,
+    快取自然失效。⚠️ **不可以改成固定的字串或版號**——那樣改了圖示還是
+    要使用者自己去清快取,而那是沒辦法教非技術同仁做的事。查詢參數不影響
+    路由比對(FastAPI 只看路徑),伺服器端不必配合。"""
+    try:
+        # 雜湊要取**分頁實際拿到的那一份**(白底磚的 favicon.ico);
+        # 取成去背的 icon.ico 的話,換了分頁圖示網址卻不變,快取照樣擋著
+        digest = hashlib.sha1(
+            (paths.assets_dir() / "favicon.ico").read_bytes()).hexdigest()[:10]
+    except OSError:
+        return ""
+    return f'<link rel="icon" type="image/x-icon" href="/favicon.ico?v={digest}">'
 
 
 def _icon_data_uri(name: str) -> str:
