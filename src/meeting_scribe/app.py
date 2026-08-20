@@ -164,6 +164,9 @@ OUTPUT_DIR = paths.repo_root() / "output"
 # 使用手冊插圖:docs/ 隨 repo 版控,README(GitHub 上的手冊)與
 # 「使用說明」分頁共用同一份檔案,改圖只改一處
 _PRIVACY_IMG = paths.repo_root() / "docs" / "claude-privacy-setting.jpg"
+# 瀏覽器分頁的圖示。與標題列同一顆圖示的「App 磚」版(分頁只有 16px,
+# 線條版在那個尺寸會糊成一團——兩種畫法的理由見 scripts/make_icon.py)
+_FAVICON = paths.assets_dir() / "icon.ico"
 
 
 def find_free_port(start: int = 7860, limit: int = 20) -> int:
@@ -4827,6 +4830,9 @@ def _launch_ui(port: int) -> None:
         quiet=True,  # 見上:關掉 gradio 的 share 廣告與英文網址行
         theme=ui_style.apple_theme(),  # Apple 風視覺層(gradio 6:theme/css 由 launch 收)
         css=ui_style.APPLE_CSS,
+        # 分頁圖示。檔案缺失就交回 gradio 的預設圖案(給 None):圖示是外觀,
+        # 不得讓程式起不來——同 ui_style._header_icon_css 的降級原則
+        favicon_path=str(_FAVICON) if _FAVICON.exists() else None,
         # head 四段:開頁過場(蓋掉 gradio 還沒畫出畫面的那 2~3 秒白畫面,
         # 使用者 2026-08-08 回報;**必須排第一**——它要蓋的正是後面幾段
         # 執行前的那段空窗)+深淺色的還原/儲存與切換鈕的點擊行為

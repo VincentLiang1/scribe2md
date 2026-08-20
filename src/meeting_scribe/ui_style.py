@@ -9,7 +9,11 @@ js 常數,不含任何事件邏輯——接線都在 app.build_ui)。
 測試守著)。遙測環境變數由套件 __init__(與 app.py 開頭)在任何
 import gradio 之前設定,本模組可安全 import gradio。
 """
+import urllib.parse
+
 import gradio as gr
+
+from . import paths
 
 _APPLE_BLUE = gr.themes.Color(
     c50="#eaf3ff", c100="#d5e8fe", c200="#abcffd", c300="#77b0fa",
@@ -1037,6 +1041,57 @@ body:has(#name-box .name-row .block) #adv-params { display: none !important; }
 }
 #reconnect-bar .rc-dismiss:hover { background: var(--background-fill-secondary); }
 """
+
+
+def _icon_data_uri(name: str) -> str:
+    r"""`assets\` 裡的 SVG → CSS 用的 data URI;檔案缺失回空字串。
+
+    整份編碼(`safe=""`)不是懶:SVG 裡有 `#`(色碼)與 `<>`,漏編一個就是
+    整條規則被瀏覽器丟掉,而症狀只是「圖示沒出現」——不值得為了短一點
+    的字串去逐字元判斷哪些安全。"""
+    try:
+        svg = (paths.assets_dir() / name).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    return "data:image/svg+xml," + urllib.parse.quote(svg, safe="")
+
+
+def _header_icon_css() -> str:
+    r"""標題列圖示(在「AI」左邊)的 CSS。圖檔缺失時回空字串。
+
+    ⚠️ **用 ::before 而不是把 `<img>` 寫進 `gr.Markdown`**:Markdown 元件
+    會過濾 HTML,而樣式這一層不受它管;順帶也不必把檔案交給 gradio 供應
+    (那要多一條 `allowed_paths` 與一次請求),`launch(css=)` 這串本來就
+    整段送到前端。
+
+    ⚠️ **深淺色共用同一份,不分兩套**:圖示的紙是**實心白**(使用者
+    2026-08-20 指定「背景去掉、但文件裡面是白色」),白紙配墨線在淺底與
+    黑底上都成立——所以這裡沒有 `.dark` 的規則,也沒有第二個圖檔。
+    ⚠️ **不要「順手」讓線跟著文字色走**(`currentColor`):深色模式下那會
+    把墨線變白,而白線畫在白紙上等於整張紙空白。
+    ⚠️ **更不要補 `@media (prefers-color-scheme: dark)`**:APPLE_CSS 一出現
+    巢狀 at-rule,test_app 的 CSS 解析(平面的一層大括號,自己斷言沒有
+    @media)就會拆錯,十三條版面測試一起紅。
+
+    圖檔缺失一律降級成「沒有圖示」:那是外觀,不得讓程式起不來。"""
+    uri = _icon_data_uri("icon.svg")
+    if not uri:
+        return ""
+    return f"""
+/* 標題列圖示(造型與配色由使用者 2026-08-20 選定;產生器見
+   scripts/make_icon.py)。高度綁 em:標題字級變了它自己跟著變 */
+#app-header h1::before {{
+  content: ""; display: inline-block;
+  width: 1.12em; height: 1.12em; margin-right: 0.28em; vertical-align: -0.16em;
+  background: url("{uri}") center / contain no-repeat;
+}}
+"""
+
+
+# 圖形的單一真相來源是 `assets\icon.svg`(由 scripts/make_icon.py 產生),
+# 在這裡讀進來轉成 data URI——不是手抄一份路徑資料進 CSS,否則改了圖示
+# 卻忘了改 CSS 時,兩邊會靜靜地長得不一樣
+APPLE_CSS += _header_icon_css()
 
 
 def rival_classes(count: int) -> list[str]:

@@ -19,6 +19,14 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def assets_dir() -> Path:
+    r"""套件自帶的靜態資產(程式圖示;隨 wheel 與交付副本走)。
+
+    ⚠️ **不可以走 repo_root()**:那條在真打成 wheel 時不成立(見上),而圖示
+    要跟著套件本身移動。內容由 `scripts/make_icon.py` 產生,不是手寫的。"""
+    return Path(__file__).resolve().parent / "assets"
+
+
 def appdata_root() -> Path:
     r"""%LOCALAPPDATA%\meeting-scribe;無 LOCALAPPDATA 的環境退回 ~/.cache。
 
