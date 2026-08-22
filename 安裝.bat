@@ -33,7 +33,19 @@ uv run python -c "import meeting_scribe" >nul 2>&1
 if errorlevel 1 goto broken
 
 echo.
-echo 環境建置完成。請雙擊「啟動.bat」開始使用工具。
+echo 環境建置完成。
+
+rem 捷徑要指的三段路徑只有這一刻算得出來:同仁把工具解壓到哪裡是他的自由,
+rem 所以「啟動.bat」、工作目錄與圖示都由腳本從自己的位置往上推,一段都不寫死。
+rem 中文全留在那支 UTF-8 的 Python 裡,這行維持純 ASCII:字串過 cmd 這一層
+rem 會被重新編碼。捷徑建不出來不算安裝失敗,只是換一句話收尾。
+uv run python scripts/make_shortcut.py
+if errorlevel 1 goto nolnk
+pause
+exit /b 0
+
+:nolnk
+echo 不影響使用,雙擊這個資料夾裡的「啟動.bat」一樣能啟動工具。
 pause
 exit /b 0
 

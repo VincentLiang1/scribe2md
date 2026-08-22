@@ -4056,7 +4056,7 @@ def build_ui() -> gr.Blocks:
             # ---- 分頁 4:完整使用說明(2026-08-08 設計稿方案 A:左目錄、右內容)----
             with gr.Tab("❓ 使用說明", id="tab-help"):
                 # 原本是一整篇 9,816 字的長文、一條捲軸到底,改成點一篇看一篇。
-                # 分類軸(使用需求 8 篇,不是功能)與每一篇的內容見 help_text
+                # 分類軸(使用需求 10 篇,不是功能)與每一篇的內容見 help_text
                 # 的 docstring。**三個內容元件都是葉子**(Markdown / Image /
                 # Markdown),換篇時只換它們的「值」與截圖的 visible,
                 # 完全不動容器——會切 visible 的容器 remount 會帶舊 props
