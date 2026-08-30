@@ -17,6 +17,16 @@ from pathlib import Path
 # 不經套件 __init__ 的情況;setdefault 冪等)。
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+# oneDNN 的 OpenCL 探測失敗訊息一律不印(2026-08-30 使用者把黑視窗的內容貼過來
+# 才發現)。⚠️ **這不是錯誤**:OpenVINO 照樣在 Intel Arc iGPU 上跑完轉錄(實測有無
+# 這個變數,結果與速度都一樣),那十幾行是 oneDNN 自己另外探一次 OpenCL 引擎、
+# 失敗後的抱怨(`no opencl gpu device is available` / `CL_INVALID_OPERATION`)。
+# ⚠️ **為什麼非關不可**:黑視窗是我們叫非技術同仁「看得出原因」時打開的地方
+# (`疑難排解\啟動DEBUG.bat`),而那整片英文 error 會把真正的訊息淹掉,還會讓人
+# 以為 GPU 壞了。oneDNN 3.4 起預設就會印 error 級的訊息,要 `none` 才全關。
+# ⚠️ **`setdefault`**:自己要查 oneDNN 時,外面設 `ONEDNN_VERBOSE=all` 仍然蓋得過。
+# ⚠️ 必須在**任何** import openvino 之前——同上面兩個遙測開關的理由。
+os.environ.setdefault("ONEDNN_VERBOSE", "none")
 # gradio 供應快取改指本行程專屬目錄(隱私:對外供應的檔案——下載區逐字稿、
 # 試聽片段——會被 gradio「複製」進這裡,預設位置 %TEMP%\gradio 整機共用且
 # gradio 從不清理,機敏副本會永遠堆著)。此處只講「在這裡設定」的三個理由:

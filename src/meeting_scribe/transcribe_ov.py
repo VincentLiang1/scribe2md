@@ -198,7 +198,13 @@ def _generate_block(
     切半有效的原因:跳針好發於 >30 秒單塊的內部 sliding window(跨窗上下文
     把重複帶著走),切短後各半獨立解碼、上下文歸零;實際案例中前半的正常
     內容也因此救得回來(跳針段常是「前段正常、中途開始迴圈」)。"""
-    cancel.check()  # 停止響應點:每次(重)解碼之前
+    # 停止響應點:每次(重)解碼之前。⚠️ **這條路徑的取消粒度就是「塊」**
+    # ——單一 generate() 一旦進去就中斷不了,按停止最久要等一整塊解碼完
+    # (_MAX_CHUNK_SEC 28 秒的塊,GPU 上通常是數秒~十幾秒)。**否決過的路**:
+    # 想靠 streamer callback 在 token 層攔截,但 WhisperPipeline 的 streamer
+    # 只吃 <30 秒的輸入、而且不回時間戳,拿它等於放棄長塊與時間戳兩件事——
+    # 為了停止鈕早幾秒有反應,換掉逐字稿的正確性,不划算
+    cancel.check()
     block = samples[int(start * 16000): int(end * 16000)]
     result = pipe.generate(block, config)
     segs: list[TranscriptSegment] = []

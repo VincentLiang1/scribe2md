@@ -12,7 +12,7 @@ r"""Gradio 網頁介面(工具的進入點):版面接線、事件流程與按鈕
 本檔閱讀地圖(由上而下):
 1. 常數與參數正規化(_normalize_* 系列、_apply_cpu_cores)
 2. 試聽片段(_cut_speaker_clips:剪每位講者「最長一句」的原音)
-3. 命名草稿(_save_draft_names → pending.update_names)
+3. 命名草稿(naming_core._save_draft_names → pending.update_names)
 4. 檔案轉檔流程(路徑輸入、一次一檔):_run(把關 → run_pipeline)→
    _present_result(轉檔成果 → 整組 UI 更新)、_restore_pending
 5. 套用與復位:_apply_names、_end_of_job_updates、_page_reset_updates
@@ -82,6 +82,10 @@ from meeting_scribe import pipeline
 from meeting_scribe import record
 from meeting_scribe import voiceprints as voiceprints_store
 from meeting_scribe.errors import UserFacingError
+# ⚠️ 別名不是裝飾:`naming` 這個名字在本檔已經是 `_naming_page_updates`
+# 的參數(「這份成品有沒有人可以命名」),直接 `import naming` 會在那支
+# 函式裡被區域變數遮蔽,而症狀是 `'bool' object has no attribute …`
+from meeting_scribe import naming as naming_core
 from meeting_scribe.pipeline import cleanup_stale_temp, run_pipeline
 from meeting_scribe.types import MAX_SPEAKERS, UNKNOWN_SPEAKER, SpeechBlock
 
@@ -214,65 +218,7 @@ def _apply_cpu_cores(value) -> None:
         transproc.shutdown()
 
 
-# ---- 試聽片段(命名時認人用)----
-# 片段檔要活過「轉檔事件結束 → 使用者按試聽/命名」的跨事件窗口,不能用
-# with 自清的暫存目錄;沿用 pipeline 的「前綴+存活鎖」機制:目錄同前綴、
-# 鎖檔由本行程持開——另一實例啟動時 cleanup_stale_temp 刪不掉鎖檔就整包
-# 跳過(多實例可並存);本行程硬退出後鎖自動釋放,下次啟動掃掉。
-# 換下一檔時舊目錄直接汰換,不必等啟動清掃。
-_clips_dir: Path | None = None
-_clips_lock = None  # 持開中的鎖檔 handle(見上)
-
-
-def _new_clips_dir() -> Path:
-    """換新一批試聽片段的目錄:上一批(連同鎖檔)一併汰換。"""
-    global _clips_dir, _clips_lock
-    if _clips_lock is not None:
-        _clips_lock.close()
-        _clips_lock = None
-    if _clips_dir is not None:
-        shutil.rmtree(_clips_dir, ignore_errors=True)
-    _clips_dir = Path(tempfile.mkdtemp(prefix=pipeline.TMP_PREFIX + "clips-"))
-    _clips_lock = (_clips_dir / pipeline.TMP_LOCK).open("wb")
-    return _clips_dir
-
-
-def _cut_speaker_clips(src: Path, hints: dict, sources: dict | None = None) -> dict:
-    """從原始檔剪出每位講者(含未知)「最長一句」的試聽片段。
-
-    回 {講者標籤: 片段路徑};該句起訖秒數由 hints 帶回(與命名欄顯示的
-    摘錄同一句,聽到的就是看到的那句)。sources({講者標籤: 音檔路徑},
-    現場收音的分軌結果)優先於 src:線上會議的現場講者要剪麥克風軌、
-    遠端講者剪系統軌,剪錯軌只會聽到回音版或無聲。試聽是輔助功能:
-    任何一段剪失敗只記 log、少一顆試聽鈕,絕不讓整批轉檔失敗。"""
-    clips: dict[int, str] = {}
-    if not hints:
-        return clips
-    out_dir = _new_clips_dir()
-    for spk, (_cnt, _quote, start, end) in hints.items():
-        name = "unknown.wav" if spk == UNKNOWN_SPEAKER else f"speaker_{spk}.wav"
-        origin = Path(sources[spk]) if sources and spk in sources else src
-        try:
-            clips[spk] = str(audio.cut_clip(origin, out_dir / name, start, end))
-        except Exception:
-            logger.exception("試聽片段剪輯失敗(講者標籤 %s),該講者不提供試聽", spk)
-    return clips
-
-
 # ---- 命名草稿(儲存本體在 pending.py,這裡只做欄位順序 → 講者標籤)----
-
-def _save_draft_names(*name_values) -> None:
-    """命名欄輸入即存草稿(掛 .input:只在「使用者」輸入時觸發,_run/套用
-    /換檔的程式化更新不會誤存)。前 MAX_SPEAKERS 個是講者框、最後一個是
-    「未知」框;欄位順序 → 講者標籤的轉換在此,儲存本體在 pending。"""
-    names = {
-        i: v.strip() if isinstance(v, str) else ""
-        for i, v in enumerate(name_values[:MAX_SPEAKERS])
-    }
-    if len(name_values) > MAX_SPEAKERS:
-        v = name_values[MAX_SPEAKERS]
-        names[UNKNOWN_SPEAKER] = v.strip() if isinstance(v, str) else ""
-    pending.update_names(names)
 
 
 # ---- 過期點擊(斷線後的死頁面)----
@@ -373,7 +319,7 @@ def _run_btn_for(text):
 
 # ---- 按鈕狀態機:開始/停止/檔案來源的鎖定與還原(使用者規格)----
 
-def _end_of_job_updates() -> tuple:
+def _end_of_job_view() -> dict:
     """「這一檔收工」的共同尾端:清路徑欄、雙鈕回等待狀態、講者人數歸零。
 
     收工點有三個——套用名字、跳過命名、按停止(_apply_names /
@@ -384,12 +330,12 @@ def _end_of_job_updates() -> tuple:
     可填、停止當下才讀,開錄復位會清掉預先填好的值)。
     路徑欄清空後「開始」必須在同一批訊息裡鎖回:路徑欄的亮燈事件掛
     `.input`(只回應使用者輸入),程式化清空不會觸發它。"""
-    return (
-        gr.update(value=""),           # 路徑欄清空,等下一檔
-        gr.update(interactive=False),  # 開始:重新選檔才亮
-        gr.update(interactive=False),  # 停止
-        gr.update(value=0),            # 講者人數歸零回自動偵測
-    )
+    return {
+        "src_path": gr.update(value=""),          # 路徑欄清空,等下一檔
+        "run_btn": gr.update(interactive=False),  # 重新選檔才亮
+        "stop_btn": gr.update(interactive=False),
+        "speakers": gr.update(value=0),           # 歸零回自動偵測
+    }
 
 
 def _request_stop():
@@ -403,7 +349,7 @@ def _request_stop():
     競態無害:若停止恰好按在轉檔完成後,這組更新與完成後狀態完全一致。"""
     cancel.request()
     gr.Info("已要求停止:等目前片段收尾(數秒)即停,轉到一半的檔案會放棄、不留半成品。")
-    return _end_of_job_updates()
+    return _view(END_OF_JOB_SPEC[len(PAGE_SPEC):], _end_of_job_view())
 
 
 def _start_run():
@@ -431,14 +377,14 @@ def _start_run():
     except Exception:
         logger.exception("清除命名進度失敗(不影響本次轉檔)")
     return (
-        gr.update(interactive=False),  # 路徑欄
-        gr.update(interactive=False),  # 選擇檔案…
-        gr.update(interactive=False),  # 選擇資料夾…
-        gr.update(interactive=False),  # 清空
-        gr.update(interactive=False),  # 開始
-        gr.update(interactive=True),   # 停止
-        gr.update(interactive=False),  # 要做什麼(鎖切換)
-        *_param_updates(False),        # 進階參數鎖住
+        *_view(START_RUN_SPEC[:6], {
+            "src_path": gr.update(interactive=False),
+            "src_btns": [gr.update(interactive=False)] * 3,
+            "run_btn": gr.update(interactive=False),
+            "stop_btn": gr.update(interactive=True),
+            "source_mode": gr.update(interactive=False),   # 鎖切換
+            "adv_params": _param_updates(False),
+        }),
         *_page_reset_updates(None),    # 整頁復位(上一檔成品清掉)
     )
 
@@ -451,16 +397,14 @@ def _after_run(path_value):
     報錯(gr.Error 中斷、_run 的 outputs 沒落地)路徑還在 → 恢復可按,
     使用者修正問題後直接重試(使用者選定)。"""
     _transcribing["on"] = False  # 完成/報錯/停止都會經過這裡(then/failure 成對)
-    return (
-        gr.update(interactive=True),       # 路徑欄
-        gr.update(interactive=True),       # 選擇檔案…
-        gr.update(interactive=True),       # 選擇資料夾…
-        gr.update(interactive=True),       # 清空
-        _run_btn_for(path_value),
-        gr.update(interactive=False),      # 停止
-        gr.update(interactive=True),       # 要做什麼解鎖
-        *_param_updates(True),
-    )
+    return _view(AFTER_RUN_SPEC, {
+        "src_path": gr.update(interactive=True),
+        "src_btns": [gr.update(interactive=True)] * 3,
+        "run_btn": _run_btn_for(path_value),
+        "stop_btn": gr.update(interactive=False),
+        "source_mode": gr.update(interactive=True),   # 解鎖
+        "adv_params": _param_updates(True),
+    })
 
 
 # ---- 轉檔的斷線還原:畫面與執行脫鉤(使用者選定 2026-08-08,方案 C)----
@@ -476,22 +420,42 @@ def _after_run(path_value):
 # 秒針在「整頁更新」裡只動預覽區那一格。preview 在 `_naming_page_updates`
 # 的回傳裡排第二個——給它一個名字而不是寫死 1:將來那個函式前面多一格,
 # 寫死的版本會靜默地把進度畫到別的元件上(而隔壁那格是下載區)
-_PREVIEW_IN_PAGE = 1
 # 左欄控件的回傳長度:要做什麼/路徑欄/三顆選檔鈕/開始/停止 + 四個進階
 # 參數 + 錄音那一側四個(狀態列/錄音雙鈕/收音情境)。**兩側的聯集**是因為
 # 秒針要同時服務兩條路——檔案轉檔與錄音收尾結束時,該收拾的鈕不一樣
 # (尤其「停止」:檔案模式留著等下一檔,收音模式要收回隱藏)
-_RUN_UI_LEN = 7 + 4 + 4
+# 左欄控件的規格(順序 = build_ui 的 `run_restore_ui`;
+# `test_run_ui_spec_matches_build_ui` 雙向釘著)。**兩側的聯集**是因為秒針
+# 要同時服務兩條路——檔案轉檔與錄音收尾結束時,該收拾的鈕不一樣(尤其
+# 「停止」:檔案模式留著等下一檔,收音模式要收回隱藏)
+RUN_UI_SPEC = (
+    ("source_mode", 1), ("src_path", 1), ("src_btns", 3),
+    ("run_btn", 1), ("stop_btn", 1), ("adv_params", 4),
+    ("rec_status", 1), ("rec_start_btn", 1), ("rec_stop_btn", 1), ("scenario", 1),
+)
+_RUN_UI_LEN = sum(n for _, n in RUN_UI_SPEC)
+
+
+# 「要做什麼」切換時要動的那 16 個(順序 = build_ui 的 `source_switch_outputs`;
+# `test_source_switch_spec_matches_build_ui` 雙向釘著)
+SOURCE_SWITCH_SPEC = (
+    ("source_mode", 1), ("src_path", 1), ("src_hint", 1), ("src_btns", 3),
+    ("src_summary", 1), ("scenario", 1), ("rec_status", 1),
+    ("rec_start_btn", 1), ("rec_stop_btn", 1), ("run_btn", 1), ("stop_btn", 1),
+    ("speakers", 1), ("model", 1), ("recursive", 1),
+)
 
 
 def _page_only_preview(preview_md: str) -> tuple:
     """整頁「其他都別動」,只把預覽區換成這段文字。
 
-    其餘一律 gr.skip():轉檔中每秒跑一次,動到命名框/下載區都是白費往返,
-    而 State 元件更不能收 gr.update()(update dict 會被當成「值」存進去)。"""
-    page = [gr.skip()] * PAGE_UPDATE_LEN
-    page[_PREVIEW_IN_PAGE] = gr.update(value=preview_md)
-    return tuple(page)
+    其餘一律不動:轉檔中每秒跑一次,動到命名框/下載區都是白費往返,
+    而 State 元件更不能收 gr.update()(update dict 會被當成「值」存進去)。
+
+    ⚠️ **這一支是 B 層的試點**(2026-08-29):函式本體只描述「要改什麼」,
+    位置與長度交給 `_view` 照 `PAGE_SPEC` 去排。以前這裡要同時記對總長 109
+    與「預覽在第 1 格」兩件事,現在兩個常數都不存在了。"""
+    return _view(PAGE_SPEC, {"preview": gr.update(value=preview_md)})
 
 
 def _transcribe_ui_updates(busy: bool, path_value: str = "") -> tuple:
@@ -500,33 +464,29 @@ def _transcribe_ui_updates(busy: bool, path_value: str = "") -> tuple:
     busy=True 必須與鏈頭 `_start_run` 鎖出來的狀態**一致**——reload 接回
     的畫面若比原本鬆(例如「開始」還能按),那正是會跑出第二份轉檔的路;
     互斥檢查是最後一道防線,不該讓它天天上工。"""
-    rec_side = tuple(gr.skip() for _ in range(4))  # 錄音那四個不歸這裡管
+    # 錄音那四個(rec_status / rec_start_btn / rec_stop_btn / scenario)
+    # 不歸這裡管——**沒寫進 view 就是不動**,不必再湊四個 gr.skip()
     if busy:
-        return (
+        return _view(RUN_UI_SPEC, {
             # 模式帶 info 一起送:只送 value/interactive 的話,說明小字會
             # 停在使用者上次切換的模式(同 `_restore_recording` 那條)
-            gr.update(value=_MODE_FILE, interactive=False,
-                      info=_MODE_INFO[_MODE_FILE]),
-            gr.update(value=path_value, interactive=False),  # 檔名要看得到
-            gr.update(interactive=False),   # 選擇檔案…
-            gr.update(interactive=False),   # 選擇資料夾…
-            gr.update(interactive=False),   # 清空
-            gr.update(interactive=False),   # 開始
-            gr.update(interactive=True),    # 停止:這顆回來,才不必關黑視窗
-            *_param_updates(False),
-            *rec_side,
-        )
-    return (
-        gr.update(interactive=True),        # 要做什麼(只解鎖,不動選中值)
-        gr.update(interactive=True),        # 路徑欄
-        gr.update(interactive=True),        # 選擇檔案…
-        gr.update(interactive=True),        # 選擇資料夾…
-        gr.update(interactive=True),        # 清空
-        _run_btn_for(path_value),
-        gr.update(interactive=False),       # 停止
-        *_param_updates(True),
-        *rec_side,
-    )
+            "source_mode": gr.update(value=_MODE_FILE, interactive=False,
+                                     info=_MODE_INFO[_MODE_FILE]),
+            "src_path": gr.update(value=path_value, interactive=False),  # 檔名要看得到
+            "src_btns": [gr.update(interactive=False)] * 3,  # 選檔/選資料夾/清空
+            "run_btn": gr.update(interactive=False),
+            # 停止:這顆回來,才不必關黑視窗
+            "stop_btn": gr.update(interactive=True),
+            "adv_params": _param_updates(False),
+        })
+    return _view(RUN_UI_SPEC, {
+        "source_mode": gr.update(interactive=True),  # 只解鎖,不動選中值
+        "src_path": gr.update(interactive=True),
+        "src_btns": [gr.update(interactive=True)] * 3,
+        "run_btn": _run_btn_for(path_value),
+        "stop_btn": gr.update(interactive=False),
+        "adv_params": _param_updates(True),
+    })
 
 
 def _recording_end_updates() -> tuple:
@@ -536,17 +496,17 @@ def _recording_end_updates() -> tuple:
     之後那條鏈並不存在**,所以斷線接回來的畫面得由秒針自己收拾。
     差別最大的是「停止」那顆:檔案模式留著等下一檔,收音模式要收回隱藏
     (它平時不顯示,只在收尾期間臨時亮出來)。"""
-    return (
-        gr.update(interactive=True),                  # 要做什麼:解鎖
-        gr.skip(), gr.skip(), gr.skip(), gr.skip(),   # 路徑欄與選檔三鈕(收音模式隱藏)
-        gr.skip(),                                    # 開始轉檔(同上)
-        gr.update(visible=False, interactive=False),  # 停止:收回隱藏
-        *_param_updates(True),
-        gr.update(value=_REC_IDLE_MD),                # 錄音狀態列回待機
-        gr.update(interactive=True),                  # 開始錄音
-        gr.update(interactive=False),                 # 停止錄音
-        gr.update(interactive=True),                  # 收音情境解鎖
-    )
+    # ⚠️ 沒寫進 view 的就是不動:路徑欄、選檔三鈕、開始轉檔那五個在收音模式
+    # 是隱藏的,以前要排五個 gr.skip() 佔位,現在不寫就是了
+    return _view(RUN_UI_SPEC, {
+        "source_mode": gr.update(interactive=True),          # 要做什麼:解鎖
+        "stop_btn": gr.update(visible=False, interactive=False),  # 停止:收回隱藏
+        "adv_params": _param_updates(True),
+        "rec_status": gr.update(value=_REC_IDLE_MD),         # 錄音狀態列回待機
+        "rec_start_btn": gr.update(interactive=True),
+        "rec_stop_btn": gr.update(interactive=False),
+        "scenario": gr.update(interactive=True),             # 收音情境解鎖
+    })
 
 
 def _progress_md(snap) -> str:
@@ -600,9 +560,9 @@ def _restore_transcribing():
     # 覆蓋掉。秒針則兩邊共用,由那條路負責打開
     if snap is None or snap.kind == runstate.KIND_RECORDING:
         return (
-            *(gr.skip() for _ in range(PAGE_UPDATE_LEN)),
+            *_view(PAGE_SPEC, {}),   # 整頁一格都不動
             gr.skip(),                                    # 秒針不動
-            *(gr.skip() for _ in range(_RUN_UI_LEN)),
+            *_view(RUN_UI_SPEC, {}),   # 左欄那整組不動
         )
     return (
         *_page_only_preview(_progress_md(snap)),
@@ -632,7 +592,7 @@ def _run_tick(mode=None):
             *_page_only_preview(_progress_md(snap)),
             gr.Timer(active=True),
             # 控件在還原/鏈頭時已經鎖好,每秒重送一次是白費往返
-            *(gr.skip() for _ in range(_RUN_UI_LEN)),
+            *_view(RUN_UI_SPEC, {}),   # 左欄那整組不動
         )
     # 轉完了(或被停止/失敗):把命名畫面接上並解鎖。`_restore_pending`
     # 沒有落地資料時整組 skip,此時畫面就只是解鎖回到等待下一檔
@@ -642,73 +602,6 @@ def _run_tick(mode=None):
 
 
 # ---- 講者命名:逐字稿改寫與認人線索 ----
-
-def _rename_speakers(
-    text: str, name_map: dict[int, str], unknown_name: str | None = None,
-    labels: dict[int, str] | None = None,
-) -> str:
-    """把 md 逐字稿裡的講者標籤換成指定名字。
-
-    `labels` 是「這些編號目前在檔案裡長什麼樣子」,預設「講者 N」/「未知」。
-    「重設講者」模式(_run_relabel)會傳入實際讀到的標籤——那份 md 可能
-    **早就命名過**(當初打錯字、或想換個稱呼),標籤是真名而不是「講者 N」。
-
-    改寫委託給 relabel.rename:它逐行比對 `**名字** (時:分:秒)` 這個輸出
-    格式本身,時間戳讓它不可能誤中內文裡的粗體字,也天然沒有
-    「講者 1 誤配到講者 10」的前綴問題(那正是舊實作要靠尾隨 `**` 迴避的)。
-    (曾依副檔名分流 txt/srt 錨定,隨輸出格式固定 md 移除,2026-07-26。)"""
-    labels = labels or {}
-    by_label = {
-        labels.get(n, f"講者 {n}"): name for n, name in name_map.items()
-    }
-    if unknown_name:
-        by_label[labels.get(UNKNOWN_SPEAKER, "未知")] = unknown_name
-    return relabel.rename(text, by_label)
-
-
-# 命名欄位摘錄長度:一行內讀得完的識別線索即可,不是給全文
-# 摘錄字數上限。⚠️ **40 → 24 是量出來的**(2026-08-18 精簡面板):40 字在
-# 482px 的左欄折成 **3 行**、整段線索佔 84px;認人其實看前二十幾字就夠——
-# 那是「這個人講話的樣子」,而真要確認,試聽鈕就在同一列
-_HINT_QUOTE_CHARS = 24
-
-
-def _hint_text(hint, rivals=None) -> str | None:
-    """命名欄位下的認人線索:「共 N 段發言・『最長一句摘錄』」,聲紋分不開
-    的那幾位再加一行候選。
-
-    讓使用者不必翻預覽找「講者 N 說了什麼」就能認人。無線索回 None
-    (該講者沒有合格的摘錄句;線索與聲紋同源,見 speaker_hints)。
-
-    ⚠️ **候選一定要並列、而且不寫分數**(使用者 2026-08-15 選定 3 案):
-    98 次留白裡 54% 的第一名與第二名只差 0.03 以內,那一段第一名只有
-    24% 是對的——單獨顯示第一名等於給一個四次錯三次的答案。分數不寫則是
-    因為「0.86 對 0.85」會讓那 0.01 看起來像一種依據,而它其實是雜訊。
-
-    ⚠️ **換行用單一 `\\n`**:gradio 6.20 的 info 會把它轉成 `<br>`
-    (2026-08-15 Playwright 實測,見 docs/dev/ui.md)——它不是 markdown,
-    所以既不必寫兩個空格,也不怕摘錄裡的符號被當成語法。
-
-    ⚠️ **線索裡不寫任何按鈕名稱**(2026-08-18 精簡面板時整句拿掉)。沿革:
-    原本候選後面附「建議按『🔍 核對』聽過再選」,而核對只亮在差距最小的
-    前三位——有幾列因此叫人去按一顆畫面上不存在的鈕(2026-08-15 使用者
-    截圖抓到,當時是加 `can_audit` 改指試聽)。**現在改成不指鈕**:那半句
-    是規則不是這一位的資訊,每一位重複一次、實測每列多 33px,而兩顆鈕
-    本來就在同一列右邊。指路改在面板頂部講一次,並同時提試聽與核對。
-    `test_hint_text_never_names_a_button` 守著。"""
-    parts = []
-    if hint:
-        count, quote = hint[0], hint[1]  # 尾端另有該句起訖秒(剪試聽用),這裡用不到
-        if len(quote) > _HINT_QUOTE_CHARS:
-            quote = quote[:_HINT_QUOTE_CHARS] + "…"
-        parts.append(f"共 {count} 段發言・「{quote}」")
-    if rivals:
-        # ⚠️ **只講「像誰」,不再附「建議按 X 聽過再選」**(2026-08-18 精簡):
-        # 那半句是**規則**不是這一位的資訊,每一位重複一次——實測它讓每一列
-        # 多 33px,十位講者就是 330px。而「🔍 核對」「▶️ 試聽」本來就在同一列
-        # 的右邊,按鈕自己就是指路;那句話改成整個面板頂部講一次
-        parts.append(f"聲音同時像:{'、'.join(rivals)}")
-    return "\n".join(parts) or None
 
 
 # ---- 試聽(無播放器介面:按「試聽」即從頭播、再按即停、換人直接切)----
@@ -734,58 +627,59 @@ def _aud_btn_updates(playing) -> list:
     ]
 
 
-def _audition_reset_updates() -> tuple:
+def _audition_view(player, playing) -> tuple:
+    """試聽那一組的共同排法:載體、playing 狀態、31 顆鈕的字樣。
+
+    ⚠️ `player=None` 表示「把載體清成 None」而不是「不動」:同一顆再按時
+    才有「None → 路徑」的變化可以觸發播放(值不變 gradio 前端不重載)。"""
+    btns = _aud_btn_updates(playing)
+    return _view(AUDITION_SPEC, {
+        "audition_player": gr.update(value=None) if player is None else player,
+        "playing_state": playing,
+        "audition_btns": btns[:MAX_SPEAKERS],
+        "unknown_aud_btn": btns[MAX_SPEAKERS],
+    })
+
+
+def _audition_reset_view() -> dict:
     """試聽整組復位(轉完新檔/套用/轉檔鏈復位共用):清片段與播放狀態、
     停掉出聲載體(value=None 即卸載媒體)、藏所有試聽鈕。片段檔留在磁碟
-    由下一批汰換,不在此刪——載體可能正在串流該檔。"""
+    由下一批汰換,不在此刪——載體可能正在串流該檔。
+
+    ⚠️ 回的是 `{元件名: 值}`(2026-08-29 B 層):以前是一串沒有名字的元組,
+    誰在第幾格全靠上下游各自數對。"""
     hidden = [
         gr.update(visible=False, value=_AUD_PLAY_LABEL)
         for _ in range(MAX_SPEAKERS + 1)
     ]
-    return ({}, None, gr.update(value=None), *hidden)
+    return {
+        "clips_state": {}, "playing_state": None,
+        "audition_player": gr.update(value=None),
+        "audition_btns": hidden[:MAX_SPEAKERS],
+        "unknown_aud_btn": hidden[MAX_SPEAKERS],
+    }
 
 
 # 「🔍 核對」的鈕字樣。與試聽鈕一樣走「字樣即狀態」,不另開狀態元件
 _AUDIT_LABEL = "🔍 核對"
 
 
-def _audit_reset_updates() -> tuple:
+def _audit_reset_view() -> dict:
     """核對整組復位:清狀態、關面板、藏所有核對鈕(轉完新檔/套用/復位共用)。
 
-    形狀 = audit_state + 面板 4 件(播放器/表格/改掛下拉/整個面板)
-    + 30+1 顆鈕,與 _audit_panel_updates 對齊。"""
+    ⚠️ 以前這裡要靠一段註解說明「形狀 = audit_state + 面板 4 件 + 30+1 顆鈕」,
+    而那段話正是在替沒有名字的元組補說明。現在鍵自己就是說明。"""
     hidden = [gr.update(visible=False) for _ in range(MAX_SPEAKERS + 1)]
-    return (
-        {}, gr.update(value=None), gr.update(value=None),
-        gr.update(value=[], choices=[]), gr.update(value="", choices=[]),
-        gr.update(visible=False), *hidden,
-    )
-
-
-def _audit_dir() -> Path:
-    r"""核對音檔放哪:與試聽片段同一個暫存目錄底下。
-
-    那個目錄已經有鎖檔、換一批就整個汰換,而且被 `cleanup_stale_temp`
-    納管(當機殘留下次啟動自動清)。⚠️ **絕不能放
-    `%LOCALAPPDATA%\meeting-scribe
-ecordings`**——那裡是錄音的地盤,
-    規矩相反(錄音不能被當孤兒掃掉,核對音檔則是用完即丟)。"""
-    if _clips_dir is None:
-        _new_clips_dir()
-    d = _clips_dir / "audit"
-    d.mkdir(exist_ok=True)
-    return d
-
-
-def _audit_blocks(audit, spk) -> list:
-    """audit_state(純 dict,State 只放得下可序列化的東西)→ 該講者的區塊。"""
-    blocks = [
-        SpeechBlock(speaker=int(b["speaker"]), start=float(b["start"]),
-                    end=float(b["end"]), text=str(b.get("text", "")),
-                    cohesion=float(b.get("cohesion") or 0.0))
-        for b in (audit or {}).get("blocks", [])
-    ]
-    return audit_mod.blocks_of(blocks, spk)
+    return {
+        "audit_state": {},
+        "audit_player": gr.update(value=None),
+        "audit_table": gr.update(value=None),
+        "audit_pick": gr.update(value=[], choices=[]),
+        "audit_name": gr.update(value="", choices=[]),
+        "audit_panel": gr.update(visible=False),
+        "audit_btns": hidden[:MAX_SPEAKERS],
+        "unknown_audit_btn": hidden[MAX_SPEAKERS],
+    }
 
 
 # 逐列播放鈕的字樣(**字樣即狀態**,不另開狀態元件;同命名區的試聽鈕)
@@ -793,100 +687,21 @@ def _audit_blocks(audit, spk) -> list:
 # Dataframe 光前端重排就卡得有感(使用者 2026-08-13 回報「勾選改掛很慢」)。
 # 超過就抽樣(最長的那些 + 全場均勻),而抽樣本來就夠回答「這一群純不純」
 _AUDIT_MAX_ROWS = 100
-_ROW_PLAY = "▶"
-
-
-def _audit_table(rows, blocks=None) -> list[list]:
-    """核對表的表格值:[播放鈕, 序號, 相似度, 長度, 內容]。
-
-    ⚠️ **播放鈕在最前面、每一列一顆**(使用者 2026-08-13 實際用過後指定):
-    原本是上面一個整批播放器,他說「我直接在那列上按下播放比較好操作,
-    不用點下面又去點上面」。連帶**拿掉「核對檔位置」那一欄**——那一欄
-    是用來在整批音檔裡定位的,整批播放器沒了它就沒有意義,寬度讓給內容。"""
-    coh = [b.cohesion for b in (blocks or [])]
-    return [
-        [_ROW_PLAY, r.index,
-         f"{coh[n]:.2f}" if n < len(coh) and coh[n] else "—",
-         f"{r.seconds:.1f}", r.text]
-        for n, r in enumerate(rows)
-    ]
-
-
-def _audit_choices(rows, blocks=None) -> list[tuple[str, int]]:
-    """「要改掛哪幾段」的下拉選項:(顯示字串, 列序號)。
-
-    ⚠️ **勾選搬出表格是效能決定**(使用者 2026-08-14 第四次回報,而且
-    19 列也卡):可編輯的 Dataframe 每勾一次就整張表重繪——延遲發生在
-    「勾下去的瞬間」,那是純前端成本,伺服器再快也沒用。多選下拉是原生
-    元件,勾幾百個都不卡,而且**可以打字搜尋**。"""
-    # ⚠️ **選項裡不放時間**(使用者 2026-08-14 截圖:「0:00:01·0.75」擠在
-    # 一起很難讀):時間在表格上看得到,這裡要的是「哪幾段可疑」——
-    # 留序號對得回表格、留相似度當判準就夠了
-    coh = [b.cohesion for b in (blocks or [])]
-    out = []
-    for n, r in enumerate(rows):
-        mark = f"{coh[n]:.2f}" if n < len(coh) and coh[n] else "—"
-        out.append((f"{r.index}. {mark}  {r.text[:22]}", n))
-    return out
-
-
-def _all_names() -> list[str]:
-    """所有選得到的名字:與會名單(維持使用者排的順序)+ **只在聲紋庫裡的**。
-
-    ⚠️ **有聲紋卻不在名單上的人一定要列進來**(2026-08-15 code review 抓到
-    命名下拉與改掛下拉都少了這一半):名單與聲紋庫是兩份資料,而
-    `data_tabs.orphan_names` 那整套安全網存在的理由,正是「這種狀態真的會
-    發生」(改名只改一邊、用記事本編過名單、半途而廢的改名)。選單裡找不到
-    就只能自己打字,而打錯一個字就是聲紋庫裡多一個人——那正是這些下拉
-    要防的事。`_choice_layout` 的註解早就寫著這條規則,只是它靠 rivals
-    才做得到,沒有進候選的那些人漏在外面。"""
-    return list(dict.fromkeys(
-        [*attendees.load(), *voiceprints_store.known_names()]))
-
-
-def _reassign_choices(spk, name_values, audit) -> list[str]:
-    """「把選取的段落改掛給」的名單順序(使用者 2026-08-15 選定「只排序」)。
-
-    好選的排前面,但**任何人都還選得到**:
-      ① 本場其他講者已經填好的名字——插話的人最可能就在這場會議裡
-      ② 本場的聲紋候選——外面都還沒填時,這就是「聲紋庫覺得今天可能在場
-         的人」;零成本,`_naming_clues` 已經算過了
-      ③ 其餘完整名單
-
-    ⚠️ **只排序不限縮**:插話的人常常只講一兩句、根本沒有自成一群,所以
-    不會出現在①②裡(0812 那場實測:某個標籤裡 13 段插話分屬**七個人**,
-    而那七位多半沒有自己的講者編號)。限縮的話他們就只能靠打字,而打錯
-    一個字就是聲紋庫裡多一個人。
-
-    ⚠️ **排除當前這一位**:改掛的意思是「這幾段其實不是他」,把他自己排在
-    第一個只會擋路。
-
-    ⚠️ 同樣**不加標記**,理由見 `_choice_layout`(那邊的琥珀底色畫在
-    CSS,這裡沒做)。"""
-    head: list[str] = []
-    for i, v in enumerate(name_values[:MAX_SPEAKERS]):
-        if i == spk or not isinstance(v, str) or not v.strip():
-            continue
-        head.append(v.strip())
-    head += list((audit or {}).get("rivals") or [])
-    head = list(dict.fromkeys(head))        # 保序去重
-    seen = set(head)
-    return head + [n for n in _all_names() if n not in seen]
 
 
 def _audit_open(spk, audit, *name_values):
     """「🔍 核對」:把這一位的發言抽樣接成一個音檔 + 對照表,開面板。
 
-    `name_values` 是命名區各欄目前的值(順序同 `_save_draft_names`):
+    `name_values` 是命名區各欄目前的值(順序同 `naming_core._save_draft_names`):
     用來把「本場已經填好的名字」排到改掛選單前面,見 `_reassign_choices`。
     讀畫面上的值而不是落地草稿——那才是使用者此刻看到的真相。
 
     ⚠️ **核對是輔助功能,失敗只提示、不影響命名**(同 _audition_clips):
     音檔剪不出來時關掉面板即可,使用者照樣填名字、照樣套用。"""
-    mine = _audit_blocks(audit, spk)
+    mine = naming_core._audit_blocks(audit, spk)
     if not mine:
         gr.Warning("這個標籤沒有可核對的段落。", title="無法核對")
-        return gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip()
+        return _view(AUDIT_PANEL_SPEC[:6], {})   # 什麼都不動
     src = (audit.get("sources") or {}).get(str(spk)) or audit.get("src") or ""
     try:
         # ⚠️ **不再接成一個整批音檔**(使用者 2026-08-13 指定改成逐列播放):
@@ -894,10 +709,10 @@ def _audit_open(spk, audit, *name_values):
         # 快取剪出那一段(隨機存取,實測 0.01 秒)。
         # 連帶**不再抽樣**:上限 3 分鐘的意義是「不要讓人坐著聽 20 分鐘」,
         # 而逐列播放一次只聽一段——限制列數反而是把東西藏起來
-        audit_mod.ensure_wav16k(Path(src), _audit_dir())
+        audit_mod.ensure_wav16k(Path(src), naming_core._audit_dir())
     except UserFacingError as e:
         gr.Warning(str(e), title="無法核對")
-        return gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip()
+        return _view(AUDIT_PANEL_SPEC[:6], {})   # 什麼都不動
     picks = audit_mod.plan(mine, cap_sec=float("inf"), max_rows=_AUDIT_MAX_ROWS)
     rows = audit_mod.rows_for(mine, picks)
     picked_blocks = [mine[i] for i in picks]
@@ -914,15 +729,17 @@ def _audit_open(spk, audit, *name_values):
     logger.info(
         "核對「%s」:共 %d 段,列出 %d 段", label, len(mine), len(rows),
     )
-    return (
-        state,
-        gr.update(value=None),
-        gr.update(value=_audit_table(rows, picked_blocks)),
-        gr.update(choices=_audit_choices(rows, picked_blocks), value=[]),
-        gr.update(choices=_reassign_choices(spk, name_values, audit), value=""),
-        gr.update(visible=True),
-        gr.update(visible=False),          # 右欄的預覽讓位給面板
-    )
+    return _view(AUDIT_PANEL_SPEC, {
+        "audit_state": state,
+        "audit_player": gr.update(value=None),
+        "audit_table": gr.update(value=naming_core._audit_table(rows, picked_blocks)),
+        "audit_pick": gr.update(
+            choices=naming_core._audit_choices(rows, picked_blocks), value=[]),
+        "audit_name": gr.update(
+            choices=naming_core._reassign_choices(spk, name_values, audit), value=""),
+        "audit_panel": gr.update(visible=True),
+        "preview": gr.update(visible=False),   # 右欄的預覽讓位給面板
+    })
 
 
 def _audit_play_row(audit, evt: gr.SelectData):
@@ -953,7 +770,7 @@ def _audit_play_row(audit, evt: gr.SelectData):
         row = audit_mod.AuditRow(
             index=i + 1, start=float(r["start"]), end=float(r["end"]), text="",
         )
-        dest = audit_mod.cut_one(Path(src), row, _audit_dir() / "one.wav")
+        dest = audit_mod.cut_one(Path(src), row, naming_core._audit_dir() / "one.wav")
     except Exception:
         logger.exception("單段重播剪輯失敗")
         gr.Warning("這一段剪不出來,請看紀錄檔。", title="無法播放")
@@ -1102,7 +919,7 @@ def _servable(files) -> list:
     return out
 
 
-def _page_reset_updates(downloads_files, keep_context: bool = False) -> tuple:
+def _page_reset_view(downloads_files, keep_context: bool = False) -> dict:
     """整頁復位的共用前段(套用收工/轉檔鏈復位/開始錄音/跳過命名四處
     共用):下載區、預覽清空、30+1 個命名框藏回、vp/paths 狀態歸零、
     試聽整組復位。呼叫端各自追加尾端更新(路徑欄/雙鈕);唯一的參數是
@@ -1118,29 +935,41 @@ def _page_reset_updates(downloads_files, keep_context: bool = False) -> tuple:
         gr.update(visible=False, value="", info=None, elem_classes=[])
         for _ in range(MAX_SPEAKERS + 1)  # 30 個講者框+1 個「未知」框
     ]
-    return (
+    view = {
         # None = 清空,原樣傳下去(gr.Files 的空值語意,不要順手改成 [])
-        None if downloads_files is None else _servable(downloads_files),
+        "downloads": None if downloads_files is None else _servable(downloads_files),
         # ⚠️ **預覽要一起「顯示回來」**(2026-08-14 使用者實機踩到):
         # 核對面板打開時預覽是被藏起來讓位的,而套用名字/跳過命名這條路
         # 不會經過「完成核對」——只清值不改 visible 的話,收工之後右半邊
         # 就一直是空的,而且**再也回不來**(下一次轉檔也只清值)
-        gr.update(value="", visible=True), *cleared,
-        # ⚠️ **keep_context=True 時這幾個 state 一律 gr.skip()**(2026-08-18
-        # 實機踩到):「重新分群」的復位跟下一步在**同一條鏈**上,而下一步
-        # 的輸入正是 paths_state 與分群檔路徑——清掉的話按下去只會回一句
-        # 「找不到這份逐字稿的分群檔」,而畫面上明明有那顆按鈕。
-        # 轉檔鏈那條沒踩到是因為它的輸入是 src_path,而 _start_run 留著它
-        gr.skip() if keep_context else {},
-        gr.skip() if keep_context else [],
-        *_audition_reset_updates(),
-        *_audit_reset_updates(),
+        "preview": gr.update(value="", visible=True),
+        "name_inputs": cleared[:MAX_SPEAKERS],
+        "unknown_input": cleared[MAX_SPEAKERS],
+        **_audition_reset_view(),
+        **_audit_reset_view(),
+    }
+    # ⚠️ **keep_context=True 時這幾個鍵一律「不寫進去」**(2026-08-18 實機
+    # 踩到):「重新分群」的復位跟下一步在**同一條鏈**上,而下一步的輸入正是
+    # paths_state 與分群檔路徑——清掉的話按下去只會回一句「找不到這份逐字稿
+    # 的分群檔」,而畫面上明明有那顆按鈕。轉檔鏈那條沒踩到是因為它的輸入是
+    # src_path,而 _start_run 留著它。
+    # ⚠️ 以前這裡寫的是 `gr.skip() if keep_context else {}`,**「不動」與「清空」
+    # 只差一個三元運算子**;現在「不動」= 那個鍵根本不出現,讀起來就是它的意思
+    if not keep_context:
+        view["vp_state"] = {}
+        view["paths_state"] = []
         # 重新分群那一列:收工就收起來;同一條鏈上的復位則原樣留著
         # (跟著閃一下再回來只是視覺雜訊)
-        *((gr.skip(), gr.skip(), gr.skip()) if keep_context
-          else (gr.update(visible=False), None,
-                gr.update(value=0, elem_classes=["recluster-n", "now-0"]))),
-    )
+        view["recluster_box"] = gr.update(visible=False)
+        view["features_state"] = None
+        view["recluster_n"] = gr.update(value=0,
+                                        elem_classes=["recluster-n", "now-0"])
+    return view
+
+
+def _page_reset_updates(downloads_files, keep_context: bool = False) -> tuple:
+    """整頁復位、直接排成給 gradio 的元組(呼叫端不必再覆蓋任何一格時用)。"""
+    return _view(PAGE_SPEC, _page_reset_view(downloads_files, keep_context))
 
 
 def _reset_for_recluster() -> tuple:
@@ -1162,22 +991,19 @@ def _audition(spk, clips, playing):
     回傳:載體 value、playing 狀態、31 顆鈕的字樣。"""
     clips = clips or {}
     if playing == spk or spk not in clips:
-        return (gr.update(value=None), None, *_aud_btn_updates(None))
-    # playback_position 必須明確歸零:同一片段重播時,前端會停留在上次的
-    # 結尾位置,一開播就觸發播畢(Playwright 實測 0.2~0.4 秒即「播完」),
+        return _audition_view(None, None)
+    # playback_position 必須明確歸零:同一片段重播時,前端會停在上次的
+    # 結尾位置,一開播就聽完(Playwright 實測 0.2~0.4 秒即「播完」),
     # 聽起來像按了沒聲音
-    return (
-        gr.update(value=clips[spk], playback_position=0),
-        spk,
-        *_aud_btn_updates(spk),
-    )
+    return _audition_view(
+        gr.update(value=clips[spk], playback_position=0), spk)
 
 
 def _audition_ended():
     """片段播放到結尾(Audio.stop 事件):按鈕字樣復原,並清掉載體 value
     ——同一顆再按時才有「None→路徑」的變化可觸發 autoplay(值不變時
     gradio 前端不會重播)。"""
-    return (gr.update(value=None), None, *_aud_btn_updates(None))
+    return _audition_view(None, None)
 
 
 # ---- 轉檔成果 → 整組 UI 更新(形狀契約見 PAGE_UPDATE_LEN)----
@@ -1188,11 +1014,124 @@ def _audition_ended():
 # 這是 _present_result / _restore_pending / _page_reset_updates 共同的
 # 回傳長度,也等於 build_ui 裡 page_outputs 的元件數——公開給測試引用,
 # 免得同一串算式在 src/tests 各抄一份(增減元件時漏改一處就靜默失準)
-PAGE_UPDATE_LEN = (
-    2 + MAX_SPEAKERS + 1 + 2 + 3 + MAX_SPEAKERS + 1
-    + 1 + 5 + MAX_SPEAKERS + 1
-    + 3  # 重新分群那一列(顯示與否)+ 分群檔路徑 + 人數欄的值
+# `page_outputs` 的**規格**:(鍵, 幾個元件),順序必須與 build_ui 裡那份宣告
+# 一字不差(`test_page_spec_matches_build_ui` 雙向釘著)。
+# ⚠️ **這張表取代了原本那條手算的算式**(`2 + MAX_SPEAKERS + 1 + 2 + …`)與
+# `_PREVIEW_IN_PAGE = 1` 那個手工索引。要改一個元件的值,以前得同時記對
+# 「總長 109」與「預覽在第 1 格」;現在寫 `{"preview": …}` 就好,而**沒寫到的
+# 鍵就是不動**(等同 gr.skip())。⚠️ **不要用 None 表示不動**——None 在
+# gr.Files 是「清空」,兩者混淆的代價見 `_page_reset_updates` 的註解。
+PAGE_SPEC = (
+    ("downloads", 1), ("preview", 1),
+    ("name_inputs", MAX_SPEAKERS), ("unknown_input", 1),
+    ("vp_state", 1), ("paths_state", 1),
+    ("clips_state", 1), ("playing_state", 1), ("audition_player", 1),
+    ("audition_btns", MAX_SPEAKERS), ("unknown_aud_btn", 1),
+    ("audit_state", 1), ("audit_player", 1), ("audit_table", 1),
+    ("audit_pick", 1), ("audit_name", 1), ("audit_panel", 1),
+    ("audit_btns", MAX_SPEAKERS), ("unknown_audit_btn", 1),
+    # 重新分群那一列(顯示與否)+ 分群檔路徑 + 人數欄的值
+    ("recluster_box", 1), ("features_state", 1), ("recluster_n", 1),
 )
+PAGE_UPDATE_LEN = sum(n for _, n in PAGE_SPEC)
+
+# 按下「開始轉檔」那一步要動的(順序 = build_ui 裡 `_start_run` 的 outputs)。
+# ⚠️ 它是**左欄七個 + 進階四個 + 整頁那批**的串接,所以規格表也照那個順序寫;
+# `test_start_run_spec_matches_build_ui` 雙向釘著
+START_RUN_SPEC = (
+    ("src_path", 1), ("src_btns", 3), ("run_btn", 1), ("stop_btn", 1),
+    ("source_mode", 1), ("adv_params", 4),
+) + PAGE_SPEC
+
+
+# 錄音那一側的三張規格表(順序 = build_ui 的對應 outputs;
+# `test_recording_specs_match_build_ui` 一次釘三張)
+REC_UI_SPEC = (
+    ("rec_start_btn", 1), ("rec_stop_btn", 1), ("source_mode", 1),
+    ("scenario", 1), ("rec_status", 1), ("rec_timer", 1), ("adv_params", 4),
+)
+REC_FINISH_LOCK_SPEC = (
+    ("rec_start_btn", 1), ("rec_stop_btn", 1), ("stop_btn", 1),
+    ("rec_timer", 1), ("rec_status", 1), ("source_mode", 1),
+)
+
+
+# 開頁接回錄音/收尾那條(順序 = build_ui 裡 `_restore_recording` 的 outputs)
+RESTORE_REC_SPEC = (
+    ("source_mode", 1), ("src_path", 1), ("src_hint", 1), ("src_btns", 3),
+    ("src_summary", 1), ("scenario", 1), ("rec_status", 1),
+    ("rec_start_btn", 1), ("rec_stop_btn", 1), ("rec_timer", 1),
+    ("run_btn", 1), ("stop_btn", 1), ("adv_params", 4), ("run_timer", 1),
+)
+
+
+# 「🔍 核對」面板那一組(順序 = build_ui 裡 `_audit_open` 的 outputs)。
+# ⚠️ 三支共用它:開面板、關面板、以及「什麼都不做」那條提前返回
+AUDIT_PANEL_SPEC = (
+    ("audit_state", 1), ("audit_player", 1), ("audit_table", 1),
+    ("audit_pick", 1), ("audit_name", 1), ("audit_panel", 1), ("preview", 1),
+)
+
+
+# 「這一檔收工」那條鏈的輸出(整頁那批 + 左欄四個);
+# _apply_names / _discard_naming 共用
+END_OF_JOB_SPEC = PAGE_SPEC + (
+    ("src_path", 1), ("run_btn", 1), ("stop_btn", 1), ("speakers", 1),
+)
+
+
+# 剩下四組(順序 = build_ui 的對應 outputs;`test_small_specs_match_build_ui`
+# 一次釘四張)
+AFTER_RUN_SPEC = (
+    ("src_path", 1), ("src_btns", 3), ("run_btn", 1), ("stop_btn", 1),
+    ("source_mode", 1), ("adv_params", 4),
+)
+AFTER_REC_SPEC = (
+    ("rec_start_btn", 1), ("rec_stop_btn", 1), ("stop_btn", 1),
+    ("source_mode", 1), ("scenario", 1), ("rec_status", 1), ("adv_params", 4),
+)
+NEW_RECORDING_SPEC = PAGE_SPEC + (
+    ("src_path", 1), ("run_btn", 1), ("stop_btn", 1),
+)
+AUDITION_SPEC = (
+    ("audition_player", 1), ("playing_state", 1),
+    ("audition_btns", MAX_SPEAKERS), ("unknown_aud_btn", 1),
+)
+DOC_LOCK_SPEC = (
+    ("doc_src", 1), ("doc_files_btn", 1), ("doc_folder_btn", 1),
+    ("doc_clear_btn", 1), ("doc_recursive", 1), ("doc_ocr", 1),
+    ("doc_mail_att", 1), ("doc_run_btn", 1), ("doc_stop_btn", 1),
+    ("doc_open_btn", 1),
+)
+
+
+def _view(spec, view: dict) -> tuple:
+    """`{鍵: 值}` → 照 `spec` 的順序組出要回給 gradio 的元組。
+
+    ⚠️ **鍵不在 `view` 裡 = 那個元件不動**(`gr.skip()`)——這是整個形狀的
+    基礎:呼叫端只寫它真的要改的東西,不必湊滿 109 個位置。
+    ⚠️ **拼錯的鍵當場拋例外**,不靜靜地不生效:那正是「用鍵而不是用順序」
+    唯一的代價,而它只要一行就補得回來。
+    ⚠️ 群組(30 個命名框那種)的值必須是**剛好那麼長**的序列;長度不符同樣
+    當場炸——短一個的症狀是後面每一格都往前挪,而畫面上只會看到「值跑到
+    別的元件上」。
+    """
+    known = {k for k, _ in spec}
+    unknown = set(view) - known
+    if unknown:
+        raise KeyError(f"不認得的元件鍵:{sorted(unknown)}(認得的見 PAGE_SPEC)")
+    out = []
+    for key, count in spec:
+        if key not in view:
+            out.extend(gr.skip() for _ in range(count))
+        elif count == 1:
+            out.append(view[key])
+        else:
+            vals = list(view[key])
+            if len(vals) != count:
+                raise ValueError(f"{key} 要 {count} 個值,拿到 {len(vals)} 個")
+            out.extend(vals)
+    return tuple(out)
 
 def _run(src_text, model_label, num_speakers, cpu_cores=None, recursive=False,
          mode=None, progress=gr.Progress()):
@@ -1278,14 +1217,14 @@ def _run(src_text, model_label, num_speakers, cpu_cores=None, recursive=False,
         hints = result.speaker_hints or {}
         # 試聽片段從「原始檔」剪(管線的暫存 wav 已清除);與命名欄的摘錄
         # 同一句,聽到的就是看到的那句
-        clips = _cut_speaker_clips(src, hints)
+        clips = naming_core._cut_speaker_clips(src, hints)
         # 尾端 None 清空路徑欄(完成即還原、等下一檔,使用者規格)
         return (*_present_result(
             [str(p) for p in result.outputs],
             f"(執行裝置:{device_name})\n\n{result.preview}",
             result.speakers, result.voiceprints or {}, hints, clips,
-            audit=_audit_payload(result, src),
-            audit_flags=_audit_flags(result.quality),
+            audit=naming_core._audit_payload(result, src),
+            audit_flags=naming_core._audit_flags(result.quality),
         ), None)
     finally:
         # 完成/停止/報錯三條路都要放掉:留著的話下一次轉檔會被自己的
@@ -1338,7 +1277,7 @@ def _name_section_updates(count, hints, clips, names, audit_flags=(),
     則是建構時的初始狀態)。"""
     # 下拉選單來源:與會人員名單(「與會人員名稱維護」那一欄)+ 只在聲紋庫
     # 裡的那些(見 _all_names——選不到就只能打字,打錯就是庫裡多一個人)
-    known = _all_names()
+    known = naming_core._all_names()
     # 哪幾列會亮「🔍 核對」——線索文字要據此指路,不能叫人去按一顆不存在
     # 的鈕(使用者 2026-08-15 截圖抓到:候選給每一位,而鈕只給前三位)
     flagged = set(audit_flags or ()) if has_audit else set()
@@ -1362,7 +1301,7 @@ def _name_section_updates(count, hints, clips, names, audit_flags=(),
                 visible=True, choices=choices, elem_classes=marks,
                 value=names.get(i, ""),
                 label=f"講者 {i + 1} 的名字",
-                info=_hint_text(hints.get(i), mine),
+                info=naming_core._hint_text(hints.get(i), mine),
             ))
         else:
             updates.append(gr.skip())
@@ -1384,7 +1323,7 @@ def _name_section_updates(count, hints, clips, names, audit_flags=(),
     if unknown_hint and not has_audit:
         unknown_update = gr.update(
             visible=True, choices=known, value=names.get(UNKNOWN_SPEAKER, ""),
-            info=f"只改逐字稿文字、不會登記聲紋・{_hint_text(unknown_hint)}",
+            info=f"只改逐字稿文字、不會登記聲紋・{naming_core._hint_text(unknown_hint)}",
         )
     else:
         unknown_update = gr.skip()  # 維持隱藏:不得送 visible=False(見上)
@@ -1418,8 +1357,15 @@ def _name_section_updates(count, hints, clips, names, audit_flags=(),
         gr.update(visible=True)
         if (has_audit and unknown_hint is not None) else gr.skip()
     )
-    return (updates, unknown_update, aud_updates, unknown_aud_update,
-            audit_updates, unknown_audit_update)
+    # ⚠️ 回的是 **`PAGE_SPEC` 的鍵**(2026-08-29 B 層),不是一個六元組:
+    # 呼叫端以前要寫 `(updates, unknown_update, aud_updates, unknown_aud_update,
+    # audit_updates, unknown_audit_update) = section` 把它拆開,而那六個名字
+    # 與這裡的順序是**兩份各自維護的知識**。現在直接 `**section` 併進去。
+    return {
+        "name_inputs": updates, "unknown_input": unknown_update,
+        "audition_btns": aud_updates, "unknown_aud_btn": unknown_aud_update,
+        "audit_btns": audit_updates, "unknown_audit_btn": unknown_audit_update,
+    }
 
 
 def _run_batch(src_text, model_label, num_speakers, cpu_cores, recursive, progress):
@@ -1539,10 +1485,10 @@ def _run_relabel(src_text, cpu_cores, progress):
             feat_note = f"\n{e}"
     voiceprints: dict = {}
     clips: dict = {}
-    audit = _audit_payload_from_transcript(transcript, named, media)
+    audit = naming_core._audit_payload_from_transcript(transcript, named, media)
     if media is not None:
         try:
-            voiceprints, clips, cohesion = _analyse_for_relabel(
+            voiceprints, clips, cohesion = naming_core._analyse_for_relabel(
                 md_path, media, transcript, named, progress,
                 blocks=audit.get("blocks"), feat=feat,
             )
@@ -1680,125 +1626,6 @@ def _run_recluster(count, features, paths, cpu_cores, progress=gr.Progress()):
     return _run_relabel(str(md_path), cpu_cores, progress)
 
 
-def _relabel_cohesion(wav, blocks, progress) -> list[float]:
-    """每一輪發言對「**自己那一群**的質心」的相似度。
-
-    ⚠️ **要分群算,不能全部混在一起比**:每一位講者各有自己的聲音,拿全場
-    共同的平均當基準的話,聲音特別的人整排都會偏低——那個數字就變成
-    「你像不像平均值」,不是「這一段像不像同一位講者」。
-
-    算不出來就整排 0(顯示空白):相似度是輔助,聽與改掛不靠它。"""
-    import numpy as np
-
-    spans = [(b["start"], b["end"]) for b in blocks]
-    try:
-        samples = audio.read_wav16k(wav)
-        vecs = diarize._extract_embeddings(
-            samples, spans,
-            progress=lambda f: progress(0.75 + 0.18 * f, desc="計算每段的相似度"),
-        )
-    except Exception:
-        logger.exception("重設講者:相似度算不出來(不影響聽與改掛)")
-        return []
-    out = [0.0] * len(blocks)
-    by_speaker: dict[int, list[int]] = {}
-    for i, b in enumerate(blocks):
-        by_speaker.setdefault(int(b["speaker"]), []).append(i)
-    for idxs in by_speaker.values():
-        weights = np.array([spans[i][1] - spans[i][0] for i in idxs], dtype=float)
-        centroid = diarize._wcentroid(vecs[idxs], np.maximum(weights, 0.01))
-        for i in idxs:
-            out[i] = float(vecs[i] @ centroid)
-    return out
-
-
-def _from_features(feat, transcript, named, blocks):
-    """有分群檔時的快路:(聲紋質心, 每輪發言的相似度),全部取自 npz。
-
-    ⚠️ **這條路一個字節的音訊都不讀**——原本的慢主要在兩件事:把整份音訊
-    轉成 16k、以及**把每一輪發言各抽一次聲紋**(使用者 2026-08-18 回報
-    「計算每段的相似度跑得較久」,而他手上那份有 417 輪)。兩者要的向量
-    轉檔當下就抽好在 .分群.npz 裡了。"""
-    import numpy as np
-
-    spans_by_name = transcript.spans()
-    vp: dict[int, np.ndarray] = {}
-    for name, spans in spans_by_name.items():
-        if name == "未知":  # 多人零碎語音的混合,絕不登記聲紋
-            continue
-        vecs = diarize.block_vectors(feat, spans)
-        good = vecs[np.linalg.norm(vecs, axis=1) > 0]
-        if not len(good):
-            continue
-        c = good.sum(axis=0)
-        n = float(np.linalg.norm(c))
-        if n > 0:
-            vp[named.index(name)] = (c / n).astype(np.float32)
-    cohesion: list[float] = []
-    if blocks:
-        bv = diarize.block_vectors(feat, [(b["start"], b["end"]) for b in blocks])
-        cohesion = [0.0] * len(blocks)
-        by_speaker: dict[int, list[int]] = {}
-        for i, b in enumerate(blocks):
-            by_speaker.setdefault(int(b["speaker"]), []).append(i)
-        for idxs in by_speaker.values():
-            rows = [i for i in idxs if np.linalg.norm(bv[i]) > 0]
-            if not rows:
-                continue
-            w = np.array([blocks[i]["end"] - blocks[i]["start"] for i in rows],
-                         dtype=float)
-            centroid = diarize._wcentroid(bv[rows], np.maximum(w, 0.01))
-            for i in rows:
-                cohesion[i] = float(bv[i] @ centroid)
-    return vp, cohesion
-
-
-def _analyse_for_relabel(md_path, media, transcript, named, progress,
-                         blocks=None, feat=None):
-    """媒體檔 → (每位講者的聲紋質心, 試聽片段, 每一輪發言的相似度)。
-
-    先轉 16k 單聲道再抽聲紋(`diarize.voiceprints_for_spans` 吃的就是那個
-    格式);試聽片段則從**原始檔**剪,與轉檔後的流程同一個作法
-    (_cut_speaker_clips:長錄音免全檔解碼)。
-
-    ⚠️ **相似度在這裡一併算掉**(使用者 2026-08-14 指定):這條路本來就已經
-    讀了整份音訊、也已經在抽聲紋,順手把每一輪發言各抽一次(實測 78ms/段,
-    一場 2.7 小時的會議約多一分鐘),核對表才有「哪幾段可疑」的數字。
-    ⚠️ **算完只留這一份**——它跟著命名進度落地(pending),中途關掉程式、
-    重開之後還在;不做「每轉一次留一份」的快取,那是使用者明確不要的。"""
-    hints = transcript.hints()
-    spans = transcript.spans()
-    cohesion: list[float] = []
-    if feat is not None:
-        # 有分群檔:聲紋與相似度都算得出來,而且是毫秒級(見 _from_features)
-        progress(0.5, desc="讀分群檔")
-        vp, cohesion = _from_features(feat, transcript, named, blocks)
-        cancel.check()
-    else:
-        with tempfile.TemporaryDirectory(prefix=pipeline.TMP_PREFIX) as tmp:
-            progress(0.05, desc=f"{media.name}:準備音訊")
-            wav = audio.to_wav16k(media, Path(tmp))
-            cancel.check()
-            progress(0.15, desc=f"{media.name}:抽取聲紋")
-            vp = diarize.voiceprints_for_spans(
-                wav,
-                {named.index(n): s for n, s in spans.items() if n != "未知"},
-                progress=lambda f: progress(0.15 + 0.60 * f, desc="抽取聲紋"),
-            )
-            cancel.check()
-            if blocks:
-                progress(0.75, desc="計算每段的相似度")
-                cohesion = _relabel_cohesion(wav, blocks, progress)
-    progress(0.95, desc="剪試聽片段")
-    # 線索的鍵在呼叫端已改成哨兵/序號,這裡要的是同一組;直接照 named 重建
-    clip_hints = {
-        (UNKNOWN_SPEAKER if transcript.order[i] == "未知"
-         else named.index(transcript.order[i])): h
-        for i, h in hints.items()
-    }
-    return vp, _cut_speaker_clips(media, clip_hints), cohesion
-
-
 # 「改成幾位」底下那行限制說明(設計稿定案文案)。⚠️ **一定要寫**:
 # md 的區塊是原子的,往多的方向改只能在現有段落之間重新分配,而使用者
 # 填了 5 卻安靜地只拿到 3 是最糟的一種——他不會知道
@@ -1808,29 +1635,9 @@ def _analyse_for_relabel(md_path, media, transcript, named, progress,
 _RECLUSTER_HINT = "往少改一定準;當初就在同一段裡的兩個人拆不開,要重轉。"
 
 
-# 「沒有指定 features」與「指定為沒有」是兩回事,所以不能用 None 當預設:
-# `_run_relabel` 判斷分群檔用不動(換過聲紋模型/格式舊了)時會**明確**傳
-# None,那時候絕不可以又自己推一個回來
-_DERIVE_FEATURES = object()
-
-
-def _features_for(outputs) -> Path | None:
-    """成品清單 → 同層同名的分群檔(沒有回 None)。
-
-    ⚠️ **統一在匯流點推,不要各呼叫端各自傳**(2026-08-18 使用者回報:
-    「設定講者的功能出現時,也要提供改成幾位講者」):命名區會出現的路徑有
-    四條——檔案轉檔、現場收音、重設講者、開頁還原——當初只接了後兩條,
-    於是同一份逐字稿「剛轉完沒有那一列、重新整理之後就有了」。漏掉一條
-    使用者根本分不出是功能沒做還是這份檔不支援。"""
-    for p in outputs or []:
-        if str(p).lower().endswith(".md"):
-            return relabel.find_features(Path(p))
-    return None
-
-
 def _naming_page_updates(outputs, preview, voiceprints, clips, section,
                          audit=None, naming=True,
-                         features=_DERIVE_FEATURES, count=0) -> tuple:
+                         features=naming_core._DERIVE_FEATURES, count=0) -> tuple:
     """「成品/命名區」那一批更新(PAGE_UPDATE_LEN 個值)的**唯一**組法。
 
     轉檔收尾(_present_result)與開頁還原(_restore_pending)送的是同一
@@ -1845,27 +1652,28 @@ def _naming_page_updates(outputs, preview, voiceprints, clips, section,
     渲染,兩邊對不起來的下場就是「左欄只剩進階參數設定」。
 
     下載區的值只在這裡與 `_page_reset_updates` 產生,見那裡的註解。"""
-    if features is _DERIVE_FEATURES:
-        features = _features_for(outputs)
-    (updates, unknown_update, aud_updates, unknown_aud_update,
-     audit_updates, unknown_audit_update) = section
-    return (
+    if features is naming_core._DERIVE_FEATURES:
+        features = naming_core._features_for(outputs)
+    return _view(PAGE_SPEC, {
         # 下載區只放 gradio 供應得了的(見 _servable);paths_state 拿完整
         # 清單——套用名字寫回的是它,「重設講者」的 md 在使用者自己的
         # 資料夾裡,下載不了但照樣改得到
-        _servable(outputs), gr.update(value=preview, visible=True),
-        *updates, unknown_update,
-        voiceprints, outputs if naming else [],
-        clips, None, gr.update(value=None),
-        *aud_updates, unknown_aud_update,
+        "downloads": _servable(outputs),
+        "preview": gr.update(value=preview, visible=True),
+        **section,          # 命名框/未知框/試聽鈕/核對鈕(見 _name_section_updates)
+        "vp_state": voiceprints, "paths_state": outputs if naming else [],
+        "clips_state": clips, "playing_state": None,
+        "audition_player": gr.update(value=None),
         # 核對:狀態帶著「這一份的區塊與音檔來源」,面板關著等使用者點
-        audit, gr.update(value=None), gr.update(value=None),
-        gr.update(value=[], choices=[]),
-        gr.update(value="", choices=_all_names()), gr.update(visible=False),
-        *audit_updates, unknown_audit_update,
+        "audit_state": audit,
+        "audit_player": gr.update(value=None),
+        "audit_table": gr.update(value=None),
+        "audit_pick": gr.update(value=[], choices=[]),
+        "audit_name": gr.update(value="", choices=naming_core._all_names()),
+        "audit_panel": gr.update(visible=False),
         # 重新分群那一列:只有「同層真的有分群檔」時才出現(第三種狀態)
-        gr.update(visible=features is not None),
-        str(features) if features is not None else None,
+        "recluster_box": gr.update(visible=features is not None),
+        "features_state": str(features) if features is not None else None,
         # ⚠️ **人數欄預設填「現在幾位」,不是猜一個建議值**(使用者
         # 2026-08-18 選定):同一天實測過兩種標準做法(合併相似度的斷層、
         # 譜分群的 eigengap),**都推算不出人數**——四份已知人數的錄音全被
@@ -1874,126 +1682,13 @@ def _naming_page_updates(outputs, preview, voiceprints, clips, section,
         # ⚠️ **值與「現在幾位」一起送**:前端要拿它當基準,才判斷得出
         # 「使用者根本沒改」。class 是唯一送得進 DOM 的路(value 會被使用者
         # 改掉,就不能再當基準了)
-        gr.update(value=count, elem_classes=["recluster-n", f"now-{count}"]),
-    )
-
-
-def _audit_payload(result, src_path, sources=None) -> dict:
-    """核對面板要的東西:每一輪發言 + 從哪個音檔剪。
-
-    ⚠️ **音檔來源優先用管線留下的 16k wav**:從原始 m4a/mp4 剪要先整檔
-    解碼(長錄音數十秒),而 16k wav 是隨機存取、實測 0.01 秒
-    (見 audit._cut_and_join)。沒有就退回原始檔,慢但仍可用。
-
-    ⚠️ **`sources` 的鍵一定要是字串**(2026-08-15 code review 抓到):讀的
-    那兩處(`_audit_open`、`_audit_play_row`)查的是 `str(spk)`,而這裡先前
-    寫的是 `int`——於是**剛轉完的那一次**永遠查不到、一律退回 `src`,
-    重新整理之後(經過 JSON 落地,鍵變成字串)才會生效。整份落地一趟就
-    改變行為,而症狀是「線上會議的核對播錯音軌」:現場講者要剪麥克風軌、
-    遠端講者剪系統軌,退回 `src` 就是全部剪同一軌(見 PipelineResult
-    的 speaker_sources)。
-
-    `sources` 可另外指定:現場收音那條路的軌檔在錄音工作目錄裡、收尾後
-    整個刪掉,不能拿來當核對來源(見 `_finish_recording`)。"""
-    blocks = getattr(result, "blocks", None) or []
-    if not blocks:
-        return {}
-    if sources is None:
-        sources = result.speaker_sources or {}
-    return {
-        "blocks": [
-            {"speaker": b.speaker, "start": b.start, "end": b.end,
-             "text": b.text, "cohesion": getattr(b, "cohesion", 0.0)}
-            for b in blocks
-        ],
-        "src": str(src_path or ""),
-        "sources": {str(k): str(v) for k, v in sources.items()},
-    }
-
-
-def _audit_payload_from_transcript(transcript, named, media) -> dict:
-    """「🔄 重設講者」那條路的核對資料:從既有逐字稿的區塊組。
-
-    ⚠️ **迄秒是估的**:md 只有每一輪的**起點**,終點只能拿下一輪的起點頂
-    上去,中間的靜默全被算進來(`relabel.Transcript.spans` 的同一個坑)。
-    所以這裡跟試聽一樣壓上限——不壓的話,一段 3 秒的插話後面接了 5 分鐘
-    的沉默,核對音檔就會播 5 分鐘的空白,而使用者以為是程式壞了。
-
-    沒有媒體檔就回空的:核對是「聽」的功能,沒有音檔時連面板都不該開。"""
-    if media is None:
-        return {}
-    blocks, order = [], transcript.blocks
-    for i, b in enumerate(order):
-        nxt = order[i + 1].start if i + 1 < len(order) else b.start + relabel._TAIL_SEC
-        end = min(nxt, b.start + relabel._CLIP_MAX_SEC)
-        spk = UNKNOWN_SPEAKER if b.name == "未知" else (
-            named.index(b.name) if b.name in named else None
-        )
-        if spk is None:
-            continue
-        blocks.append({"speaker": spk, "start": float(b.start),
-                       "end": float(max(end, b.start + 0.3)), "text": b.text[:40]})
-    # 相似度由 _analyse_for_relabel 現場算完之後填進來(那條路本來就在讀
-    # 整份音訊);沒有音檔就沒有數字,核對表顯示空白
-    return {"blocks": blocks, "src": str(media), "sources": {}}
-
-
-def _audit_flags(quality) -> set:
-    """哪幾列要亮「🔍 核對」= 檔尾診斷點名「建議優先核對」的那幾位。"""
-    return {q.speaker for q in export.check_first(quality or [])}
-
-
-# 聲紋分不開時,最多讓幾列亮起「🔍 核對」(使用者 2026-08-15 選定)。
-# ⚠️ **一定要有上限**:大型會議裡「認不出來」是常態,不設限的話 8/14 那場
-# 11 位裡有 9 位、8/12 那場 19 位裡有 13 位都會亮鈕,而全部都亮就等於全部
-# 都沒標。取「差距最小的前三位」= 最難分辨的那幾位,與 export.check_first
-# 的「一致性最低前三名」同一套哲學:工具只負責排序,不下判定
-_AUDIT_CLOSE_CALLS = 3
-
-
-def _rival_pool(rivals) -> list[str]:
-    """整場的聲紋候選聯集(保序去重)= 「聲紋庫覺得今天可能在場的人」。
-
-    給核對面板的改掛選單排序用(見 _reassign_choices):外面都還沒填名字
-    的時候,這是唯一能把 59 人的名單收斂一點的依據。"""
-    pool: list[str] = []
-    for spk in sorted(rivals or {}):
-        pool.extend(rivals[spk])
-    return list(dict.fromkeys(pool))
-
-
-def _naming_clues(count, voiceprints, audit_flags, has_audit):
-    """自動填名、聲紋分不開的候選、以及該亮「🔍 核對」的那幾列。
-
-    回 (預填名, {講者: 候選名字}, 該亮核對鈕的講者集合)。
-
-    ⚠️ **轉檔完成與開頁還原共用這一份**:候選不隨命名進度落地,而是兩邊
-    各自從聲紋向量重算——落地的話,使用者中途改了名單或聲紋庫之後,重新
-    整理會看到一份與現況對不上的舊候選,而那沒有任何症狀。重算的成本是
-    一次矩陣乘法(144×192),可以忽略。
-
-    ⚠️ **核對鈕的兩個來源要合併不是取代**:原本那幾位是「群內一致性最低」
-    (這一群是不是混了人),新加的是「聲紋分不開」(這一群到底是誰)——
-    兩個判準問的是不同問題,實測名單幾乎不重疊(8/14 那場 9 位認不出來,
-    其中 8 位手上一顆鈕都沒有)。"""
-    vecs = {
-        i: voiceprints[i] for i in range(count) if voiceprints.get(i) is not None
-    }
-    # 自動辨識的預填名 = 落地草稿的初始值。**整場一起辨識**,不逐位各自
-    # recognize:同一個名字只能給一位講者,否則兩群拿到同一個名字,成品
-    # 看起來就是「少了一個人」而非「認錯人」(見 voiceprints.recognize_batch)
-    guesses = voiceprints_store.recognize_batch(vecs)
-    close = voiceprints_store.close_calls(vecs, taken=guesses.values())
-    rivals = {spk: cc.rivals for spk, cc in close.items()}
-    flags = set(audit_flags or ())
-    if has_audit:
-        hardest = sorted(close.items(), key=lambda kv: (kv[1].gap, kv[0]))
-        flags |= {spk for spk, _cc in hardest[:_AUDIT_CLOSE_CALLS]}
-    return guesses, rivals, flags
+        "recluster_n": gr.update(value=count,
+                                 elem_classes=["recluster-n", f"now-{count}"]),
+    })
 
 
 def _present_result(outputs, preview, count, voiceprints, hints, clips,
-                    audit=None, audit_flags=(), features=_DERIVE_FEATURES):
+                    audit=None, audit_flags=(), features=naming_core._DERIVE_FEATURES):
     """轉檔成果 → 命名區/試聽/下載/落地的整組 UI 更新(PAGE_UPDATE_LEN 個值)。
 
     檔案轉檔(_run)與現場收音收尾(_finish_recording)共用;回傳形狀
@@ -2008,7 +1703,7 @@ def _present_result(outputs, preview, count, voiceprints, hints, clips,
         # 沒有人聲的電腦聲音)第一個念頭是「程式壞了」。同一批修的還有
         # 「左欄整組消失」——那才是他回報的症狀,但看到空稿子一樣會卡住
         preview = f"{_NO_SPEECH_NOTE}\n\n{preview}"
-    guesses, rivals, flags = _naming_clues(
+    guesses, rivals, flags = naming_core._naming_clues(
         count, voiceprints, audit_flags, has_audit=bool(audit),
     )
     prefill: dict[int, str] = {i: guesses.get(i, "") for i in range(count)}
@@ -2024,7 +1719,7 @@ def _present_result(outputs, preview, count, voiceprints, hints, clips,
         # 落地的是**合併後**的那一份(含聲紋分不開的那幾位):重新整理之後
         # 亮的鈕要跟轉完當下一模一樣,否則使用者會以為自己記錯了
         audit["flags"] = sorted(flags)
-        audit["rivals"] = _rival_pool(rivals)
+        audit["rivals"] = naming_core._rival_pool(rivals)
     clips = pending.persist(outputs, preview, count, voiceprints, hints, clips,
                             prefill, audit=audit)
     # outputs 也回傳給 paths_state:套用名字時要寫回「真正的 output/ 檔案」,
@@ -2047,7 +1742,7 @@ def _restore_pending():
     回傳形狀 = _run 去掉尾端的路徑欄清空(= PAGE_UPDATE_LEN)。"""
     data = pending.load()
     if data is None:
-        return tuple(gr.skip() for _ in range(PAGE_UPDATE_LEN))
+        return _view(PAGE_SPEC, {})   # 整頁一格都不動
     hints, names, clips = data["hints"], data["names"], data["clips"]
     # 還原提示走「預覽區頂端」而非 gr.Info:gradio 6.20 的 Info toast 會
     # 忽略 title 參數、標題永遠是英文 "Info"(Playwright 最小重現實測;
@@ -2061,11 +1756,11 @@ def _restore_pending():
     # 候選不落地、在這裡重算(見 _naming_clues 的 ⚠️):落地的話,中途改過
     # 名單或聲紋庫之後重新整理,會看到一份與現況對不上的舊候選。核對鈕的
     # 旗標則用落地那份——轉完當下亮哪幾顆,重新整理後就要是哪幾顆
-    _guesses, rivals, _flags = _naming_clues(
+    _guesses, rivals, _flags = naming_core._naming_clues(
         data["count"], data["voiceprints"], (), has_audit=bool(audit),
     )
     if audit:
-        audit = {**audit, "rivals": _rival_pool(rivals)}
+        audit = {**audit, "rivals": naming_core._rival_pool(rivals)}
     # 分群檔在不在由 _naming_page_updates 統一從成品清單推(見 _features_for)
     return _naming_page_updates(
         data["outputs"], preview, data["voiceprints"], clips,
@@ -2077,31 +1772,6 @@ def _restore_pending():
 
 
 # ---- 套用名字與整頁復位 ----
-
-def _labels_in(text: str) -> dict[int, str]:
-    """檔案裡**目前**的講者標籤 → {命名框編號: 標籤}(編號同 name_map,
-    1-based;「未知」給 UNKNOWN_SPEAKER)。
-
-    這一步讓「轉檔後命名」與「重設講者」變成同一件事,而且**不必多帶一個
-    State**:標籤的唯一真相就在那份檔案裡,現場讀最準。一般逐字稿讀到的
-    就是「講者 1／2／3」(pipeline 依首次出現重編號,順序天然對得起來);
-    「重設講者」模式讀到的則可能是當初命名過的真名——那正是要改的東西。
-
-    解析失敗(不是本工具產生的 md)回空字典,呼叫端會退回預設的「講者 N」。
-    """
-    try:
-        order = relabel.parse(text).order
-    except UserFacingError:
-        return {}
-    labels: dict[int, str] = {}
-    n = 0
-    for label in order:
-        if label == "未知":
-            labels[UNKNOWN_SPEAKER] = label
-        else:
-            n += 1
-            labels[n] = label
-    return labels
 
 
 def _apply_names(files, voiceprints, audit=None, *name_values):
@@ -2142,8 +1812,8 @@ def _apply_names(files, voiceprints, audit=None, *name_values):
                 # 標籤現場從檔案讀(見 _labels_in):一般逐字稿讀到的就是
                 # 「講者 N」、與預設值相同;「重設講者」模式讀到的是當初
                 # 命名過的真名,那正是這次要換掉的東西
-                after = _rename_speakers(
-                    before, name_map, unknown_name or None, _labels_in(before),
+                after = naming_core._rename_speakers(
+                    before, name_map, unknown_name or None, naming_core._labels_in(before),
                 )
                 # **改不到就要出聲**:改寫錨定 md 的講者行格式,而套用成功
                 # 與否使用者是看不出來的(畫面照樣復位、檔案照樣在)。
@@ -2178,10 +1848,10 @@ def _apply_names(files, voiceprints, audit=None, *name_values):
     # _page_reset_updates 濾掉——「重設講者」改寫的是使用者自己資料夾裡的
     # md,放進去會在 postprocess 炸 InvalidPathError、整個套用的 outputs
     # 一個都不落地(畫面完全沒反應,而名字其實已經寫進去了)
-    return (
-        *_page_reset_updates(list(files or [])),
-        *_end_of_job_updates(),
-    )
+    return _view(END_OF_JOB_SPEC, {
+        **_page_reset_view(list(files or [])),
+        **_end_of_job_view(),
+    })
 
 
 # ---- 現場收音(2026-07-21 規格;錄音層 record.py、邊錄邊轉 live.py)----
@@ -2274,7 +1944,8 @@ def _recordings_root() -> Path:
 # 「開始下一份工作」那整組的長度(= source_switch_outputs / _switch_source
 # 的回傳)。刻意做成同一個形狀:命名結束時的還原直接交給 _switch_source 算,
 # 兩邊永遠對得起來
-_NAMING_FOCUS_LEN = 16
+# 「收起開始下一份工作那整組」動到的元件 = `_switch_source` 那一組
+_NAMING_FOCUS_LEN = sum(n for _, n in SOURCE_SWITCH_SPEC)
 
 
 def _naming_focus(mode, paths):
@@ -2295,14 +1966,24 @@ def _naming_focus(mode, paths):
     (收音模式沒有路徑欄、檔案模式沒有錄音鈕、重設講者連講者人數都藏),
     硬設會把 `_switch_source` 的規則整個洗掉。所以還原就交給它算。"""
     if paths:
-        return tuple(gr.update(visible=False) for _ in range(_NAMING_FOCUS_LEN))
-    first, *rest = _switch_source(mode)
-    # `_switch_source` 不動「要做什麼」自己的 visible(它平時一直在),
-    # 而命名期間我們把它藏了,所以還原這一步要明確把它送回來
-    return ({**first, "visible": True}, *rest)
+        # 整組收起來:每一格都是 visible=False,長度由規格表決定
+        return _view(SOURCE_SWITCH_SPEC, {
+            key: ([gr.update(visible=False)] * n if n > 1
+                  else gr.update(visible=False))
+            for key, n in SOURCE_SWITCH_SPEC
+        })
+    # ⚠️ 還原交給 `_switch_source` 算(它才知道哪個模式該顯示哪些),這裡只把
+    # 「要做什麼」那一格補上 visible=True。`_switch_source` 不動它自己的
+    # visible(它平時一直在),而命名期間我們把它藏了,所以還原這一步要明確
+    # 把它送回來。
+    # ⚠️ 以前寫的是 `first, *rest = _switch_source(mode)` 再拼回去——一個純粹
+    # 靠「第 0 格是 source_mode」的位置假設
+    view = _switch_source_view(mode)
+    view["source_mode"] = {**view["source_mode"], "visible": True}
+    return _view(SOURCE_SWITCH_SPEC, view)
 
 
-def _switch_source(mode):
+def _switch_source_view(mode) -> dict:
     """「要做什麼」切換:現場收音 ↔ 轉錄音檔 ↔ 重設講者。只切「葉子元件」的
     visible,絕不切容器——容器 remount 會讓 children 帶舊 props 重生
     (gradio 6.20 地雷,見 name-box 註解)。切換即清路徑(模式互斥,
@@ -2332,16 +2013,16 @@ def _switch_source(mode):
     if _transcribing["on"] and rec_mode:
         # 模式名帶圖示,夾在句子裡要加引號才不會跟前後文黏成一團
         gr.Info(f"轉檔進行中:請等它完成、或按「停止」後再切換到「{_MODE_RECORD}」。")
-        return (
-            gr.update(value=_MODE_FILE, info=_MODE_INFO[_MODE_FILE]),
-            *(gr.skip(),) * 15,
-        )
+        # ⚠️ 以前這裡是 `*(gr.skip(),) * 15` ——**手數的 15**,而 outputs 一
+        # 增減它就靜靜地錯位。現在只寫要動的那一個,其餘不寫就是不動
+        return {"source_mode": gr.update(value=_MODE_FILE,
+                                         info=_MODE_INFO[_MODE_FILE])}
     files_mode = not rec_mode and not relabel_mode
-    return (
+    return {
         # 值不動(使用者剛按的就是它),只換說明小字。.get 兜底:認不得的
         # 值寧可沒有說明,也不要讓整個切換炸在一行文案上
-        gr.update(info=_MODE_INFO.get(mode, "")),
-        gr.update(                                          # 路徑欄
+        "source_mode": gr.update(info=_MODE_INFO.get(mode, "")),
+        "src_path": gr.update(
             visible=not rec_mode, value="",
             label=(
                 "要重設講者的逐字稿(.md)" if relabel_mode
@@ -2355,23 +2036,25 @@ def _switch_source(mode):
             ),
         ),
         # 「重設講者」一次一份 md,沒有單檔/多檔之分,那段對照說明用不上
-        gr.update(visible=files_mode),                      # 模式說明
-        gr.update(                                          # 選擇檔案…/選擇逐字稿…
-            visible=not rec_mode,
-            value="選擇逐字稿…" if relabel_mode else "選擇檔案…",
-        ),
-        gr.update(visible=files_mode),                      # 選擇資料夾…
-        gr.update(visible=files_mode),                      # 清空
-        gr.update(visible=False, value=""),                 # 選檔摘要(清空)
-        gr.update(visible=rec_mode),                        # 收音情境
-        gr.update(visible=rec_mode, value=_REC_IDLE_MD),    # 錄音狀態列
-        gr.update(visible=rec_mode, interactive=True),      # 開始錄音
-        gr.update(visible=rec_mode, interactive=False),     # 停止錄音
-        gr.update(                                          # 開始轉檔/讀取逐字稿
+        "src_hint": gr.update(visible=files_mode),
+        "src_btns": [
+            gr.update(                                      # 選擇檔案…/選擇逐字稿…
+                visible=not rec_mode,
+                value="選擇逐字稿…" if relabel_mode else "選擇檔案…",
+            ),
+            gr.update(visible=files_mode),                  # 選擇資料夾…
+            gr.update(visible=files_mode),                  # 清空
+        ],
+        "src_summary": gr.update(visible=False, value=""),  # 選檔摘要(清空)
+        "scenario": gr.update(visible=rec_mode),            # 收音情境
+        "rec_status": gr.update(visible=rec_mode, value=_REC_IDLE_MD),
+        "rec_start_btn": gr.update(visible=rec_mode, interactive=True),
+        "rec_stop_btn": gr.update(visible=rec_mode, interactive=False),
+        "run_btn": gr.update(                               # 開始轉檔/讀取逐字稿
             visible=not rec_mode, interactive=False,
             value="讀取並設定講者" if relabel_mode else "開始轉檔",
         ),
-        gr.update(visible=not rec_mode, interactive=False),  # 停止(轉檔)
+        "stop_btn": gr.update(visible=not rec_mode, interactive=False),
         # 「重設講者」用不到的兩個參數就藏起來(使用者 2026-08-06 回報
         # 「講者人數是不是沒用?」——確實沒用:分群早在當初轉檔就做完,
         # 講者有幾位由 md 的內容決定,`_run_relabel` 根本收不到這個值;
@@ -2379,13 +2062,18 @@ def _switch_source(mode):
         # 擺在畫面上的控件會被當成有作用,而它還是跨模式共用的——在這裡
         # 填的數字會原封不動留到切回「轉錄音檔」,下一次轉檔真的會吃到。
         # 「CPU 核心數」**不藏**:有同名媒體檔時要抽聲紋(走 CPU),它有效
-        gr.update(visible=not relabel_mode),                 # 講者人數
-        gr.update(visible=not relabel_mode),                 # 模型
+        "speakers": gr.update(visible=not relabel_mode),
+        "model": gr.update(visible=not relabel_mode),
         # 「包含子資料夾」只有「轉錄音檔」用得到:收音沒有來源資料夾,
         # 重設講者一次一份 md。⚠️ 建構時的初始 visible 必須是 False
         # (預設模式是收音),否則開啟程式就會看到一個當下無效的勾選框
-        gr.update(visible=files_mode),                       # 包含子資料夾
-    )
+        "recursive": gr.update(visible=files_mode),
+    }
+
+
+def _switch_source(mode):
+    """接線用的薄包裝:把 `_switch_source_view` 排成給 gradio 的元組。"""
+    return _view(SOURCE_SWITCH_SPEC, _switch_source_view(mode))
 
 
 def _reset_for_new_recording():
@@ -2394,12 +2082,12 @@ def _reset_for_new_recording():
     另清路徑欄、把「開始轉檔」鎖住(錄音模式用不到);「講者人數」
     刻意不歸零——錄音中隨時可填、停止當下才讀(見 _end_of_job_updates)。"""
     pending.clear()
-    return (
-        *_page_reset_updates(None),
-        gr.update(value=""),
-        gr.update(interactive=False),
-        gr.update(interactive=False),
-    )
+    return _view(NEW_RECORDING_SPEC, {
+        **_page_reset_view(None),
+        "src_path": gr.update(value=""),
+        "run_btn": gr.update(interactive=False),   # 錄音模式用不到
+        "stop_btn": gr.update(interactive=False),
+    })
 
 
 def _discard_naming(paths):
@@ -2413,12 +2101,14 @@ def _discard_naming(paths):
     ——死頁面上的誤點會靜靜把命名進度清掉,使用者卻連畫面都沒變。"""
     _stale_click_guard(paths)
     pending.clear()
-    updates = list(_page_reset_updates(None))
+    view = _page_reset_view(None)
     # ⚠️ **要連 visible 一起送**(2026-08-14 使用者實機踩到第二次):這裡覆蓋
     # 的是整頁復位的「預覽」那一格,而那一格帶著 visible=True——只塞字串
     # 等於把那個意圖丟掉,核對面板藏起來的預覽就再也回不來。
     # ⚠️ 通則:**凡是覆蓋整頁復位任何一格的地方,都要保留原本那一格的意圖**
-    updates[1] = gr.update(
+    # (以前這裡寫的是 `updates[1] = …` ——一個寫死的索引,連「第 1 格是
+    # 預覽」這件事都要靠讀者自己記得)
+    view["preview"] = gr.update(
         value=(
             "已跳過講者命名,畫面已清空。\n"
             "已完成的逐字稿(講者以「講者 1、講者 2…」標示,現場收音含錄音檔)"
@@ -2426,7 +2116,7 @@ def _discard_naming(paths):
         ),
         visible=True,
     )
-    return (*updates, *_end_of_job_updates())
+    return _view(END_OF_JOB_SPEC, {**view, **_end_of_job_view()})
 
 
 # 錄音狀態列的字樣(markdown;#rec-status 有放大樣式)。
@@ -2499,29 +2189,30 @@ def _start_recording(scenario_label, model_label, cpu_cores=None):
     power.stay_awake_begin()  # 錄音中不得睡眠(停止/收尾時解除)
     _live_preview.update(n=-1, text="", conv={})
     _rec.update(recorder=recorder, live=lt, dir=rec_dir, stem=stem, scenario=scenario_label)
-    return (
-        gr.update(interactive=False),                 # 開始錄音
-        gr.update(interactive=True),                  # 停止錄音
-        gr.update(interactive=False),                 # 要做什麼(鎖切換)
-        gr.update(interactive=False),                 # 收音情境(鎖切換)
-        gr.update(value=f"**● 錄音中**(情境:{scenario_label})|{_REC_WARMUP}"),
-        gr.Timer(active=True),                        # 啟動計時 tick
+    return _view(REC_UI_SPEC, {
+        "rec_start_btn": gr.update(interactive=False),
+        "rec_stop_btn": gr.update(interactive=True),
+        "source_mode": gr.update(interactive=False),   # 鎖切換
+        "scenario": gr.update(interactive=False),      # 鎖切換
+        "rec_status": gr.update(
+            value=f"**● 錄音中**(情境:{scenario_label})|{_REC_WARMUP}"),
+        "rec_timer": gr.Timer(active=True),            # 啟動計時 tick
         # 錄音中講者人數保持可輸入(收尾才讀,見 _param_updates docstring)
-        *_param_updates(False, lock_speakers=False),
-    )
+        "adv_params": _param_updates(False, lock_speakers=False),
+    })
 
 
 def _rec_start_failed():
     """開始錄音失敗(gr.Error 已顯示):錄音鈕與來源切換復原。"""
-    return (
-        gr.update(interactive=True),
-        gr.update(interactive=False),
-        gr.update(interactive=True),
-        gr.update(interactive=True),
-        gr.update(value=_REC_IDLE_MD),
-        gr.Timer(active=False),
-        *_param_updates(True),
-    )
+    return _view(REC_UI_SPEC, {
+        "rec_start_btn": gr.update(interactive=True),
+        "rec_stop_btn": gr.update(interactive=False),
+        "source_mode": gr.update(interactive=True),
+        "scenario": gr.update(interactive=True),
+        "rec_status": gr.update(value=_REC_IDLE_MD),
+        "rec_timer": gr.Timer(active=False),
+        "adv_params": _param_updates(True),
+    })
 
 
 def _rec_tick():
@@ -2559,14 +2250,15 @@ def _lock_for_rec_finish():
     """停止錄音鏈第一步:鎖錄音雙鈕與來源切換、停計時、把「停止」亮回來
     (收音模式平時隱藏它;收尾轉錄要能中止,協作式取消同檔案轉檔流程)。
     必須是鏈的第一步(順序保證,同 _start_run 的理由)。"""
-    return (
-        gr.update(interactive=False),                # 開始錄音
-        gr.update(interactive=False),                # 停止錄音
-        gr.update(visible=True, interactive=True),   # 停止(轉檔):收尾中可中止
-        gr.Timer(active=False),
-        gr.update(value=_REC_FINISHING_MD),
-        gr.update(interactive=False),                # 要做什麼(鎖切換)
-    )
+    return _view(REC_FINISH_LOCK_SPEC, {
+        "rec_start_btn": gr.update(interactive=False),
+        "rec_stop_btn": gr.update(interactive=False),
+        # 停止(轉檔):收尾中可中止
+        "stop_btn": gr.update(visible=True, interactive=True),
+        "rec_timer": gr.Timer(active=False),
+        "rec_status": gr.update(value=_REC_FINISHING_MD),
+        "source_mode": gr.update(interactive=False),  # 鎖切換
+    })
 
 
 def _salvage_tracks(tracks, stem) -> list[str]:
@@ -2683,7 +2375,7 @@ def _run_recording_finish(rec, lt, stem, num_speakers, progress):
         f"(錄音檔已存於 output 資料夾:{'、'.join(wav_names)})\n\n{result.preview}"
     )
     # 試聽剪對應音軌(speaker_sources);「未知」等無對應者剪第一軌
-    clips = _cut_speaker_clips(
+    clips = naming_core._cut_speaker_clips(
         Path(tracks[0].path), result.speaker_hints, sources=result.speaker_sources,
     )
     # 核對也要給現場收音這條路(2026-08-15 code review 抓到:先前只有檔案
@@ -2697,8 +2389,8 @@ def _run_recording_finish(rec, lt, stem, num_speakers, progress):
     out = _present_result(
         transcripts, preview, result.speakers,
         result.voiceprints or {}, result.speaker_hints or {}, clips,
-        audit=_audit_payload(result, audit_src, sources={}) if audit_src else {},
-        audit_flags=_audit_flags(result.quality),
+        audit=naming_core._audit_payload(result, audit_src, sources={}) if audit_src else {},
+        audit_flags=naming_core._audit_flags(result.quality),
     )
     # 音檔已進 output/、試聽片段已剪出(pending 另存副本):錄音工作目錄
     # 功成身退。放最後:前面任何一步炸掉都還留著原始素材
@@ -2712,15 +2404,16 @@ def _after_rec_finish():
     """停止錄音鏈收尾(.then/.failure 成對掛,同 _after_run 的地雷):
     錄音鈕回待機、解鎖來源切換、「停止」收回隱藏(收音模式平時不顯示,
     只在收尾期間由 _lock_for_rec_finish 臨時亮出)。"""
-    return (
-        gr.update(interactive=True),                  # 開始錄音
-        gr.update(interactive=False),                 # 停止錄音
-        gr.update(visible=False, interactive=False),  # 停止(轉檔)
-        gr.update(interactive=True),                  # 要做什麼
-        gr.update(interactive=True),                  # 收音情境
-        gr.update(value=_REC_IDLE_MD),
-        *_param_updates(True),                        # 進階參數解鎖
-    )
+    return _view(AFTER_REC_SPEC, {
+        "rec_start_btn": gr.update(interactive=True),
+        "rec_stop_btn": gr.update(interactive=False),
+        # 停止(轉檔):收音模式平時不顯示
+        "stop_btn": gr.update(visible=False, interactive=False),
+        "source_mode": gr.update(interactive=True),
+        "scenario": gr.update(interactive=True),
+        "rec_status": gr.update(value=_REC_IDLE_MD),
+        "adv_params": _param_updates(True),
+    })
 
 
 def _restore_finishing():
@@ -2733,27 +2426,25 @@ def _restore_finishing():
 
     畫面等同 `_lock_for_rec_finish` 鎖出來的樣子——**尤其是「停止」那顆**:
     收尾期間本來就允許中止,少了它使用者只能關黑視窗。"""
-    return (
-        gr.update(value=_MODE_RECORD, interactive=False,
-                  info=_MODE_INFO[_MODE_RECORD]),
-        gr.update(visible=False, value=""),              # 路徑欄
-        gr.update(visible=False),                        # 模式說明
-        gr.update(visible=False),                        # 選擇檔案…
-        gr.update(visible=False),                        # 選擇資料夾…
-        gr.update(visible=False),                        # 清空
-        gr.update(visible=False, value=""),              # 選檔摘要
-        gr.update(visible=True, interactive=False,
-                  value=(scen := _rec["scenario"] or DEFAULT_SCENARIO),
-                  info=_SCENARIO_INFO.get(scen, "")),
-        gr.update(visible=True, value=_REC_FINISHING_MD),  # 錄音狀態列
-        gr.update(visible=True, interactive=False),      # 開始錄音
-        gr.update(visible=True, interactive=False),      # 停止錄音
-        gr.Timer(active=False),                          # 錄音計時停了
-        gr.update(visible=False, interactive=False),     # 開始轉檔
-        gr.update(visible=True, interactive=True),       # 停止:收尾可中止
-        *_param_updates(False),
-        gr.Timer(active=True),                           # 轉檔秒針接手畫進度
-    )
+    return _view(RESTORE_REC_SPEC, {
+        "source_mode": gr.update(value=_MODE_RECORD, interactive=False,
+                                 info=_MODE_INFO[_MODE_RECORD]),
+        "src_path": gr.update(visible=False, value=""),
+        "src_hint": gr.update(visible=False),            # 模式說明
+        "src_btns": [gr.update(visible=False)] * 3,      # 選檔/選資料夾/清空
+        "src_summary": gr.update(visible=False, value=""),
+        "scenario": gr.update(visible=True, interactive=False,
+                              value=(scen := _rec["scenario"] or DEFAULT_SCENARIO),
+                              info=_SCENARIO_INFO.get(scen, "")),
+        "rec_status": gr.update(visible=True, value=_REC_FINISHING_MD),
+        "rec_start_btn": gr.update(visible=True, interactive=False),
+        "rec_stop_btn": gr.update(visible=True, interactive=False),
+        "rec_timer": gr.Timer(active=False),             # 錄音計時停了
+        "run_btn": gr.update(visible=False, interactive=False),
+        "stop_btn": gr.update(visible=True, interactive=True),  # 收尾可中止
+        "adv_params": _param_updates(False),
+        "run_timer": gr.Timer(active=True),              # 轉檔秒針接手畫進度
+    })
 
 
 def _restore_recording():
@@ -2767,33 +2458,32 @@ def _restore_recording():
         snap = runstate.snapshot()
         if snap is not None and snap.kind == runstate.KIND_RECORDING:
             return _restore_finishing()
-        return tuple(gr.skip() for _ in range(19))
-    return (
+        return _view(RESTORE_REC_SPEC, {})   # 三種狀態都不是:整組不動
+    return _view(RESTORE_REC_SPEC, {
         # 「要做什麼」:接回錄音中的畫面,說明小字也要跟著回到收音那一段
         # (漏了的話 F5 之後會停在上一次切換的說明,就是原本那個 bug)
-        gr.update(value=_MODE_RECORD, interactive=False,
-                  info=_MODE_INFO[_MODE_RECORD]),
-        gr.update(visible=False, value=""),              # 路徑欄
-        gr.update(visible=False),                        # 模式說明
-        gr.update(visible=False),                        # 選擇檔案…
-        gr.update(visible=False),                        # 選擇資料夾…
-        gr.update(visible=False),                        # 清空
-        gr.update(visible=False, value=""),              # 選檔摘要
+        "source_mode": gr.update(value=_MODE_RECORD, interactive=False,
+                                 info=_MODE_INFO[_MODE_RECORD]),
+        "src_path": gr.update(visible=False, value=""),
+        "src_hint": gr.update(visible=False),            # 模式說明
+        "src_btns": [gr.update(visible=False)] * 3,      # 選檔/選資料夾/清空
+        "src_summary": gr.update(visible=False, value=""),
         # 收音情境:值接回錄音當時選的那個,說明小字要一起送——同「要做
         # 什麼」那條的理由,漏了就會停在 F5 之前的那一段(值與說明對不上)
-        gr.update(visible=True, interactive=False,
-                  value=(scen := _rec["scenario"] or DEFAULT_SCENARIO),
-                  info=_SCENARIO_INFO.get(scen, "")),
-        gr.update(visible=True),                         # 錄音狀態列(內容由 tick 補)
-        gr.update(visible=True, interactive=False),      # 開始錄音
-        gr.update(visible=True, interactive=True),       # 停止錄音
-        gr.Timer(active=True),
-        gr.update(visible=False, interactive=False),     # 開始轉檔(收音模式隱藏)
-        gr.update(visible=False, interactive=False),     # 停止(轉檔)
+        "scenario": gr.update(visible=True, interactive=False,
+                              value=(scen := _rec["scenario"] or DEFAULT_SCENARIO),
+                              info=_SCENARIO_INFO.get(scen, "")),
+        "rec_status": gr.update(visible=True),           # 內容由 tick 補
+        "rec_start_btn": gr.update(visible=True, interactive=False),
+        "rec_stop_btn": gr.update(visible=True, interactive=True),
+        "rec_timer": gr.Timer(active=True),
+        # 收音模式隱藏轉檔那兩顆
+        "run_btn": gr.update(visible=False, interactive=False),
+        "stop_btn": gr.update(visible=False, interactive=False),
         # 進階參數維持鎖住;講者人數錄音中可輸入(同 _start_recording)
-        *_param_updates(False, lock_speakers=False),
-        gr.skip(),  # 轉檔秒針:錄音中用不到(即時預覽走 rec_timer)
-    )
+        "adv_params": _param_updates(False, lock_speakers=False),
+        # 轉檔秒針:錄音中用不到(即時預覽走 rec_timer)——不寫就是不動
+    })
 
 
 # ---- 文字、圖像→MD(第二分頁;把關在 docsrc、管線在 docpipe)----
@@ -2838,18 +2528,14 @@ def _doc_start():
     而且**本步不得拋例外**:收尾 `_doc_after` 的 .failure 掛在第二步上,
     鏈頭失敗就沒人解鎖、介面鎖死。"""
     _converting["on"] = True
-    return (
-        gr.update(interactive=False),  # 路徑欄
-        gr.update(interactive=False),  # 選擇檔案…
-        gr.update(interactive=False),  # 選擇資料夾…
-        gr.update(interactive=False),  # 清空
-        gr.update(interactive=False),  # 包含子資料夾
-        gr.update(interactive=False),  # 辨識圖片裡的文字
-        gr.update(interactive=False),  # 郵件附件一併轉檔
-        gr.update(interactive=False),  # 開始轉檔
-        gr.update(interactive=True),   # 停止
-        gr.update(interactive=False),  # 開啟輸出資料夾
-    )
+    return _view(DOC_LOCK_SPEC, {
+        # 轉檔中整排鎖住,只留「停止」
+        **{k: gr.update(interactive=False) for k in (
+            "doc_src", "doc_files_btn", "doc_folder_btn", "doc_clear_btn",
+            "doc_recursive", "doc_ocr", "doc_mail_att", "doc_run_btn",
+            "doc_open_btn")},
+        "doc_stop_btn": gr.update(interactive=True),
+    })
 
 
 def _doc_convert(
@@ -2915,17 +2601,14 @@ def _doc_after():
     「開始轉檔」一律恢復可按——它不隨路徑欄內容亮暗(與逐字稿那條的
     `_after_run` 刻意不同,理由見 doctab.preview_summary)。"""
     _converting["on"] = False
-    return (
-        gr.update(interactive=True),   # 路徑欄
-        gr.update(interactive=True),   # 選擇檔案…
-        gr.update(interactive=True),   # 選擇資料夾…
-        gr.update(interactive=True),   # 清空
-        gr.update(interactive=True),   # 包含子資料夾
-        gr.update(interactive=True),   # 辨識圖片裡的文字
-        gr.update(interactive=True),   # 郵件附件一併轉檔
-        gr.update(interactive=True),   # 開始轉檔
-        gr.update(interactive=False),  # 停止
-    )
+    # ⚠️ 這一條的 outputs 是 `doc_lock_outputs[:-1]` ——「開啟輸出資料夾」
+    # 由轉檔那一步決定,所以規格表也要去掉最後一格
+    return _view(DOC_LOCK_SPEC[:-1], {
+        **{k: gr.update(interactive=True) for k in (
+            "doc_src", "doc_files_btn", "doc_folder_btn", "doc_clear_btn",
+            "doc_recursive", "doc_ocr", "doc_mail_att", "doc_run_btn")},
+        "doc_stop_btn": gr.update(interactive=False),
+    })
 
 
 def _doc_stop():
@@ -4465,7 +4148,7 @@ def build_ui() -> gr.Blocks:
         # 也能還原
         for name_box_input in [*name_inputs, unknown_input]:
             name_box_input.input(
-                _save_draft_names,
+                naming_core._save_draft_names,
                 inputs=[*name_inputs, unknown_input],
                 show_progress="hidden",
             )
