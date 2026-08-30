@@ -45,6 +45,9 @@ os.environ.setdefault(
 import functools
 import logging
 import shutil
+import threading
+import time
+import webbrowser
 import socket
 from datetime import datetime
 
@@ -124,7 +127,7 @@ _MODE_RELABEL = "🔄 重設講者"
 _MODE_INFO = {
     _MODE_RECORD: "開會時直接收音,邊開會邊轉,散會幾乎不用等",
     _MODE_FILE: "挑已經錄好的錄音/錄影檔,轉成逐字稿",
-    _MODE_RELABEL: "拿一份已經轉好的逐字稿,重新命名裡面的講者(不會重轉)",
+    _MODE_RELABEL: "轉好的逐字稿,重新命名裡面的講者(不會重轉)",
 }
 
 MODEL_LABELS = {"快速": "fast", "精準": "accurate"}
@@ -175,8 +178,111 @@ _PRIVACY_IMG = paths.repo_root() / "docs" / "claude-privacy-setting.jpg"
 _FAVICON = paths.assets_dir() / "favicon.ico"
 
 
+# ---- 一次只跑一個(2026-08-30 使用者指定)------------------------------- #
+# ⚠️ **先前是刻意允許多實例的**(`find_free_port` 從 7860 往上找),而那帶來三件使用
+# 者看不出來的事:兩個實例搶同一顆 GPU、寫同一份 `data\voiceprints.npz`(後寫的贏,
+# 前一個的登記靜靜消失)、而且他只會看到「怎麼開了兩個黑視窗」。
+# ⚠️ **判準是「鎖檔刪不刪得掉」**,不是「檔案在不在」:Windows 不准刪除被持開的檔案,
+# 所以刪得掉就代表上一個實例已經走了(當機殘留也算),刪不掉才是真的還在跑。這與
+# `pipeline.cleanup_stale_temp` 用的是同一招,不必另外發明一套。
+# ⚠️ **鎖檔裡放「埠號 + 現在有幾個頁面連著」**:擋下第二次啟動時,要判斷該不該再開
+# 一個分頁。只放埠號的話每擋一次就多開一個(使用者 2026-08-30 回報:「黑色視窗會關
+# 掉,但是瀏覽器上會開多個」)——而原本那個明明還開著。
+_INSTANCE_LOCK_NAME = "running.lock"
+# 開發與測試用的逃生口:設了就不擋(自動化測試會同時起好幾個伺服器)。
+# ⚠️ **不做成命令列參數**:使用者按的是捷徑,參數對他不存在;而環境變數在
+# `.bat`、CI、單一次的指令列都放得進去。
+ALLOW_MULTI_ENV = "MEETING_SCRIBE_ALLOW_MULTI"
+# ⚠️ **這條把關只給網頁版,命令列(`doc2md` = `doccli:main`)絕不可以擋**
+# (使用者 2026-08-30 指定):擋它會讓腳本與 doc2md Skill 直接壞掉,而它本來就吃
+# 資料夾、自己照順序處理。`tests/test_doccli.py` 反向釘著這件事。
+_instance_lock = None  # 持開中的鎖檔 handle(行程結束由 OS 釋放)
+
+
+def _instance_lock_path() -> Path:
+    return paths.appdata_root() / _INSTANCE_LOCK_NAME
+
+
+def claim_single_instance() -> int | None:
+    r"""搶「唯一實例」的位置。
+
+    回 `None` = 搶到了,可以啟動;回 `(埠號, 有幾個頁面連著)` = 已經有一個在跑
+    (讀不出來時回 `(0, 0)`——那時只能說「已經在執行中」,沒辦法帶他過去)。
+    """
+    path = _instance_lock_path()
+    port, viewers = 0, 0
+    try:
+        got = path.read_text(encoding="utf-8").split()
+        port = int(got[0])
+        viewers = int(got[1]) if len(got) > 1 else 0
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        path.unlink(missing_ok=True)  # 刪得掉 = 沒有人持開 = 上一個已經走了
+    except OSError:
+        return port, viewers          # 刪不掉 = 真的還在跑
+    global _instance_lock
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _instance_lock = path.open("w", encoding="utf-8")
+    except OSError:
+        # 鎖不起來只記 log:擋不了第二次總比「連第一次都開不起來」好
+        logger.exception("唯一實例的鎖檔建立失敗,這次不擋第二個實例")
+    return None
+
+
+def note_instance_port(port: int) -> None:
+    """記下網頁埠號(之後每有人開/離開頁面都會更新,見 `_write_instance_state`)。"""
+    _viewers["port"] = port
+    _write_instance_state()
+
+
+def _write_instance_state() -> None:
+    """把「埠號 有幾個頁面連著」寫進鎖檔。
+
+    ⚠️ **頁面數要跟著更新**,不是只寫一次:第二次啟動靠它判斷「原本那個分頁還在不
+    在」——不更新的話,擋下來時每次都會再開一個新分頁。"""
+    if _instance_lock is None:
+        return
+    try:
+        _instance_lock.seek(0)
+        _instance_lock.write(f"{_viewers['port']} {_viewers['open']}")
+        _instance_lock.truncate()
+        _instance_lock.flush()
+    except OSError:
+        logger.debug("狀態寫不進鎖檔", exc_info=True)
+
+
+def _greet_existing_instance(port: int, viewers: int) -> None:
+    r"""已經有一個在跑:講清楚,而且**只在沒有人看著時才開分頁**。
+
+    ⚠️ **不可以每次都開**(使用者 2026-08-30 回報):原本那個分頁還開著的話,
+    每按一次圖示就多一個分頁——黑視窗確實只有一個,但瀏覽器變成一排。有人看著
+    就只把網址印出來。"""
+    print("\n工具已經在執行中了,不會再開第二個。")
+    if port and viewers > 0:
+        print(f"原本那個網頁還開著:http://127.0.0.1:{port}")
+        print("請切換過去用;這裡不會再幫你開一個新分頁。")
+    elif port:
+        url = f"http://127.0.0.1:{port}"
+        print(f"已經幫你把原本那個網頁打開:{url}")
+        print("(如果沒有自動打開,把上面那行網址貼到瀏覽器即可。)")
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001 - 打不開不影響「已經在跑」這件事
+            logger.debug("既有實例的網頁打不開", exc_info=True)
+    else:
+        print("請切換到原本那個黑色視窗與網頁;真的找不到的話,把那個黑視窗關掉再重開。")
+    print("\n⚠️ 兩個一起跑會搶同一顆顯示卡,也會讓聲紋庫互相覆蓋,所以擋下來。")
+
+
 def find_free_port(start: int = 7860, limit: int = 20) -> int:
-    """從 start 往上找第一個可綁定的埠(讓多個實例並存);都被占用才報錯。"""
+    r"""從 start 往上找第一個可綁定的埠;都被占用才報錯。
+
+    ⚠️ **不再是為了「讓多個實例並存」**(2026-08-30 起一次只跑一個,見
+    `claim_single_instance`):留著往上找,是因為 7860 可能被**別的程式**占著,
+    或上一個實例才剛結束、埠還在 TIME_WAIT。
+    """
     for port in range(start, start + limit):
         with socket.socket() as s:
             try:
@@ -1908,6 +2014,96 @@ _transcribing = {"on": False}
 # 而且這是**正確性**需求不只是體驗:cancel.py 的取消旗標是全域單例,
 # 兩邊同時跑的話任一顆停止鈕會把另一邊也一起殺掉
 _converting = {"on": False}
+
+# 沒有人在看就自己結束(使用者 2026-08-30 指定:關掉瀏覽器,黑視窗跟著關)。
+# ⚠️ **不可以一收到 unload 就關**:F5 送的 unload 與關分頁的**一模一樣**,差別在
+# 「之後有沒有人連回來」。Playwright 對**真的 app** 量 6 次(見
+# `docs/dev/verification.md`):F5 的 `unload` → `load` 間隔 **0.218~0.281 秒**,
+# 而關分頁等 12 秒都沒有人回來——所以「等一下再決定」分得開。
+# ⚠️ **1 秒是使用者 2026-08-30 指定的**(原本 3 秒,他嫌導去別的網址時等太久),
+# 對量到的最慢值 0.281 秒有約 3.6 倍餘裕。**再往下調要重量一次**:萬一某次重新整理
+# 慢過這個值,工具會在使用者按 F5 的當下結束,而那個頁面再也連不回來。
+_IDLE_QUIT_SEC = 1.0
+# ⚠️ **「導去別的網址要等約一分鐘」是刻意不修的**(使用者 2026-08-30 裁定)。實跡:
+# 紀錄檔兩次都是「頁面連上 → 63 秒後才頁面離開」——gradio 的 `unload` 要等心跳連線
+# 真的斷掉,而**瀏覽器在導航離開時會把那條連線留著**(heartbeat_rate 寫死 15 秒,
+# 約四輪)。關分頁則是立刻。
+# ⚠️ **不要「修」它**,兩條路都已經評估過:
+#   **①** 在 `pagehide` 呼叫 `window.stop()` 強制斷線 → 伺服器會馬上發現,但那正好
+#     **把「按上一頁回來」弄斷了**——而使用者離開後回來本來就是正常用法,連線留著
+#     是對的。
+#   **②** 讓頁面每隔幾秒回報「我還在」 → **瀏覽器對背景分頁的計時器會節流**(見
+#     `ui_style.RECONNECT_HEAD` 的註解:最慢每分鐘一次是正常現象)。使用者只是切去
+#     別的視窗工作,工具就會以為他走了而自己結束——比等一分鐘嚴重得多。
+# open=現在連著幾個頁面;left_at=全部離開的時刻(還有人看就是 None)
+_viewers: dict = {"open": 0, "left_at": None, "port": 0}
+
+
+def _viewer_arrived() -> None:
+    """有一個頁面連上來(第一次開、多開一個分頁、或 F5 之後重連)。"""
+    _viewers["open"] += 1
+    _viewers["left_at"] = None
+    # ⚠️ **這一行是給「它為什麼沒關」用的**:自動結束靠的是「連著幾個頁面」,而那個
+    # 數字在畫面上完全看不到。使用者回報「導去別的網址沒關掉」時,開發機重現不出來
+    # (無頭、有頭+bfcache 都試過),只能靠紀錄檔回答「當時伺服器以為還有幾個」。
+    # ⚠️ **DEBUG 不是 INFO**(2026-08-30 使用者指定):讀者只有事後分析的維護者,而
+    # 黑視窗是給使用者看的——連線數對他沒有意義,重新整理一次還會多一行(gradio 的
+    # `unload` 要等心跳斷,見上面的 `_IDLE_QUIT_SEC` 註解),看起來像出了什麼事。
+    # 紀錄檔收 DEBUG(`filelog.attach`),所以**資訊一點都沒少**,只是不佔黑視窗。
+    logger.debug("頁面連上(目前 %d 個)", _viewers["open"])
+    _write_instance_state()
+
+
+def _viewer_left() -> None:
+    """有一個頁面離開。⚠️ **全部離開才開始倒數**——有人習慣開兩個分頁。"""
+    _viewers["open"] = max(0, _viewers["open"] - 1)
+    if _viewers["open"] == 0:
+        _viewers["left_at"] = time.monotonic()
+    logger.debug("頁面離開(還剩 %d 個)%s", _viewers["open"],
+                 ";開始倒數結束" if _viewers["open"] == 0 else "")
+    _write_instance_state()
+
+
+def _work_in_progress() -> bool:
+    """轉檔或錄音正在跑嗎?跑著就絕不自動結束。"""
+    return bool(_transcribing["on"] or _converting["on"] or _rec["recorder"])
+
+
+def _should_quit(now: float) -> bool:
+    """現在該不該自動結束?(抽成純函式才測得到判斷本身,不只是接線)
+
+    三個條件缺一不可:**全部頁面都離開**、**離開夠久了**(F5 的重連會把 `left_at`
+    清掉,見 `_viewer_arrived`)、而且**沒有工作在跑**。"""
+    left = _viewers["left_at"]
+    if left is None or _work_in_progress():
+        return False
+    return now - left >= _IDLE_QUIT_SEC
+
+
+def _watch_for_goodbye() -> None:
+    r"""守候:所有頁面離開超過 `_IDLE_QUIT_SEC` 且沒有工作在跑 → 收乾淨、結束行程。
+
+    ⚠️ **有工作在跑就不關**:使用者可能只是把分頁關掉、等它跑完再開回來,而一場兩
+    小時的會議重來不得。跑完之後這裡才會判定該走——那時成品已經在 `output\` 裡、命名
+    進度也已經落地在 `pending\`,下次開起來會自己接回來。
+    ⚠️ **要自己把該收的收掉再走**:供應快取(機敏副本不過夜)與轉錄子行程,`main` 的
+    `finally` 在這條路上跑不到。"""
+    while True:
+        time.sleep(1.0)
+        if not _should_quit(time.monotonic()):
+            continue
+        # 同上:黑視窗看的是下面那句人話,`INFO:meeting_scribe.app:...` 只是把同一
+        # 件事再講一次(而且講的是程式的說法)。分析時要的那份留在紀錄檔裡。
+        logger.debug("沒有頁面連著、也沒有工作在跑,自動結束")
+        print("\n瀏覽器已經關閉,工具跟著結束了。要再使用請雙擊桌面的圖示。")
+        try:
+            _drop_serve_cache()
+            transproc.shutdown()
+        except Exception:  # noqa: BLE001 - 收不乾淨也一定要走得掉
+            logger.debug("自動結束時的收尾出錯", exc_info=True)
+        # ⚠️ **`os._exit`**:uvicorn 跑在另一條執行緒上,走常規關閉會卡住;該收的
+        # 上面兩行已經自己收過了。
+        os._exit(0)
 
 
 def _busy_error(what: str) -> gr.Error:
@@ -4161,6 +4357,10 @@ def build_ui() -> gr.Blocks:
         # (裡面裝 MutationObserver 與 input/change 監聽,見 CLUE_COLLAPSE_JS
         # ——為什麼不在伺服器端做,那段註解有寫)
         demo.load(None, js=ui_style.CLUE_COLLAPSE_JS)
+        # 沒有人在看就自己結束(見 `_watch_for_goodbye`)。⚠️ **兩個都要接**:
+        # 只接 unload 的話 F5 會被當成關閉,而 F5 的重連正是靠 load 取消倒數的。
+        demo.load(_viewer_arrived)
+        demo.unload(_viewer_left)
         # 開頁時把名單表格與聲紋那三個元件**重新讀一次檔**(2026-08-15 code
         # review 抓到)。⚠️ 它們的值是 `build_ui` **建構當下**的快照,而
         # build_ui 一個行程只跑一次——工具開著的期間用記事本或 git 改過
@@ -4461,7 +4661,18 @@ def main() -> None:
     models.seed_missing()
     cleanup_stale_temp()  # 清掃先前硬退出(關窗/當機)殘留的暫存目錄
     _hold_serve_cache()   # 供應快取上鎖(清掃之後:自己的新目錄不能被掃)
+    # ⚠️ **一次只跑一個**(使用者 2026-08-30 指定):兩個實例會搶同一顆 GPU、
+    # 也會互相覆蓋 `dataoiceprints.npz`。設了 MEETING_SCRIBE_ALLOW_MULTI 就不擋
+    # ——自動化測試會同時起好幾個伺服器。
+    if not os.environ.get(ALLOW_MULTI_ENV):
+        other = claim_single_instance()
+        if other is not None:
+            _greet_existing_instance(*other)
+            return
     port = find_free_port()
+    note_instance_port(port)
+    threading.Thread(target=_watch_for_goodbye, daemon=True,
+                     name="idle-quit").start()
     try:
         _launch(port)
     finally:
@@ -4518,12 +4729,13 @@ def _launch_ui(port: int) -> None:
         # 分頁圖示。檔案缺失就交回 gradio 的預設圖案(給 None):圖示是外觀,
         # 不得讓程式起不來——同 ui_style._header_icon_css 的降級原則
         favicon_path=str(_FAVICON) if _FAVICON.exists() else None,
-        # head 四段:開頁過場(蓋掉 gradio 還沒畫出畫面的那 2~3 秒白畫面,
+        # head 各段:開頁過場(蓋掉 gradio 還沒畫出畫面的那 2~3 秒白畫面,
         # 使用者 2026-08-08 回報;**必須排第一**——它要蓋的正是後面幾段
         # 執行前的那段空窗)+深淺色的還原/儲存與切換鈕的點擊行為
-        # +轉檔中關頁確認+斷線提示橫幅(睡眠喚醒後 gradio session 已死、
+        # +關頁確認+斷線提示橫幅(睡眠喚醒後 gradio session 已死、
         # 按鈕全無反應,前端毫無提示;使用者實際踩到,見 RECONNECT_HEAD)
-        # 第五段是分頁圖示的 <link>:gradio 只註冊 /favicon.ico 路由、
+        # +後端還在不在(只為了讓關頁確認在黑視窗已關時放行,畫面上不做事)
+        # 最後一段是分頁圖示的 <link>:gradio 只註冊 /favicon.ico 路由、
         # **不插標籤**,而那條隱式路徑會被 Chrome 的 favicon 快取擋死
         # (使用者 2026-08-20 實際踩到)。理由與雜湊的用途見 favicon_head
         head=(
@@ -4531,6 +4743,7 @@ def _launch_ui(port: int) -> None:
             + ui_style.THEME_PERSIST_HEAD
             + ui_style.UNLOAD_GUARD_HEAD
             + ui_style.RECONNECT_HEAD
+            + ui_style.BACKEND_GONE_HEAD
             + ui_style.AUDIT_PLAYING_HEAD
             + ui_style.favicon_head()
         ),

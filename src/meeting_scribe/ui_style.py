@@ -192,9 +192,18 @@ html { scrollbar-gutter: stable; }
   border-radius: 999px !important; box-shadow: none !important;
   padding: 4px 16px !important;
 }
+/* 選中那一段的白膠囊要**從灰槽邊緣往內縮**(2026-08-30 使用者截圖回報「白色壓到
+   灰色邊緣」)。label 是 flex item、寬度就是它那一份等分,白底畫在它上面時會一路
+   撐到那一份的邊界——換行之後那一段獨佔整列,白膠囊的圓角就與灰槽的圓角貼在一起。
+   ⚠️ **用 margin 內縮,不要改成「包住文字」**(使用者 2026-08-30 追加:「不用貼到
+   文字,太貼也不好看」):包住文字的話,每段的白膠囊寬度就跟著字數長短不一,而
+   等分正是 2026-08-12 選案 A 要的效果(起因是他圈出兩排灰槽右緣對不齊)。內縮
+   保留等分、只讓它不要碰到邊。
+   ⚠️ 上下也要留一點:只縮左右的話,換行那一列看起來仍然是「塞滿」的。 */
 .seg-radio label:has(input:checked) {
   background: var(--block-background-fill) !important;
   box-shadow: 0 1px 3px rgba(0,0,0,0.12) !important; font-weight: 600;
+  margin: 1px 7px !important;
 }
 .seg-radio input[type="radio"] { display: none; }
 
@@ -1264,11 +1273,10 @@ THEME_PERSIST_HEAD = """
 </script>
 """
 
-# 轉檔中誤關瀏覽器的守門:beforeunload 只在 window.__msBusy 舉旗時攔,
-# 旗標由 build_ui 的轉檔事件鏈開關(點「開始」當下前端舉旗、事件結束放下)。
+# 誤關瀏覽器的守門:beforeunload 一律攔(2026-08-30 起不再只在轉檔中攔——關掉
+# 分頁等於把工具關掉),兩個例外是「按 F5 重新整理」與「後端已經不在」。
 # 對話框文字無法自訂——現代瀏覽器基於反釣魚一律顯示自家的通用訊息,
 # returnValue 設空字串只是「要攔」的訊號(舊版 Chrome/Edge 必須設值)。
-# 沒在轉檔時旗標為假,關閉一如往常不多問。
 #
 # abort 壓制(第二段)是這個守門能用的前提:gradio 前端自己也掛了
 # beforeunload → client.close() → abort 掉 /queue/data 的 SSE 串流,完全沒料
@@ -1284,16 +1292,42 @@ THEME_PERSIST_HEAD = """
 UNLOAD_GUARD_HEAD = """
 <script>
 (function () {
-  window.addEventListener("beforeunload", function (e) {
-    if (window.__msBusy) {
-      e.preventDefault();
-      e.returnValue = "";
+  // ⚠️ **一律問,不再只在轉檔中問**(使用者 2026-08-30 指定):自從「關掉瀏覽器
+  // 分頁,工具就跟著結束」之後,**每一次關閉都是有後果的**——不小心關掉就是把工具
+  // 關掉了,不只是關掉一個畫面。
+  // ⚠️ **重新整理不算「離開」**:`beforeunload` 對 F5 與關閉送的是同一個事件,一律
+  // 攔的話每按一次 F5 都要多回答一次確認框。攔到鍵盤上的 F5 / Ctrl+R 就先放行
+  //(漏掉的情況只是多問一次,不會有壞事)。
+  // ⚠️ **旗標放在 window 上、不放閉包裡**:自家的「重新整理」按鈕(RECONNECT_HEAD
+  // 的 `.rc-go`)是另一段腳本,搆不到這裡的區域變數,而它按下去也是**刻意要重整**、
+  // 同樣不該被問。它原本走的是 `__msBusy = false`,那條路在「一律問」之後就失效了
+  // (守門已經不看 `__msBusy`),按那顆鈕會多跳一次確認框。
+  window.addEventListener("keydown", function (e) {
+    var isReload = e.key === "F5" ||
+      ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R"));
+    if (isReload) {
+      window.__msReloading = true;
+      setTimeout(function () { window.__msReloading = false; }, 3000);
     }
+  }, true);
+
+  // ⚠️ **後端已經不在就不要問**(使用者 2026-08-30 指定):黑視窗先被關掉時,這個
+  // 頁面已經沒有任何東西可以保護,再攔一次「確定要離開嗎」只是騷擾。旗標由
+  // BACKEND_GONE_HEAD 在背景維護——`beforeunload` 是同步的,這裡才問就來不及了。
+  window.addEventListener("beforeunload", function (e) {
+    if (window.__msReloading || window.__msGone) { return; }
+    e.preventDefault();
+    e.returnValue = "";
   });
+
+  // ⚠️ **這一段與上面是一組,不可以只放開其中一邊**:gradio 自己也在 beforeunload
+  // 裡 `client.close()` 砍掉 SSE,它沒料到會被 preventDefault 留下來——按「取消」
+  // 之後連線已死、伺服器把 session 判死,而前端的「重連」只是整頁 reload 又被攔,
+  // 整頁報廢(2026-07 踩過)。所以只要是 beforeunload 派發中的 abort 就吞掉。
   var origAbort = AbortController.prototype.abort;
   AbortController.prototype.abort = function (reason) {
     var evt = window.event;
-    if (window.__msBusy && evt && evt.type === "beforeunload") {
+    if (evt && evt.type === "beforeunload") {
       return;
     }
     return origAbort.call(this, reason);
@@ -1397,6 +1431,37 @@ html[data-ms-theme="light"] #ms-splash { background: #ffffff; }
 </script>
 """
 
+# 後端不在了(使用者先把黑視窗關掉)時,把關頁確認放下——別的什麼都不做。
+# ⚠️ **畫面上不再有任何提示**(使用者 2026-08-30 指定拿掉):先前這裡會蓋上一層
+# 「工具已經結束了」的 position:fixed 覆蓋層,連同它的 CSS 與 window.close() 一起
+# 移除,不要再加回來。
+# ⚠️ **那為什麼還要問伺服器在不在**:唯一的產物是 `window.__msGone` 這個旗標,給
+# UNLOAD_GUARD_HEAD 的 `beforeunload` 讀——那個事件是**同步**的,當下沒辦法臨時
+# 發一趟請求去問,只能事先問好;否則「後端都不在了就別問確定要離開嗎」做不到。
+BACKEND_GONE_HEAD = """
+<script>
+(function () {
+  // ⚠️ **要連續失敗才算數**:一次 fetch 失敗可能只是瞬斷或剛好在重整,而誤判的
+  //   代價是「工具其實還在跑,關分頁卻不問了」——那一關就是把轉檔一起關掉。
+  // ⚠️ **1 秒不是為了「早點知道」,是為了讓旗標在關頁那一刻夠新**:典型動作是
+  //   「關掉黑視窗 → 隨手把網頁也關掉」,兩件事之間可能只隔幾秒。問得太慢的話,
+  //   關網頁時旗標還沒翻,照樣會跳一次沒有意義的確認框。
+  var TICK_MS = 1000;
+  var NEED_FAILS = 3;          // 連續 3 次(約 3 秒)
+  var fails = 0;
+
+  // 任何 HTTP 回應都算「有人回話」(404/405 也是);只有網路層失敗才進 catch。
+  // 本機服務連不上時 fetch 會立刻失敗,不必另外設逾時。
+  setInterval(function () {
+    fetch(window.location.origin + "/", { method: "HEAD", cache: "no-store" })
+      .then(function () { fails = 0; window.__msGone = false; })
+      .catch(function () { if (++fails >= NEED_FAILS) { window.__msGone = true; } });
+  }, TICK_MS);
+})();
+</script>
+"""
+
+
 RECONNECT_HEAD = """
 <script>
 (function () {
@@ -1422,11 +1487,13 @@ RECONNECT_HEAD = """
       '<button type="button" class="rc-dismiss" aria-label="關閉提示">✕</button>' +
       "</div>";
     el.querySelector(".rc-go").addEventListener("click", function () {
-      // 關頁守門(UNLOAD_GUARD_HEAD)在轉檔中會攔下離開:這裡是使用者
-      // 刻意要重新整理,先放下旗標免得多跳一個確認框。重新整理是安全的
-      // ——轉檔/錄音都在伺服器端跑,命名進度也已落地,demo.load 會把
-      // 錄音狀態(_restore_recording)與命名(_restore_pending)接回來
-      window.__msBusy = false;
+      // 關頁守門(UNLOAD_GUARD_HEAD)一律攔下離開:這裡是使用者**刻意**要
+      // 重新整理,舉這支旗走與鍵盤 F5 同一條放行路,免得多跳一個確認框。
+      // ⚠️ **不可以改回 `__msBusy = false`**:守門自 2026-08-30「一律問」之後
+      // 就不看那支旗了,那一行等於沒作用(按這顆鈕照樣被問一次)。
+      // 重新整理是安全的——轉檔/錄音都在伺服器端跑,命名進度也已落地,
+      // demo.load 會把錄音狀態(_restore_recording)與命名(_restore_pending)接回來
+      window.__msReloading = true;
       location.reload();
     });
     el.querySelector(".rc-dismiss").addEventListener("click", function () {
