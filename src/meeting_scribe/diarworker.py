@@ -77,10 +77,14 @@ def main(argv: list[str] | None = None) -> int:
         threads = int(argv[argv.index("--threads") + 1])
 
     try:
-        from meeting_scribe import diarize, power, wavspan
+        from meeting_scribe import diarize, models, power, wavspan
 
         if threads > 0:
             power.set_worker_count(threads)
+        # ⚠️ **必須在建引擎之前設**:模型缺了就是在下面那兩行下載的,而那正是
+        # 要回報的東西。走結構化訊息不用 print——這條 stdout 是 NDJSON 專用
+        models.set_progress_sink(
+            lambda text, frac: _reply({"note": text, "frac": float(frac)}))
         # 就緒 = 引擎真的建得起來(模型齊全、DLL 載得動)。缺元件要在按下
         # 「開始錄音」的當下就浮出,不能等第一塊跑完才發現(同 ensure_ready)
         diarize._get_diarizer()

@@ -31,6 +31,7 @@ from meeting_scribe import (
     export,
     loopdetect,
     merge,
+    models,
     power,
     punctuate,
     runstate,
@@ -95,6 +96,16 @@ _STAGE_SPANS = {
     "轉錄與講者分析": (0.05, 0.90),
     "輸出": (0.95, 0.05),
 }
+
+# 進度條上的字可以在階段名後面接一段補充(目前只有「首次下載模型」用它)。
+STAGE_NOTE_SEP = " — "
+
+
+def _stage_span(stage: str) -> tuple[float, float]:
+    r"""階段名 → (起點, 寬度)。⚠️ **查表前要先切掉補充說明**:查不到的階段名
+    會落到 `(1.0, 0.0)`,也就是**把進度條一次推到 100%**——而下載進度之後
+    真正的轉錄才要開始跑,進度條會先衝到底再掉回去。"""
+    return _STAGE_SPANS.get(stage.split(STAGE_NOTE_SEP, 1)[0], (1.0, 0.0))
 
 # 平行階段內兩引擎的進度權重:轉錄是主要耗時者(標準機粗估 3:1)
 _TRANSCRIBE_WEIGHT = 0.75
@@ -170,7 +181,7 @@ def _speaker_hints(spoken) -> dict[int, tuple[int, str, float, float]]:
     return hints
 
 
-def _run_transcribe(wav: Path, model_key: str, progress):
+def _run_transcribe(wav: Path, model_key: str, progress, note=None):
     """轉錄:優先走子行程,起不來就退回主行程。
 
     **為什麼要子行程**(使用者 2026-08-07 選定):轉檔要降到 below-normal
@@ -184,7 +195,8 @@ def _run_transcribe(wav: Path, model_key: str, progress):
     from meeting_scribe import transproc
 
     try:
-        return transproc.get().transcribe(wav, model_key=model_key, progress=progress)
+        return transproc.get().transcribe(
+            wav, model_key=model_key, progress=progress, note=note)
     except cancel.Cancelled:
         raise  # 停止鈕:原樣往上拋,不可被下面的兜底吞掉當成「子行程壞了」
     except Exception:
@@ -193,10 +205,12 @@ def _run_transcribe(wav: Path, model_key: str, progress):
             exc_info=True,
         )
         transproc.shutdown()
-        return transcribe.transcribe(wav, model_key=model_key, progress=progress)
+        # 退回主行程時下載就在這裡發生,sink 直接掛上(沒有 pipe 要跨)
+        with models.progress_sink(note):
+            return transcribe.transcribe(wav, model_key=model_key, progress=progress)
 
 
-def _run_diarize(wav: Path, num_speakers: int, progress, features_out=None):
+def _run_diarize(wav: Path, num_speakers: int, progress, features_out=None, note=None):
     """講者分析:同上,優先走子行程。
 
     ⚠️ 這一支**也**要搬出去,只搬轉錄是不夠的:sherpa 的 pybind11 綁定在
@@ -211,6 +225,8 @@ def _run_diarize(wav: Path, num_speakers: int, progress, features_out=None):
     proc = None
     try:
         proc = diarproc.DiarProcess(below_normal=True)
+        # ⚠️ **要在 start() 之前掛**:模型缺了是在子行程回報 ready 之前下載的
+        proc.on_note = note
         proc.start()
         proc.on_progress = progress
         return proc.diarize(
@@ -222,9 +238,11 @@ def _run_diarize(wav: Path, num_speakers: int, progress, features_out=None):
             "講者分析子行程不可用,改在主行程執行(轉檔期間網頁介面會比較不順)",
             exc_info=True,
         )
-        return diarize.diarize(
-            wav, num_speakers=num_speakers, progress=progress,
-            features_out=features_out)
+        # 退回主行程時下載就在這裡發生,sink 直接掛上(沒有 pipe 要跨)
+        with models.progress_sink(note):
+            return diarize.diarize(
+                wav, num_speakers=num_speakers, progress=progress,
+                features_out=features_out)
     finally:
         if proc is not None:
             proc.close()
@@ -267,11 +285,28 @@ def _transcribe_and_diarize(
             runstate.update(key, fracs[key])
         return cb
 
+    def note(text: str, frac: float) -> None:
+        r"""首次下載模型時,把進度條上的**字**換成下載進度。
+
+        ⚠️ **這條路存在的理由**(使用者 2026-08-30 選定):黑視窗藏起來之後,
+        首次轉檔要先下載 1.5~3GB,而那十幾分鐘裡進度條會停在「轉錄與講者分析」
+        一動也不動——README 至今還特別為此寫了一段「看似卡住」的說明。
+        ⚠️ **只換字、不動進度數字**:下載完之後真正的轉錄才開始跑,把下載的
+        百分比餵進同一根進度條會讓它先衝到 100% 再掉回去。
+        ⚠️ **要接在階段名後面,不能自己當一個階段**:`_stage_span` 查不到的
+        名字會落到 `(1.0, 0.0)`——那正是「先衝到 100%」的另一種寫法。"""
+        with lock:
+            combined = (
+                _TRANSCRIBE_WEIGHT * fracs["transcribe"]
+                + _DIARIZE_WEIGHT * fracs["diarize"]
+            )
+        report(f"轉錄與講者分析{STAGE_NOTE_SEP}{text}", combined)
+
     if not transcribe.gpu_available():
         segments, device = _run_transcribe(
-            wav, model_key, sub_progress("transcribe"))
+            wav, model_key, sub_progress("transcribe"), note)
         turns, voiceprints, quality = _run_diarize(
-            wav, num_speakers, sub_progress("diarize"), features_out)
+            wav, num_speakers, sub_progress("diarize"), features_out, note)
         return segments, device, turns, voiceprints, quality
 
     # gr.Progress 每次呼叫都經 contextvars 解析回報管道,而 worker 執行緒
@@ -281,11 +316,11 @@ def _transcribe_and_diarize(
     with ThreadPoolExecutor(max_workers=2) as ex:
         fut_t = ex.submit(
             contextvars.copy_context().run, _run_transcribe, wav,
-            model_key, sub_progress("transcribe"),
+            model_key, sub_progress("transcribe"), note,
         )
         fut_d = ex.submit(
             contextvars.copy_context().run, _run_diarize, wav,
-            num_speakers, sub_progress("diarize"), features_out,
+            num_speakers, sub_progress("diarize"), features_out, note,
         )
         segments, device = fut_t.result()
         turns, voiceprints, quality = fut_d.result()
@@ -368,7 +403,7 @@ def run_pipeline(
     docstring / transcribe.LANGUAGE / CLAUDE.md)。"""
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
-            start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
+            start, width = _stage_span(stage)
             on_stage(stage, min(start + width * inner_frac, 1.0))
 
     # 全程維持系統/螢幕喚醒:鎖定螢幕會觸發省電、壓抑 CPU 時脈拖慢轉檔。
@@ -444,7 +479,7 @@ def transcribe_to_markdown(
     違反 --out-dir「不要在別人的資料夾裡留東西」的用意。"""
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
-            start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
+            start, width = _stage_span(stage)
             on_stage(stage, min(start + width * inner_frac, 1.0))
 
     # 防睡眠與「不降主行程」的理由同 run_pipeline(那裡有完整說明);
@@ -525,7 +560,7 @@ def finalize(
     命名線索」——那正是單檔模式才有的東西。"""
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
-            start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
+            start, width = _stage_span(stage)
             on_stage(stage, min(start + width * inner_frac, 1.0))
 
     report("輸出")

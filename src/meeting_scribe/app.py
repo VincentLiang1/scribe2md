@@ -59,6 +59,7 @@ from meeting_scribe import (
     attendees,
     audio,
     cancel,
+    console,
     convert,
     data_tabs,
     diarize,
@@ -258,11 +259,22 @@ def _greet_existing_instance(port: int, viewers: int) -> None:
 
     ⚠️ **不可以每次都開**(使用者 2026-08-30 回報):原本那個分頁還開著的話,
     每按一次圖示就多一個分頁——黑視窗確實只有一個,但瀏覽器變成一排。有人看著
-    就只把網址印出來。"""
+    就只把網址印出來。
+
+    ⚠️ **「有人看著」那一種要跳訊息框,不能只印字**:這幾行印完就 `return`,
+    程式回傳 0,而「啟動.bat」接著就 `exit /b 0` **把視窗關掉**——使用者按了
+    桌面圖示,畫面上只會閃一下,於是他再按第二次、第三次。另一種情況會自己
+    開瀏覽器(那本身就是回饋),所以只有這一種需要。"""
     print("\n工具已經在執行中了,不會再開第二個。")
     if port and viewers > 0:
         print(f"原本那個網頁還開著:http://127.0.0.1:{port}")
         print("請切換過去用;這裡不會再幫你開一個新分頁。")
+        console.message_box(
+            "「AI 文件.MD 轉換器」已經在執行中了,不會再開第二個。\n\n"
+            f"請切換到原本那個網頁:http://127.0.0.1:{port}\n\n"
+            "(兩個一起跑會搶同一顆顯示卡,也會讓聲紋庫互相覆蓋,所以擋下來。)",
+            "AI 文件.MD 轉換器",
+        )
     elif port:
         url = f"http://127.0.0.1:{port}"
         print(f"已經幫你把原本那個網頁打開:{url}")
@@ -272,7 +284,17 @@ def _greet_existing_instance(port: int, viewers: int) -> None:
         except Exception:  # noqa: BLE001 - 打不開不影響「已經在跑」這件事
             logger.debug("既有實例的網頁打不開", exc_info=True)
     else:
-        print("請切換到原本那個黑色視窗與網頁;真的找不到的話,把那個黑視窗關掉再重開。")
+        # ⚠️ 這條是「鎖檔在、但問不到埠號」的兜底(舊格式、寫到一半)。
+        # **不能再叫他去關黑視窗**——視窗是藏起來的。沒有頁面連著又沒有
+        # 工作在跑的話,那一支本來就會在一秒內自己收工(_watch_for_goodbye)
+        print("但問不到它的網址(可能正在啟動,或正在收尾)。")
+        print("請稍等幾秒再雙擊一次圖示。")
+        console.message_box(
+            "「AI 文件.MD 轉換器」已經在執行中了,但問不到它的網址\n"
+            "(可能正在啟動,或正在收尾)。\n\n"
+            "請稍等幾秒,再雙擊一次桌面上的圖示。",
+            "AI 文件.MD 轉換器",
+        )
     print("\n⚠️ 兩個一起跑會搶同一顆顯示卡,也會讓聲紋庫互相覆蓋,所以擋下來。")
 
 
@@ -518,7 +540,8 @@ def _after_run(path_value):
 # 為什麼要這一組:轉檔進度原本只活在 `gr.Progress` 裡,而它綁在那一次
 # 事件執行上。瀏覽器把背景分頁節流 → 重連橫幅浮出 → 使用者按下「重新
 # 連線」(=reload)→ 新頁面接不回那條進度,畫面回到剛開啟的樣子:檔名、
-# 進度、**連停止鈕都沒了**,而轉檔還在後端跑,要中止只能關黑視窗。
+# 進度、**連停止鈕都沒了**,而轉檔還在後端跑——黑視窗是藏起來的,那時
+# 使用者**沒有任何辦法**中止(只剩工作管理員)。
 # 錄音那條路 2026-07-18 就用 `_restore_recording` 解決了,轉檔漏了一份。
 #
 # 伺服器端的真相在 `runstate`;這裡只負責把它畫回畫面上。
@@ -581,7 +604,7 @@ def _transcribe_ui_updates(busy: bool, path_value: str = "") -> tuple:
             "src_path": gr.update(value=path_value, interactive=False),  # 檔名要看得到
             "src_btns": [gr.update(interactive=False)] * 3,  # 選檔/選資料夾/清空
             "run_btn": gr.update(interactive=False),
-            # 停止:這顆回來,才不必關黑視窗
+            # 停止:這顆回來,才有辦法中止(黑視窗是藏起來的,沒有別的路)
             "stop_btn": gr.update(interactive=True),
             "adv_params": _param_updates(False),
         })
@@ -2043,6 +2066,11 @@ def _viewer_arrived() -> None:
     """有一個頁面連上來(第一次開、多開一個分頁、或 F5 之後重連)。"""
     _viewers["open"] += 1
     _viewers["left_at"] = None
+    # ⚠️ **黑視窗藏在這一刻,不是啟動的時候**(使用者 2026-08-30 指定要藏起來):
+    # 「有人真的看到網頁了」是唯一能保證「藏了不會害他斷線索」的時點——瀏覽器
+    # 沒自動開起來、代理擋掉 127.0.0.1、環境根本沒建起來,這幾種都走不到這裡,
+    # 視窗於是自動留著(理由與四個方案的取捨見 `console.py` 檔頭)。
+    console.hide()
     # ⚠️ **這一行是給「它為什麼沒關」用的**:自動結束靠的是「連著幾個頁面」,而那個
     # 數字在畫面上完全看不到。使用者回報「導去別的網址沒關掉」時,開發機重現不出來
     # (無頭、有頭+bfcache 都試過),只能靠紀錄檔回答「當時伺服器以為還有幾個」。
@@ -2099,6 +2127,8 @@ def _watch_for_goodbye() -> None:
         try:
             _drop_serve_cache()
             transproc.shutdown()
+            # 退出碼 0、「啟動.bat」不會 pause,所以只收記號檔、不叫回視窗
+            console.forget()
         except Exception:  # noqa: BLE001 - 收不乾淨也一定要走得掉
             logger.debug("自動結束時的收尾出錯", exc_info=True)
         # ⚠️ **`os._exit`**:uvicorn 跑在另一條執行緒上,走常規關閉會卡住;該收的
@@ -4237,7 +4267,7 @@ def build_ui() -> gr.Blocks:
         # 開頁接回進行中的**轉檔**(使用者選定 2026-08-08):與錄音同一個
         # 道理——轉檔在伺服器端跑,分頁被節流/按了重新連線/誤關分頁之後,
         # 畫面要回到「轉檔中」而不是假裝沒事的初始狀態。少了這一條,使用者
-        # 在畫面上看不到檔名、進度,**也按不到停止**,想中止只能關黑視窗
+        # 在畫面上看不到檔名、進度,**也按不到停止**,而黑視窗藏著——想中止就只剩工作管理員
         # (= 幾十分鐘到幾小時的轉檔全丟)。
         # 順序契約:與 `_transcribe_ui_updates` 的回傳一一對應(長度
         # `_RUN_UI_LEN`);秒針夾在 page_outputs 與控件之間
@@ -4675,6 +4705,13 @@ def main() -> None:
                      name="idle-quit").start()
     try:
         _launch(port)
+    except BaseException:
+        # ⚠️ **黑視窗藏起來之後,失敗就等於「什麼都沒發生」**:接下來
+        # 「啟動.bat」要印的錯誤分流在隱形視窗上看不到,它的 `pause` 更是
+        # **按不到**——行程會永遠掛在那裡。所以每一條自己走得掉的退出路徑
+        # 都要先把視窗叫回來(見 `console.py` 檔頭最後一段)。
+        console.show()
+        raise
     finally:
         # Ctrl+C/正常關閉:供應副本當場清掉(機敏資料不過夜);
         # 直接關黑視窗等硬退出走不到這裡,由下次啟動的清掃兜底

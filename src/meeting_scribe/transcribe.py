@@ -48,8 +48,8 @@ MODEL_CHOICES = {"fast": "large-v3-turbo", "accurate": "large-v3"}
 
 # faster-whisper download_model() 用的 HF repo 對應與檔案清單(1.2.1 實查)。
 # 不經 download_model 而直呼 snapshot_download 的原因:download_model 寫死
-# tqdm_class=disabled_tqdm,首次下載 1.5~3GB 期間黑視窗全程無進度,README
-# 「下載進度顯示在黑色視窗」直接落空;直呼可用 hub 原生 tqdm 進度條。
+# tqdm_class=disabled_tqdm,首次下載 1.5~3GB 期間全程無進度可言;直呼才
+# 交得出自己的進度條類別(models.hub_tqdm),把進度送上網頁的進度條。
 # cache_dir 與 download_model 相同,既有使用者快取無縫沿用。
 _HF_REPOS = {
     "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
@@ -148,7 +148,7 @@ def _model_dir(name: str) -> str:
 
     local-first:快取完整時以 local_files_only 解析、完全不連網——兌現
     README「唯一的網路行為是第一次下載」,並消除批次每檔的 HF revision
-    檢查延遲;快取不完整才連網下載(hub 原生 tqdm 進度條顯示於黑視窗)。
+    檢查延遲;快取不完整才連網下載(進度經 models.hub_tqdm 回報)。
     下載失敗以繁中訊息浮出(spec §8),呼叫端不得安靜降級改抓其他模型。"""
     if name in _model_dirs:
         return _model_dirs[name]
@@ -159,13 +159,17 @@ def _model_dir(name: str) -> str:
     try:
         path = snapshot_download(repo, local_files_only=True, **kwargs)
     except Exception:
-        try:
-            print(f"首次使用需下載轉錄模型 {name}(約 1.5~3GB),進度如下:", flush=True)
-        except Exception:
-            pass  # 主控台顯示問題絕不能中止下載
+        # ⚠️ **這幾行不能用 print**:這支多半跑在轉錄子行程裡,而那裡的 stdout
+        # 是 NDJSON 專用通道(見 models._progress_sink 的 ⚠️)。走 report_progress
+        # 才會一路回到父行程、進到網頁的進度條上
+        models.reset_hub_progress("轉錄模型")
+        models.report_progress(f"首次使用需下載轉錄模型 {name}(約 1.5~3GB)", 0.0)
         try:
             # with_tls_rescue:公司網路做 TLS 攔截時改用系統憑證再試一次
-            path = models.with_tls_rescue(lambda: snapshot_download(repo, **kwargs), "模型")
+            path = models.with_tls_rescue(
+                lambda: snapshot_download(repo, tqdm_class=models.hub_tqdm(), **kwargs),
+                "模型",
+            )
         except Exception as e:
             raise models.download_failed("模型", name, e) from e
     _model_dirs[name] = path

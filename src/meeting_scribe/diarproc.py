@@ -83,6 +83,10 @@ class DiarProcess:
         # 每秒也才 110 次,那是整個改動花大力氣清空的那條路。收尾等待時由
         # live.LiveDiarizer 掛上,否則進度條會在那幾分鐘定格
         self.on_progress: Callable[[float], None] | None = None
+        # 首次下載模型的文字進度(見 _await 的 "note" 分支)。⚠️ 與 on_progress
+        # 不同,這個要在 start() **之前**掛上:模型是在子行程回報 ready 之前
+        # 下載的,掛晚了就收不到那幾分鐘
+        self.on_note: Callable[[str, float], None] | None = None
 
     # -- 生命週期 ------------------------------------------------------
 
@@ -232,6 +236,16 @@ class DiarProcess:
                 hook = self.on_progress
                 if hook is not None:
                     hook(float(reply["progress"]))
+                deadline = time.monotonic() + timeout
+                continue
+            if "note" in reply:
+                # 首次下載模型的進度(要換掉進度條上的**字**,故與 progress 分開)。
+                # ⚠️ **看門狗一定要往後推**:這個子行程是在回報 ready **之前**
+                # 建引擎的,而缺模型時那一步就是在下載——不推的話,一條慢網路
+                # 會讓啟動被判成「子行程沒回應」
+                note = self.on_note
+                if note is not None:
+                    note(str(reply["note"]), float(reply.get("frac", -1)))
                 deadline = time.monotonic() + timeout
                 continue
             return reply

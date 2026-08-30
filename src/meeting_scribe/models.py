@@ -6,12 +6,13 @@ r"""AI 模型的下載與快取——整個工具唯一會連網的模組,且只
 - OpenVINO 預轉換 Whisper(Intel GPU 路徑):HF snapshot_download,
   _ov_cache_complete 按名點驗必要檔案組(防「小檔到位、大 bin 沒到」)
 - faster-whisper 的 CTranslate2 模型下載在 transcribe._model_dir
-  (走 HF hub 原生 tqdm,黑視窗看得到進度)
+  (走 HF hub 的 tqdm_class,進度經 hub_tqdm 轉成網頁進度條上的字)
 
 模型快取都在 %LOCALAPPDATA%\meeting-scribe\models(paths.appdata_root
 之下,不進 repo);data_dir() 則是專案 data/——名單/聲紋/詞表等小型
 資料檔,隨程式碼版控/複製。
 """
+import contextlib
 import logging
 import shutil
 import ssl
@@ -41,6 +42,114 @@ _MIN_MODEL_BYTES = 1_000_000
 # 上會有好幾分鐘完全沒輸出(見 download 的 _hook)
 _PROGRESS_PCT_STEP = 10
 _PROGRESS_MIN_SEC = 15.0
+
+# 下載進度要送去哪裡。⚠️ **預設是 log,不是 print**(2026-08-30 改):
+# 首次下載那 2~3 GB 的 Whisper 模型跑在**轉錄子行程**裡(pipeline._run_transcribe
+# → transproc),而子行程的 stdout 是 NDJSON 專用通道——`print` 出去的每一行
+# 都會被父端當成壞掉的 JSON 略過,於是「黑視窗會顯示下載進度」那句話對檔案
+# 轉檔這條路**早就不成立了**(子行程的 stderr 也只 drain 進紀錄檔)。走自家
+# logger 才有人接:transworker 會把 INFO 以上轉成結構化訊息送回父端重播。
+_progress_sink = None
+
+
+def set_progress_sink(fn) -> None:
+    """指定下載進度的額外去處(`fn(text, frac)`);傳 None 取消。
+
+    轉檔期間由 `pipeline` 掛上「送進網頁進度條」的那一個(使用者 2026-08-30
+    選定:黑視窗藏起來之後,首次下載的十幾分鐘不能變成完全沒有回饋)。
+    子行程裡則由 transworker / diarworker 掛上「送回父端」的那一個。"""
+    global _progress_sink
+    _progress_sink = fn
+
+
+@contextlib.contextmanager
+def progress_sink(fn):
+    """在區塊內把下載進度導去 `fn`,離開時**還原成原本那個**。
+
+    ⚠️ 還原而不是清成 None:子行程裡本來就掛著「送回父端」的那一個,
+    區塊結束時把它抹掉,後面每一次下載就再也沒有人回報了。"""
+    global _progress_sink
+    prev, _progress_sink = _progress_sink, fn or _progress_sink
+    try:
+        yield
+    finally:
+        _progress_sink = prev
+
+
+def report_progress(text: str, frac: float) -> None:
+    """回報一則下載進度。`frac` 是 0~1;算不出來(伺服器沒給總長)時給 -1。
+
+    ⚠️ **sink 出任何差錯都不能中斷下載**:它後面接的是網頁進度條,而使用者
+    此刻正在等的是那 2~3 GB——為了一行進度把下載弄掉,代價完全不成比例。"""
+    sink = _progress_sink
+    if sink is not None:
+        try:
+            sink(text, frac)
+        except Exception:  # noqa: BLE001 - 見上
+            logger.debug("下載進度送不出去", exc_info=True)
+    logger.info("%s", text)
+
+
+# HF hub 那條下載鏈的進度(Whisper 模型 1.5~3GB 走這裡)。狀態放模組層而不是
+# 實例上:snapshot_download 一次會開**三個**進度條(收到的位元組、寫進磁碟的
+# 位元組、還有「幾個檔案」),三個各自節流會讓回報變成三重奏。
+_hub_bar = {"owner": None, "last_pct": -100, "last_at": 0.0}
+
+
+def reset_hub_progress(what: str) -> None:
+    """開始新的一批 hub 下載;`what` 是要說給使用者聽的名字(如「轉錄模型」)。"""
+    _hub_bar.update({"owner": None, "last_pct": -100, "last_at": 0.0, "what": what})
+
+
+def hub_tqdm():
+    r"""給 `snapshot_download(tqdm_class=...)` 用的安靜進度條。
+
+    ⚠️ **繼承原版 tqdm,不是 huggingface_hub 自己那個子類**(1.23.0 實查
+    `utils/tqdm.py::_create_progress_bar`):它只對「hub 自己的子類」多注入
+    `name` 與 `disable` 兩個具名參數,繼承原版就收得到乾淨的呼叫;而 hub 內部
+    的 `thread_map` 也吃得下原版的子類。
+
+    ⚠️ **覆寫 `display` 而不是 `update`**:tqdm 的節流與 `n`/`total` 的維護都在
+    自己那一套裡,攔在最外面那一層才不必重做一遍(也不會兩邊算出不同的數字)。
+    回傳 True 且不呼叫 super,那一行就不會被印出去。
+
+    ⚠️ **只認位元組那一條**(`unit == "B"`):另一條是「幾個檔案」,而 Whisper 是
+    「兩個檔案、其中一個 3GB」——用檔案數回報,使用者會盯著 0/2 看十幾分鐘。"""
+    from tqdm.auto import tqdm as _base
+
+    class _QuietHubProgress(_base):
+        def display(self, msg=None, pos=None):  # noqa: A002 - 對齊 tqdm 的簽章
+            try:
+                self._report()
+            except Exception:  # noqa: BLE001 - 進度絕不能弄掉下載
+                logger.debug("hub 進度回報失敗", exc_info=True)
+            return True
+
+        def _report(self) -> None:
+            if getattr(self, "unit", None) != "B":
+                return
+            # 第一個位元組進度條(hub 先建「收到的位元組」)當代表,另一個略過
+            if _hub_bar["owner"] is None:
+                _hub_bar["owner"] = self
+            if _hub_bar["owner"] is not self:
+                return
+            total, done = self.total or 0, self.n or 0
+            if total <= 0:
+                return
+            pct = min(int(done * 100 // total), 100)
+            now = time.monotonic()
+            if (pct < _hub_bar["last_pct"] + _PROGRESS_PCT_STEP
+                    and now - _hub_bar["last_at"] < _PROGRESS_MIN_SEC):
+                return
+            _hub_bar["last_pct"], _hub_bar["last_at"] = pct, now
+            what = _hub_bar.get("what") or "模型"
+            report_progress(
+                f"下載{what}:{pct}%"
+                f"({min(done, total) / 1048576:.0f}/{total / 1048576:.0f} MB)",
+                pct / 100,
+            )
+
+    return _QuietHubProgress
 
 _OV_REPOS = {
     "fast": "OpenVINO/whisper-large-v3-turbo-int8-ov",
@@ -243,7 +352,7 @@ def download(
     url: str, dest: Path, min_bytes: int = _MIN_MODEL_BYTES, what: str = "模型",
 ) -> Path:
     """下載單一檔案(已存在且過大小門檻直接沿用);.part 暫名+原子改名,
-    中斷只殘留 .part、不會產生假快取;進度印到黑視窗。
+    中斷只殘留 .part、不會產生假快取;進度走 report_progress。
 
     `what` 只影響給使用者看的字。這支函式也被 soffice 拿去抓 LibreOffice
     安裝檔,那時一句「模型下載失敗」會讓人完全找不到方向。"""
@@ -254,8 +363,7 @@ def download(
     last_at = 0.0
 
     def _hook(blocks: int, block_size: int, total: int) -> None:
-        # 進度印到主控台(黑色視窗),兌現 README「下載進度顯示在黑色視窗」。
-        # **每 N 秒也要印一次,不能只按百分比**:LibreOffice 是 372MB,在慢的
+        # **每 N 秒也要回報一次,不能只按百分比**:LibreOffice 是 372MB,在慢的
         # 鏡像站上(實測約 150 KB/s)光是跑到 10% 就要四分鐘——第一行「0%」
         # 瞬間出現、之後四分鐘鴉雀無聲,使用者合理地判斷成當掉了
         # (2026-08-01 回報「都卡在 0%」,而 .part 檔其實一直在長)。
@@ -269,16 +377,11 @@ def download(
         if pct < last_pct + _PROGRESS_PCT_STEP and now - last_at < _PROGRESS_MIN_SEC:
             return
         last_pct, last_at = pct, now
-        try:
-            print(  # noqa: T201 - 黑視窗的進度回饋
-                f"下載{what} {dest.name}:{pct}%"
-                f"({min(done, total) / 1048576:.0f}/{total / 1048576:.0f} MB)",
-                flush=True,
-            )
-        except Exception:
-            # 進度顯示是 best-effort:主控台編碼等顯示問題
-            # 絕不能讓 urlretrieve 中止下載、誤報成下載失敗
-            pass
+        report_progress(
+            f"下載{what} {dest.name}:{pct}%"
+            f"({min(done, total) / 1048576:.0f}/{total / 1048576:.0f} MB)",
+            pct / 100,
+        )
 
     def _fetch() -> None:
         nonlocal last_pct, last_at
@@ -400,9 +503,15 @@ def ov_whisper_dir(model_key: str) -> Path:
     if not _ov_cache_complete(target):
         from huggingface_hub import snapshot_download
 
+        reset_hub_progress("轉錄模型")
+        report_progress("首次使用需下載轉錄模型(約 1.5~3GB)", 0.0)
         try:
             # 原生支援中斷續傳;with_tls_rescue 兜公司網路的 TLS 攔截
-            with_tls_rescue(lambda: snapshot_download(repo, local_dir=target), "模型")
+            with_tls_rescue(
+                lambda: snapshot_download(
+                    repo, local_dir=target, tqdm_class=hub_tqdm()),
+                "模型",
+            )
         except Exception as e:
             raise download_failed("模型", repo, e) from e
         if not _ov_cache_complete(target):
