@@ -261,20 +261,15 @@ def _greet_existing_instance(port: int, viewers: int) -> None:
     每按一次圖示就多一個分頁——黑視窗確實只有一個,但瀏覽器變成一排。有人看著
     就只把網址印出來。
 
-    ⚠️ **「有人看著」那一種要跳訊息框,不能只印字**:這幾行印完就 `return`,
-    程式回傳 0,而「啟動.bat」接著就 `exit /b 0` **把視窗關掉**——使用者按了
-    桌面圖示,畫面上只會閃一下,於是他再按第二次、第三次。另一種情況會自己
-    開瀏覽器(那本身就是回饋),所以只有這一種需要。"""
+    ⚠️ **這幾句只要印出來就夠了**(2026-08-31):它們由門面顯示在黑視窗上,而
+    本體一結束,門面會**把視窗留著並等按鍵**(見 `console.py`)——使用者看得到
+    「已經在執行中了」與原本那個網址。先前這裡另外跳訊息框,是為了對付「啟動器
+    印完就 `exit /b 0` 把視窗關掉、只閃一下」那個舊行為;現在視窗會留著,框反而
+    是多的(而且它的判準是「視窗已經收掉了」,在這條路上永遠不成立)。"""
     print("\n工具已經在執行中了,不會再開第二個。")
     if port and viewers > 0:
         print(f"原本那個網頁還開著:http://127.0.0.1:{port}")
         print("請切換過去用;這裡不會再幫你開一個新分頁。")
-        console.message_box(
-            "「AI 文件.MD 轉換器」已經在執行中了,不會再開第二個。\n\n"
-            f"請切換到原本那個網頁:http://127.0.0.1:{port}\n\n"
-            "(兩個一起跑會搶同一顆顯示卡,也會讓聲紋庫互相覆蓋,所以擋下來。)",
-            "AI 文件.MD 轉換器",
-        )
     elif port:
         url = f"http://127.0.0.1:{port}"
         print(f"已經幫你把原本那個網頁打開:{url}")
@@ -285,16 +280,10 @@ def _greet_existing_instance(port: int, viewers: int) -> None:
             logger.debug("既有實例的網頁打不開", exc_info=True)
     else:
         # ⚠️ 這條是「鎖檔在、但問不到埠號」的兜底(舊格式、寫到一半)。
-        # **不能再叫他去關黑視窗**——視窗是藏起來的。沒有頁面連著又沒有
-        # 工作在跑的話,那一支本來就會在一秒內自己收工(_watch_for_goodbye)
+        # **不能叫他去關黑視窗**——那是門面的視窗,關掉它不會停下正在跑的本體。
+        # 沒有頁面連著又沒有工作在跑的話,那一支本來就會自己收工(_watch_for_goodbye)
         print("但問不到它的網址(可能正在啟動,或正在收尾)。")
         print("請稍等幾秒再雙擊一次圖示。")
-        console.message_box(
-            "「AI 文件.MD 轉換器」已經在執行中了,但問不到它的網址\n"
-            "(可能正在啟動,或正在收尾)。\n\n"
-            "請稍等幾秒,再雙擊一次桌面上的圖示。",
-            "AI 文件.MD 轉換器",
-        )
     print("\n⚠️ 兩個一起跑會搶同一顆顯示卡,也會讓聲紋庫互相覆蓋,所以擋下來。")
 
 
@@ -2058,19 +2047,80 @@ _IDLE_QUIT_SEC = 1.0
 #   **②** 讓頁面每隔幾秒回報「我還在」 → **瀏覽器對背景分頁的計時器會節流**(見
 #     `ui_style.RECONNECT_HEAD` 的註解:最慢每分鐘一次是正常現象)。使用者只是切去
 #     別的視窗工作,工具就會以為他走了而自己結束——比等一分鐘嚴重得多。
-# open=現在連著幾個頁面;left_at=全部離開的時刻(還有人看就是 None)
-_viewers: dict = {"open": 0, "left_at": None, "port": 0}
+# ⚠️ **黑視窗收在這一刻,不是啟動的時候**(使用者 2026-08-30 指定藏起來、08-31 指定
+# 「不要立刻消失,等瀏覽器起來再說」):瀏覽器要幾秒才開得起來,那幾秒空著反而讓人
+# 以為沒反應。綁在「有人真的看到網頁了」還同時買到三件事,一條補救都不必寫——環境
+# 沒建好、代理擋掉本機、已經有一個在跑,三種都走不到這一步,視窗於是自動留著,而那
+# 一段**還沒有紀錄檔**(理由與兩條死路見 `console.py` 檔頭)。
+# ⚠️ **睡眠造成的斷線不算「使用者關掉了瀏覽器」**(使用者 2026-08-31 回報並裁定):
+# 症狀是睡一覺回來按 F5 卻「無法連線」,而斷線橫幅正是叫他按 F5 的
+# (`ui_style.RECONNECT_HEAD`)。逐秒對照系統日誌與紀錄檔查出來的真相是——
+#
+#     13:15:26  系統進入 Modern Standby
+#     13:15:27  系統離開 Modern Standby
+#     13:15:27  頁面離開(還剩 0 個);開始倒數結束   ← 睡眠讓瀏覽器連線斷掉
+#     13:15:28  沒有頁面連著,自動結束               ← 1 秒倒數走完,工具沒了
+#
+# **斷線發生在「睡下去」那一刻,不是醒來**;而且時鐘一共只跳了一秒,任何「跳很多
+# 才算睡過」的判準都不會觸發(第一版就是這樣猜錯的)。
+# ⚠️ **正解是問作業系統**(`power.watch_sleep`):收到「即將睡眠」就把倒數取消,
+# 醒來後**繼續服務**——使用者要的是「醒來就接得回去,除非我真的把瀏覽器關掉」,
+# 不是「醒來後再寬限幾分鐘然後照樣關掉」(他 2026-08-31 明確指正過這一點)。
+# ⚠️ **也不是把 `_IDLE_QUIT_SEC` 調大**:那 1 秒是使用者指定的,而且對 F5 剛剛好。
+#
+# 下面兩個常數只剩**保險**的角色:萬一系統沒送通知(舊版 Windows、註冊失敗),
+# 靠「兩個時鐘的落差」還兜得住傳統 S3 那種真的凍結很久的情形。
+_WAKE_GRACE_SEC = 120.0
+# 一輪守候是 1 秒。⚠️ **判準要同時看兩個時鐘**:S3 睡眠時單調鐘停著、牆鐘照走;
+# 新式待命則是**行程整個被凍結**,兩個鐘都可能跳。任一邊跳超過這個秒數就當作睡過
+# ——正常的一輪不可能跳這麼多。⚠️ **它抓不到 Modern Standby 那種短待命**(只跳一
+# 兩秒),那一種靠上面的系統通知,兩層各治一種。
+_WAKE_GAP_SEC = 20.0
+# open=現在連著幾個頁面;left_at=全部離開的時刻(還有人看就是 None);
+# woke_at=最後一次「靠時鐘落差」認出睡醒的時刻(保險用,見 `_WAKE_GRACE_SEC`);
+# asleep=系統告訴我們它正在睡(見 `_system_sleeping`)——這段期間的斷線一律不算數
+# stale_leave=「接下來那一批『頁面離開』是睡眠遺留的,不算數」——⚠️ **這一格才是
+# 修好使用者回報的關鍵**:醒來之後 gradio 才把睡眠期間累積的 `unload` 送出來
+# (實測遲到 0.3 秒),那時 `asleep` 已經清掉了,於是又被當成「使用者關掉了瀏覽器」
+_viewers: dict = {"open": 0, "left_at": None, "port": 0,
+                  "woke_at": None, "asleep": False, "stale_leave": False}
+
+
+def _system_sleeping() -> None:
+    r"""系統**即將**睡眠:把倒數取消,接下來的斷線不是使用者關的。
+
+    ⚠️ **連已經開始的倒數也要取消**:睡眠會先讓瀏覽器的連線斷掉,`unload` 有可能
+    比這個通知早一步到——那時 `left_at` 已經記下去了,不清掉的話醒來前那 1 秒就把
+    工具收掉了(那正是使用者回報的症狀)。
+
+    ⚠️ 這支跑在**系統的執行緒**上(`power.watch_sleep` 的 callback),系統正等著
+    我們回話才繼續睡——**只准設旗標**,不得做任何會阻塞的事。"""
+    _viewers["asleep"] = True
+    _viewers["left_at"] = None
+    logger.info("系統即將睡眠:暫停「沒有人看就收工」,醒來之後繼續服務")
+
+
+def _system_woke() -> None:
+    r"""醒來:繼續服務,等瀏覽器回來(按 F5 即可)。
+
+    ⚠️ **不恢復倒數**:剛才那次離開是睡眠造成的,不算「使用者關掉了瀏覽器」——
+    他要的是「醒來就接得回去,除非我真的把分頁關掉」。真的關掉的話,那一次
+    `_viewer_left` 會在**醒著的時候**發生,照常倒數收工。"""
+    _viewers["asleep"] = False
+    _viewers["left_at"] = None
+    _viewers["stale_leave"] = True
+    logger.info("系統已喚醒:繼續服務(瀏覽器那邊按 F5 就接得回來)")
 
 
 def _viewer_arrived() -> None:
     """有一個頁面連上來(第一次開、多開一個分頁、或 F5 之後重連)。"""
     _viewers["open"] += 1
     _viewers["left_at"] = None
-    # ⚠️ **黑視窗藏在這一刻,不是啟動的時候**(使用者 2026-08-30 指定要藏起來):
-    # 「有人真的看到網頁了」是唯一能保證「藏了不會害他斷線索」的時點——瀏覽器
-    # 沒自動開起來、代理擋掉 127.0.0.1、環境根本沒建起來,這幾種都走不到這裡,
-    # 視窗於是自動留著(理由與四個方案的取捨見 `console.py` 檔頭)。
-    console.hide()
+    # ⚠️ **有人真的回來了,睡眠遺留的那一批就結束了**:從這一刻起,「全部離開」
+    # 才又代表「使用者關掉了瀏覽器」(見 `_system_woke`)。
+    _viewers["stale_leave"] = False
+    # 網頁真的開起來了 → 黑視窗可以收了(冪等,F5 重連會再走一次;見上面那段註解)
+    console.dismiss()
     # ⚠️ **這一行是給「它為什麼沒關」用的**:自動結束靠的是「連著幾個頁面」,而那個
     # 數字在畫面上完全看不到。使用者回報「導去別的網址沒關掉」時,開發機重現不出來
     # (無頭、有頭+bfcache 都試過),只能靠紀錄檔回答「當時伺服器以為還有幾個」。
@@ -2083,12 +2133,18 @@ def _viewer_arrived() -> None:
 
 
 def _viewer_left() -> None:
-    """有一個頁面離開。⚠️ **全部離開才開始倒數**——有人習慣開兩個分頁。"""
+    """有一個頁面離開。⚠️ **全部離開才開始倒數**——有人習慣開兩個分頁。
+
+    ⚠️ **系統正在睡就不倒數**:那次斷線是睡眠造成的,不是使用者關掉了瀏覽器
+    (見 `_system_sleeping`)。"""
     _viewers["open"] = max(0, _viewers["open"] - 1)
-    if _viewers["open"] == 0:
+    stale = _viewers["asleep"] or _viewers["stale_leave"]
+    counting = _viewers["open"] == 0 and not stale
+    if counting:
         _viewers["left_at"] = time.monotonic()
     logger.debug("頁面離開(還剩 %d 個)%s", _viewers["open"],
-                 ";開始倒數結束" if _viewers["open"] == 0 else "")
+                 ";開始倒數結束" if counting
+                 else ";睡眠造成的,不倒數" if _viewers["open"] == 0 else "")
     _write_instance_state()
 
 
@@ -2097,13 +2153,57 @@ def _work_in_progress() -> bool:
     return bool(_transcribing["on"] or _converting["on"] or _rec["recorder"])
 
 
+def _slept_through(mono_delta: float, wall_delta: float) -> bool:
+    r"""這一輪守候(正常是 1 秒)中間,電腦是不是睡了一覺?
+
+    ⚠️ **兩個時鐘都要看,少一個就漏掉一種睡法**:傳統待命(S3)時單調鐘停著、
+    牆鐘照走,所以看的是**兩者的落差**;新式待命(Modern Standby)則是行程整個
+    被凍結——`docs/dev/runtime.md` 記過一次 63 分鐘的轉檔停擺 40 分鐘——那時連
+    單調鐘都會跳掉一大段,`mono_delta` 自己就爆表。筆電闔蓋走的正是後者。
+
+    抽成純函式才測得到判斷本身(不然只能真的把機器睡一次)。"""
+    return mono_delta > _WAKE_GAP_SEC or wall_delta - mono_delta > _WAKE_GAP_SEC
+
+
+def _note_wakeup(mono_delta: float, wall_delta: float, now: float) -> bool:
+    """睡過一覺的話就記下時刻(寬限期由它起算);回傳有沒有記。
+
+    ⚠️ **抽出來不是為了好看,是因為守候迴圈測不到**:那支是 `while True` +
+    `os._exit`,測試碰不得,於是「迴圈裡真的有把 `woke_at` 記下來」這件事
+    沒有任何測試守得到——`_slept_through` 與 `_should_quit` 兩條都是綠的,
+    而中間這一步斷掉,寬限期永遠不會生效(假引擎測得到接線、測不到計算的
+    同一型,見 `docs/dev/verification.md` 第 3 節)。"""
+    if not _slept_through(mono_delta, wall_delta):
+        return False
+    # ⚠️ INFO 不是 DEBUG:這是「工具為什麼還在(或為什麼不在)」的關鍵一行,
+    # 而睡醒本身很罕見,不會洗版。
+    logger.info("靠時鐘落差認出電腦睡過一覺(單調鐘 %.0f 秒、牆鐘 %.0f 秒):"
+                "取消倒數,繼續服務", mono_delta, wall_delta)
+    # ⚠️ **與系統通知那條走同一套**(`_system_woke`):清掉已經開始的倒數,並把
+    # 接下來那一批「頁面離開」當成睡眠遺留的。`woke_at` 是再外面一層的保險
+    # (見 `_WAKE_GRACE_SEC`)。
+    _viewers["woke_at"] = now
+    _viewers["left_at"] = None
+    _viewers["stale_leave"] = True
+    return True
+
+
 def _should_quit(now: float) -> bool:
     """現在該不該自動結束?(抽成純函式才測得到判斷本身,不只是接線)
 
-    三個條件缺一不可:**全部頁面都離開**、**離開夠久了**(F5 的重連會把 `left_at`
-    清掉,見 `_viewer_arrived`)、而且**沒有工作在跑**。"""
+    五個條件缺一不可:**全部頁面都離開**、**離開夠久了**(F5 的重連會把 `left_at`
+    清掉,見 `_viewer_arrived`)、**沒有工作在跑**、**系統不在睡**,而且**不是剛
+    靠時鐘落差認出睡醒**。
+
+    ⚠️ 後面那兩條是 2026-08-31 補的,而且**「系統不在睡」才是主力**:睡眠會讓
+    瀏覽器的連線斷掉,連線數必然歸零,而那不是「使用者關掉了瀏覽器」——他要的是
+    醒來就接得回去。判斷靠系統的睡眠通知(`_system_sleeping`),時鐘落差那條只是
+    通知沒送到時的保險(理由見 `_WAKE_GRACE_SEC` 上面那段)。"""
     left = _viewers["left_at"]
-    if left is None or _work_in_progress():
+    if left is None or _work_in_progress() or _viewers["asleep"]:
+        return False
+    woke = _viewers["woke_at"]
+    if woke is not None and now - woke < _WAKE_GRACE_SEC:
         return False
     return now - left >= _IDLE_QUIT_SEC
 
@@ -2116,19 +2216,21 @@ def _watch_for_goodbye() -> None:
     進度也已經落地在 `pending\`,下次開起來會自己接回來。
     ⚠️ **要自己把該收的收掉再走**:供應快取(機敏副本不過夜)與轉錄子行程,`main` 的
     `finally` 在這條路上跑不到。"""
+    last_mono, last_wall = time.monotonic(), time.time()
     while True:
         time.sleep(1.0)
-        if not _should_quit(time.monotonic()):
+        now, wall = time.monotonic(), time.time()
+        _note_wakeup(now - last_mono, wall - last_wall, now)
+        last_mono, last_wall = now, wall
+        if not _should_quit(now):
             continue
-        # 同上:黑視窗看的是下面那句人話,`INFO:meeting_scribe.app:...` 只是把同一
-        # 件事再講一次(而且講的是程式的說法)。分析時要的那份留在紀錄檔裡。
         logger.debug("沒有頁面連著、也沒有工作在跑,自動結束")
-        print("\n瀏覽器已經關閉,工具跟著結束了。要再使用請雙擊桌面的圖示。")
+        # 黑視窗已經不存在,這句只會進紀錄檔——留著是因為「它是自己收工的、
+        # 不是當掉」在事後分析時分得出來很重要(見 console.py 檔頭)。
+        print("瀏覽器已經關閉,工具跟著結束了。要再使用請雙擊桌面的圖示。")
         try:
             _drop_serve_cache()
             transproc.shutdown()
-            # 退出碼 0、「啟動.bat」不會 pause,所以只收記號檔、不叫回視窗
-            console.forget()
         except Exception:  # noqa: BLE001 - 收不乾淨也一定要走得掉
             logger.debug("自動結束時的收尾出錯", exc_info=True)
         # ⚠️ **`os._exit`**:uvicorn 跑在另一條執行緒上,走常規關閉會卡住;該收的
@@ -4701,17 +4803,14 @@ def main() -> None:
             return
     port = find_free_port()
     note_instance_port(port)
+    # ⚠️ **要在守候迴圈起來之前註冊**:睡眠會讓瀏覽器連線斷掉,而那不是「使用者
+    # 關掉了瀏覽器」——收到系統的「即將睡眠」就把倒數取消(見 `_system_sleeping`)。
+    # 註冊不起來也不影響啟動,守候迴圈裡的時鐘落差是保險。
+    power.watch_sleep(_system_sleeping, _system_woke)
     threading.Thread(target=_watch_for_goodbye, daemon=True,
                      name="idle-quit").start()
     try:
         _launch(port)
-    except BaseException:
-        # ⚠️ **黑視窗藏起來之後,失敗就等於「什麼都沒發生」**:接下來
-        # 「啟動.bat」要印的錯誤分流在隱形視窗上看不到,它的 `pause` 更是
-        # **按不到**——行程會永遠掛在那裡。所以每一條自己走得掉的退出路徑
-        # 都要先把視窗叫回來(見 `console.py` 檔頭最後一段)。
-        console.show()
-        raise
     finally:
         # Ctrl+C/正常關閉:供應副本當場清掉(機敏資料不過夜);
         # 直接關黑視窗等硬退出走不到這裡,由下次啟動的清掃兜底
@@ -4743,14 +4842,19 @@ def _launch(port: int) -> None:
         # 無從自動處理,只能讓他看懂發生什麼事、知道找誰(spec §8)。
         # 原例外照樣往上冒:traceback 有回報問題要用的資訊,而它會進紀錄檔
         if "startup-events" in str(exc):
-            print(
-                "\n[錯誤] 網頁介面啟動失敗:這台電腦有東西把「連自己」擋掉了"
-                "(常見是公司的代理伺服器 Proxy,或資安軟體)。\n"
-                "        工具只在你自己的電腦上跑、不會連到外面,"
-                "但那些設定連 127.0.0.1 也一起攔了。\n"
-                "        請洽貴單位 IT,把 localhost 與 127.0.0.1 "
+            # ⚠️ **改成拋 UserFacingError,不再 print**(2026-08-31 無視窗啟動):
+            # 這句話原本印給黑視窗看,而黑視窗已經不存在——照 print 下去等於
+            # 只留在紀錄檔裡,使用者看到的仍然是「按了圖示什麼都沒發生」。
+            # 包成自家型別之後,`__main__` 會原樣放進訊息框(第三方的 cryptic
+            # 英文則走通用文案);`from exc` 保住原 traceback,紀錄檔照樣完整。
+            raise UserFacingError(
+                "網頁介面啟動失敗:這台電腦有東西把「連自己」擋掉了"
+                "(常見是公司的代理伺服器 Proxy,或資安軟體)。\n\n"
+                "工具只在你自己的電腦上跑、不會連到外面,"
+                "但那些設定連 127.0.0.1 也一起攔了。\n\n"
+                "請洽貴單位 IT,把 localhost 與 127.0.0.1 "
                 "加進代理的例外清單(或防火牆白名單)。"
-            )
+            ) from exc
         raise
 
 

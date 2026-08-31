@@ -11,6 +11,7 @@ ffmpeg 本體由 static_ffmpeg 提供,首次呼叫自動下載(約 50MB);三個
 """
 import logging
 import subprocess
+import sys
 import threading
 import wave
 import weakref
@@ -63,10 +64,19 @@ def read_wav16k(path: str | Path) -> np.ndarray:
         return samples
 
 
+# ⚠️ **主行程沒有主控台了,所以每一個子行程都得自己說「不要開視窗」**
+# (2026-08-31 無視窗啟動):有主控台的時候,console 子行程是**繼承**父的那一個、
+# 不會有任何視覺效果——這一行少了也完全看不出來。脫離之後 Windows 改成幫它**新開
+# 一個**:轉一次檔閃一個黑框,剪一次試聽再閃一個。實測連帶成本也在(建主控台
+# 0.12s vs 0.03s)。其餘四支子行程(transproc/diarproc/ocr/soffice)本來就帶著。
+_CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+
+
 def _run_ffmpeg(cmd: list[str], dest: Path, log_msg: str, user_msg: str) -> Path:
-    """跑 ffmpeg 並確認成品落地;失敗把完整 stderr 記進 log(黑視窗診斷用),
+    """跑 ffmpeg 並確認成品落地;失敗把完整 stderr 記進紀錄檔,
     對使用者只拋繁中訊息(spec §8)。"""
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", creationflags=_CREATE_NO_WINDOW)
     if proc.returncode != 0 or not dest.exists():
         logger.error("%s:%s", log_msg, proc.stderr)
         raise UserFacingError(user_msg)

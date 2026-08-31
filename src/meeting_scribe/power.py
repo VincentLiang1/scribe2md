@@ -404,3 +404,80 @@ def stay_awake_end() -> None:
         if _awake_release is not None:
             _awake_release.set()
             _awake_release = None
+
+
+# --- 系統睡眠/喚醒通知 ---
+#
+# ⚠️ **「工具在睡一覺之後就連不上了」不可以用時鐘去猜**(2026-08-31 使用者回報,
+# 第一版真的猜錯):原本的想法是「醒來時兩個時鐘會跳一大段」,而逐秒對照系統日誌
+# 與紀錄檔之後發現,**斷線發生在「睡下去」那一刻**——
+#
+#     13:15:26  系統進入 Modern Standby
+#     13:15:27  系統離開 Modern Standby
+#     13:15:27  頁面離開(還剩 0 個);開始倒數結束   ← 睡眠讓瀏覽器連線斷掉
+#     13:15:28  沒有頁面連著,自動結束               ← 1 秒倒數走完,工具沒了
+#
+# 時鐘一共只跳了一秒,任何「跳很多才算睡過」的判準都不會觸發;而使用者醒來想按
+# F5 時,後端早就不在了。**分不出「關掉分頁」與「睡眠斷線」的,不是連線資訊,
+# 是系統狀態——所以直接去問作業系統。**
+#
+# `PowerRegisterSuspendResumeNotification` 用 callback 模式(不需要視窗),
+# Windows 8 起支援。⚠️ **callback 在系統的執行緒上被呼叫**,裡面只准設旗標:
+# 系統正等著我們回話才繼續睡,做任何會阻塞的事都是在拖延整台機器。
+PBT_APMSUSPEND = 0x0004
+PBT_APMRESUMESUSPEND = 0x0007
+PBT_APMRESUMEAUTOMATIC = 0x0012
+DEVICE_NOTIFY_CALLBACK = 0x00000002
+
+_SUSPEND_CALLBACK = ctypes.WINFUNCTYPE(
+    ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p)
+
+
+class _SUBSCRIBE_PARAMS(ctypes.Structure):
+    _fields_ = [("Callback", _SUSPEND_CALLBACK), ("Context", ctypes.c_void_p)]
+
+
+# ⚠️ **這兩個必須留在模組層**:callback 物件被回收之後,系統仍握著那個函式指標
+# ——下一次睡眠就是往已經釋放的記憶體跳進去(而症狀是睡一覺回來程式沒了,查起來
+# 會被當成別的問題)。
+_sleep_handle = None
+_sleep_callback = None
+
+
+def watch_sleep(on_sleep, on_wake) -> bool:
+    """向系統註冊睡眠/喚醒通知;回傳有沒有註冊成功。
+
+    `on_sleep()` 在系統**即將**睡眠時呼叫,`on_wake()` 在喚醒後呼叫。
+    ⚠️ 兩者都跑在系統的執行緒上,**只准設旗標**(見上方註解)。
+
+    註冊不起來就安靜回 False:這是一層保護,不得讓工具起不來——呼叫端另有
+    「兩個時鐘的落差」那條兜底(那條治的是傳統 S3 那種真的凍結很久的情形)。"""
+    global _sleep_handle, _sleep_callback
+    if sys.platform != "win32" or _sleep_handle is not None:
+        return False
+
+    def _dispatch(context, event_type, setting):
+        try:
+            if event_type == PBT_APMSUSPEND:
+                on_sleep()
+            elif event_type in (PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND):
+                on_wake()
+        except Exception:  # noqa: BLE001 - 這裡拋出去會回到系統的執行緒上
+            logger.debug("處理睡眠通知時出錯", exc_info=True)
+        return 0
+
+    try:
+        callback = _SUSPEND_CALLBACK(_dispatch)
+        params = _SUBSCRIBE_PARAMS(callback, None)
+        handle = ctypes.c_void_p()
+        rc = ctypes.windll.powrprof.PowerRegisterSuspendResumeNotification(
+            DEVICE_NOTIFY_CALLBACK, ctypes.byref(params), ctypes.byref(handle))
+        if rc != 0:  # ERROR_SUCCESS
+            logger.debug("註冊睡眠通知失敗,rc=%s", rc)
+            return False
+        _sleep_callback = callback  # 見上:絕不能讓它被回收
+        _sleep_handle = handle
+        return True
+    except Exception:  # noqa: BLE001 - 舊版 Windows 沒有這支 API
+        logger.debug("PowerRegisterSuspendResumeNotification 不可用", exc_info=True)
+        return False
