@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "0.9.1"
+version = "0.9.2"
 description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
 # AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
 # 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
@@ -35,8 +35,9 @@ dependencies = [
     # ---- Windows 桌面外殼(2026-08-29,原生介面遷移的階段 3)----
     # 路徑、色票、Windows 整合、皮膚、捷徑、無黑框啟動器的共用層。
     # ⚠️ **相對路徑相依是看不見的**:只把這個專案傳給別人時 `uv sync` 會失敗,
-    # 而錯誤訊息是 uv 的路徑錯誤、說不出「你少複製了 winkit」。公開版靠
-    # `make_public.py` 把它併進交付物(見 docs/dev/native-ui.md §5)。
+    # 而錯誤訊息是 uv 的路徑錯誤、說不出「你少複製了 winkit」。交付版靠
+    # `package.py` 把它併進交付物(不是 `make_public.py`:那一支的輸入本來就是前者
+    # 的產出),見 docs/dev/native-ui.md §5。
     # ⚠️ 它是 **MIT**,而本專案是 AGPL:方向是對的(MIT 進得了 AGPL 作品),
     # 但散布時 winkit 的 LICENSE 必須跟著走。
     "winkit",

@@ -58,8 +58,8 @@ End If
 If Not fso.FileExists(fso.BuildPath(here, "data\voiceprints.npz")) Then
     missing = missing & vbCrLf & "　　data\voiceprints.npz"
 End If
-If Not fso.FileExists(fso.BuildPath(here, "..\winkit\pyproject.toml")) Then
-    missing = missing & vbCrLf & "　　..\winkit\pyproject.toml"
+If Not fso.FileExists(fso.BuildPath(here, "winkit\pyproject.toml")) Then
+    missing = missing & vbCrLf & "　　winkit\pyproject.toml"
 End If
 If Len(missing) > 0 Then
     MsgBox "這個資料夾裡少了必要的檔案：" & vbCrLf & missing & vbCrLf & vbCrLf & _
@@ -155,7 +155,7 @@ Function EnvFresh(fso, here)
     stamp = fso.GetFolder(here & "\.venv\Lib\site-packages").DateLastModified
     If Not NotNewer(fso, here & "\pyproject.toml", stamp) Then Exit Function
     If Not NotNewer(fso, here & "\uv.lock", stamp) Then Exit Function
-    If Not NotNewer(fso, here & "\..\winkit\pyproject.toml", stamp) Then Exit Function
+    If Not NotNewer(fso, here & "\winkit\pyproject.toml", stamp) Then Exit Function
     EnvFresh = True
 End Function
 
