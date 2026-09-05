@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "0.9.0"
+version = "0.9.1"
 description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
 # AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
 # 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
@@ -105,7 +105,7 @@ doc2md = "meeting_scribe.doccli:main"
 [tool.uv.sources]
 # ⚠️ **winkit 在哪只寫在這一行**:搬家或改名就只改這裡(啟動器的守門清單
 # 由產生器從這裡算出來,不准再抄第二份字面值)
-winkit = { path = "../winkit", editable = true }
+winkit = { path = "winkit", editable = true }
 
 [dependency-groups]
 dev = [

@@ -254,14 +254,15 @@
 
 ## 六、授權
 
-本工具以 **AGPL-3.0** 釋出,完整條款見工具資料夾裡的 `LICENSE`。白話講:你可以自由使用、複製、修改;只有在**把修改後的版本散布出去**時,才必須一併提供原始碼並沿用同一份授權。自己拿來轉檔、在公司內部使用,不受任何限制。
+本工具以 **AGPL-3.0** 釋出,完整條款見工具資料夾裡的 `LICENSE`。⚠️ **`winkit\` 那個子資料夾是 MIT**(它的授權在 `winkit\LICENSE`)——那是視窗、皮膚與捷徑的共用層,與本工具一起交付但授權不同,拿它去做別的事不受 AGPL 的限制。白話講:你可以自由使用、複製、修改;只有在**把修改後的版本散布出去**時,才必須一併提供原始碼並沿用同一份授權。自己拿來轉檔、在公司內部使用,不受任何限制。
 
 各元件的授權盤點:
 
 | 元件 | 授權 |
 |------|------|
 | Whisper 模型(OpenAI)/ faster-whisper / CTranslate2 | MIT |
-| sherpa-onnx / 3D-Speaker embedding / Gradio / OpenCC / OpenVINO | Apache-2.0 |
+| sherpa-onnx / 3D-Speaker embedding / OpenCC / OpenVINO | Apache-2.0 |
+| winkit(視窗、皮膚、捷徑的共用層;`winkit\` 子資料夾)/ sv-ttk(佈景) | MIT |
 | FunASR CT-Transformer 標點模型(sherpa-onnx 轉檔) | Apache-2.0 |
 | pyannote segmentation-3.0(ONNX 轉檔) | MIT |
 | FFmpeg(經 static-ffmpeg,外部程序呼叫) | LGPL/GPL(不隨本工具散布,安裝時由你的電腦自行取得) |

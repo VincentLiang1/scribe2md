@@ -586,7 +586,7 @@ wheels = [
 
 [[package]]
 name = "meeting-scribe"
-version = "0.9.0"
+version = "0.9.1"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -653,7 +653,7 @@ requires-dist = [
     { name = "static-ffmpeg", specifier = ">=2.13" },
     { name = "striprtf", specifier = ">=0.0.26" },
     { name = "truststore", specifier = ">=0.10" },
-    { name = "winkit", editable = "../winkit" },
+    { name = "winkit", editable = "winkit" },
 ]
 
 [package.metadata.requires-dev]
@@ -1504,7 +1504,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/89/8d/7aad74930380c8972
 [[package]]
 name = "winkit"
 version = "0.1.0"
-source = { editable = "../winkit" }
+source = { editable = "winkit" }
 dependencies = [
     { name = "pillow" },
     { name = "sv-ttk" },
