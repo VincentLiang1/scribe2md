@@ -5,7 +5,7 @@ r"""在桌面與「開始功能表」放上「AI 文件.MD 轉換器」的捷徑
 
 **存在的理由是那三段路徑只有安裝當下才知道**:同仁把 zip 解壓到哪裡是他的
 自由(README 教的是「桌面或 C:\ 底下,資料夾名稱用中文也可以」),所以捷徑
-要指的「啟動.bat」、工作目錄、圖示檔**都得從這支腳本自己的位置往上推**——
+要指的「啟動.vbs」、工作目錄、圖示檔**都得從這支腳本自己的位置往上推**——
 任何一段寫死,就只有開發那台機器按得動,而別人桌面上會出現一顆指向不存在
 路徑的死圖示,比沒有更糟。
 
@@ -20,13 +20,14 @@ Constrained Language Mode 都擋得掉)。ctypes 直接叫 IShellLinkW 不經過
 
 ⚠️ **建不出來絕不能擋住安裝**:走到這一步環境已經好了,捷徑只是方便。桌面被
 群組原則重導到唯讀的網路磁碟、OneDrive 沒登入、資安軟體擋住寫入,都會讓這裡
-失敗——那時該做的是告訴他「雙擊資料夾裡的啟動.bat 一樣能用」,而不是讓他以為
+失敗——那時該做的是告訴他「雙擊資料夾裡的啟動.vbs 一樣能用」,而不是讓他以為
 安裝失敗、回頭重跑一次。離開碼只拿來讓「安裝.bat」挑最後那句話該怎麼寫,
 **兩種都算安裝成功**:0=桌面那顆放好了,3=沒放成。
 """
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 from ctypes import POINTER, byref, c_int, c_void_p, c_wchar_p
 from pathlib import Path
@@ -39,7 +40,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # 對使用者顯示的名稱(2026-08-09 定名)。⚠️ 這個字串在 repo 裡有好幾處,
 # 要改名就 grep -rn 全 repo,別只改這裡——見 CLAUDE.md 開頭那條。
 APP_NAME = "AI 文件.MD 轉換器"
-LAUNCHER = "啟動.bat"
+# ⚠️ **2026-09-05 從「啟動.bat」換過來**(使用者:「啟動.bat 已經沒有用了,現在是要
+# 執行啟動.vbs 才對」):`.bat` 起的是 gradio 版,而這條線的入口是原生視窗。
+LAUNCHER = "啟動.vbs"
 ICON = Path("src") / "meeting_scribe" / "assets" / "icon.ico"
 # 滑鼠停在圖示上會看到這句。寫「不會上傳」是因為那是同仁最常問的第一個問題
 DESCRIPTION = "把錄音、影片、文件轉成 Markdown(全程在這台電腦上跑,不會上傳)"
@@ -61,6 +64,7 @@ _IID_IPERSIST_FILE = "{0000010B-0000-0000-C000-000000000046}"
 #   IPersistFile:  3 GetClassID  4 IsDirty  5 Load  6 Save  7 SaveCompleted
 _QUERY_INTERFACE, _RELEASE = 0, 2
 _SET_DESCRIPTION, _SET_WORKING_DIRECTORY = 7, 9
+_SET_ARGUMENTS = 11
 _SET_ICON_LOCATION, _SET_PATH = 17, 20
 _PERSIST_SAVE = 6
 
@@ -95,9 +99,36 @@ def _check(hr: int, what: str) -> None:
         raise OSError(f"{what} 失敗(HRESULT 0x{hr & 0xFFFFFFFF:08X})")
 
 
-def write_shortcut(dest: Path, target: Path, workdir: Path,
+def script_host() -> Path | None:
+    r"""`wscript.exe` 的完整路徑(找不到回 `None`)。
+
+    ⚠️ **捷徑要指的是 `wscript.exe`,不是 `啟動.vbs` 本身**(做法與理由同姊妹專案
+    `MP4-2-SRT`)。`.vbs` 當捷徑目標有兩個踩得到的坑,都會讓「雙擊桌面圖示」與
+    「雙擊 `啟動.vbs`」表現不一致:**①** 副檔名關聯被改掉——不少公司把 `.vbs`
+    關聯到記事本當作防毒措施,那時捷徑會**打開原始碼**而不是執行;**②** 預設主機
+    若是 `cscript`,就會蹦出一個黑視窗,而那正是 `啟動.vbs` 存在的唯一理由。
+    把主機釘成 `wscript.exe`、`.vbs` 當參數,兩個都繞開了。
+    ⚠️ **找不到才退回直接指 `.vbs`**:那條路仍然多半能動(關聯沒被動過的機器),
+    比不建捷徑好。"""
+    # ⚠️ **不給預設值**:寫一個 `C:\Windows` 當退路就是這支腳本唯一一段寫死的
+    # 絕對路徑(`test_原始碼裡不得寫死絕對路徑` 正好擋著),而少了 `SystemRoot`
+    # 的環境本來就該退回「直接指 .vbs」那條路,不是去猜系統裝在哪。
+    system_root = os.environ.get("SystemRoot")
+    if not system_root:
+        return None
+    for rel in ("System32", "SysWOW64"):
+        host = Path(system_root) / rel / "wscript.exe"
+        if host.is_file():
+            return host
+    return None
+
+
+def write_shortcut(dest: Path, target: Path, args: str, workdir: Path,
                    icon: Path, description: str) -> None:
-    """寫出一個 .lnk;失敗一律拋例外(呼叫端決定要不要當成致命)。"""
+    """寫出一個 .lnk;失敗一律拋例外(呼叫端決定要不要當成致命)。
+
+    `args` 是命令列參數(沒有就給空字串)——`.vbs` 那條路要靠它把腳本交給
+    `wscript.exe`,見 `script_host()`。"""
     ole32 = ctypes.windll.ole32
     ole32.CoInitialize(None)
     try:
@@ -108,6 +139,9 @@ def write_shortcut(dest: Path, target: Path, workdir: Path,
                "CoCreateInstance(ShellLink)")
         try:
             _check(_call(link, _SET_PATH, (c_wchar_p,), str(target)), "SetPath")
+            if args:
+                _check(_call(link, _SET_ARGUMENTS, (c_wchar_p,), args),
+                       "SetArguments")
             _check(_call(link, _SET_WORKING_DIRECTORY, (c_wchar_p,), str(workdir)),
                    "SetWorkingDirectory")
             _check(_call(link, _SET_DESCRIPTION, (c_wchar_p,), description),
@@ -140,7 +174,13 @@ def install_to(folder: Path) -> Path:
     那句話要成立,這裡就得真的把舊捷徑那條指到別處的路徑改回來。"""
     folder.mkdir(parents=True, exist_ok=True)
     dest = folder / f"{APP_NAME}.lnk"
-    write_shortcut(dest, ROOT / LAUNCHER, ROOT, ROOT / ICON, DESCRIPTION)
+    vbs = ROOT / LAUNCHER
+    if host := script_host():
+        # 參數要自己加引號:工具資料夾的路徑含中文、也可能含空格
+        target, args = host, f'"{vbs}"'
+    else:
+        target, args = vbs, ""
+    write_shortcut(dest, target, args, ROOT, ROOT / ICON, DESCRIPTION)
     return dest
 
 

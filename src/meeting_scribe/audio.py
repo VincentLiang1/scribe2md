@@ -11,14 +11,12 @@ ffmpeg 本體由 static_ffmpeg 提供,首次呼叫自動下載(約 50MB);三個
 """
 import logging
 import subprocess
-import sys
 import threading
 import wave
 import weakref
 from pathlib import Path
 
 import numpy as np
-from static_ffmpeg import run
 
 from meeting_scribe.errors import UserFacingError
 
@@ -26,7 +24,15 @@ logger = logging.getLogger(__name__)
 
 
 def ffmpeg_path() -> str:
-    # 首次呼叫會下載平台版 ffmpeg 到 static_ffmpeg 套件目錄(約 50MB)
+    r"""ffmpeg 執行檔的路徑(首次呼叫會下載平台版到 static_ffmpeg 套件目錄,約 50MB)。
+
+    ⚠️ **`static_ffmpeg` 在這裡才 import,不在模組層**(2026-09-04 剖析啟動路徑時
+    改的,同 sherpa / faster-whisper / OpenCC 那條惰性載入的慣例):它會一路拉進
+    `filelock` → `asyncio` 與 `requests`,量到 **390ms**,而那是**開窗時第二貴的
+    一段**——`audio` 幾乎被每一支引擎模組 import,所以那 390ms 記在每一個進入點
+    (原生視窗、網頁介面、命令列)的啟動時間上,卻要等到真的轉檔才用得到。"""
+    from static_ffmpeg import run
+
     exe, _probe = run.get_or_fetch_platform_executables_else_raise()
     return exe
 
@@ -64,19 +70,10 @@ def read_wav16k(path: str | Path) -> np.ndarray:
         return samples
 
 
-# ⚠️ **主行程沒有主控台了,所以每一個子行程都得自己說「不要開視窗」**
-# (2026-08-31 無視窗啟動):有主控台的時候,console 子行程是**繼承**父的那一個、
-# 不會有任何視覺效果——這一行少了也完全看不出來。脫離之後 Windows 改成幫它**新開
-# 一個**:轉一次檔閃一個黑框,剪一次試聽再閃一個。實測連帶成本也在(建主控台
-# 0.12s vs 0.03s)。其餘四支子行程(transproc/diarproc/ocr/soffice)本來就帶著。
-_CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
-
-
 def _run_ffmpeg(cmd: list[str], dest: Path, log_msg: str, user_msg: str) -> Path:
-    """跑 ffmpeg 並確認成品落地;失敗把完整 stderr 記進紀錄檔,
+    """跑 ffmpeg 並確認成品落地;失敗把完整 stderr 記進 log(黑視窗診斷用),
     對使用者只拋繁中訊息(spec §8)。"""
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", creationflags=_CREATE_NO_WINDOW)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0 or not dest.exists():
         logger.error("%s:%s", log_msg, proc.stderr)
         raise UserFacingError(user_msg)

@@ -69,8 +69,6 @@ class TransProcess:
         self._replies: queue.Queue = queue.Queue()
         self._lock = threading.Lock()  # 引擎不可併發:一次只准一個指令在飛
         self.on_progress: Callable[[float], None] | None = None
-        # 首次下載模型的文字進度(見 _await 的 "note" 分支)
-        self.on_note: Callable[[str, float], None] | None = None
 
     @property
     def threads(self) -> int:
@@ -123,18 +121,16 @@ class TransProcess:
     def transcribe(
         self, wav: Path | str, model_key: str = "fast",
         progress: Callable[[float], None] | None = None,
-        note: Callable[[str, float], None] | None = None,
     ) -> tuple[list[TranscriptSegment], str]:
         """回傳 (轉錄結果, 實際裝置);簽章與 transcribe.transcribe 一致。"""
         self.on_progress = progress
-        self.on_note = note
         try:
             reply = self._request({
                 "cmd": "transcribe", "wav": str(Path(wav).resolve()),
                 "model": model_key, "progress": progress is not None,
             })
         finally:
-            self.on_progress = self.on_note = None
+            self.on_progress = None
         segments = [
             TranscriptSegment(float(a), float(b), t)
             for a, b, t in reply.get("segments", [])
@@ -191,15 +187,6 @@ class TransProcess:
                 hook = self.on_progress
                 if hook is not None:
                     hook(float(reply["progress"]))
-                deadline = time.monotonic() + timeout
-                continue
-            if "note" in reply:
-                # 首次下載模型的進度:要換掉進度條上的**字**,所以與 progress
-                # 分開走。⚠️ **看門狗一樣要往後推**——下載 3GB 在慢的網路上
-                # 比整場轉錄還久,而那段期間一則 progress 都不會有
-                note = self.on_note
-                if note is not None:
-                    note(str(reply["note"]), float(reply.get("frac", -1)))
                 deadline = time.monotonic() + timeout
                 continue
             return reply

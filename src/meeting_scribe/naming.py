@@ -122,8 +122,18 @@ def _reassign_choices(spk, name_values, audit) -> list[str]:
     ⚠️ **排除當前這一位**:改掛的意思是「這幾段其實不是他」,把他自己排在
     第一個只會擋路。
 
-    ⚠️ 同樣**不加標記**,理由見 `_choice_layout`(那邊的琥珀底色畫在
-    CSS,這裡沒做)。"""
+    ⚠️ 同樣**不加標記**,理由見 `_choice_layout`:選項字串就是寫進逐字稿的名字。
+    標示做在視覺層——原生視窗拿 `reassign_order` 回的筆數塗琥珀底
+    (`desktop.App._mark_rivals`,使用者 2026-09-02:改掛的下拉要跟命名欄那個
+    「相同的邏輯,將可能的放最前面,並標示黃色」)。"""
+    return reassign_order(spk, name_values, audit)[0]
+
+
+def reassign_order(spk, name_values, audit) -> tuple[list[str], int]:
+    """同 `_reassign_choices`,並回「排到最前面的有幾筆」——那幾筆就是要塗琥珀底的。
+
+    ⚠️ **順序與筆數必須出自同一次計算**(同 `rival_order`):標色認的是「最前面 N 筆」,
+    N 一旦與實際前綴長度對不上,底色就落在別人身上——而**標錯人比不標更糟**。"""
     head: list[str] = []
     for i, v in enumerate(name_values[:MAX_SPEAKERS]):
         if i == spk or not isinstance(v, str) or not v.strip():
@@ -132,7 +142,7 @@ def _reassign_choices(spk, name_values, audit) -> list[str]:
     head += list((audit or {}).get("rivals") or [])
     head = list(dict.fromkeys(head))        # 保序去重
     seen = set(head)
-    return head + [n for n in _all_names() if n not in seen]
+    return head + [n for n in _all_names() if n not in seen], len(head)
 
 
 def _relabel_cohesion(wav, blocks, progress) -> list[float]:
@@ -459,6 +469,25 @@ def _save_draft_names(*name_values) -> None:
 # 482px 的左欄折成 **3 行**、整段線索佔 84px;認人其實看前二十幾字就夠——
 # 那是「這個人講話的樣子」,而真要確認,試聽鈕就在同一列
 _HINT_QUOTE_CHARS = 24
+
+
+def rival_order(known: list[str], rivals) -> tuple[list[str], int]:
+    """名字選單的順序:聲紋分不開的那幾位排到最前面。回 (選項, 提前的筆數)。
+
+    ⚠️ **選項字串只重排、不加任何標記**:這個欄位的選項字串**就是**最後寫進逐字稿
+    與 `data/voiceprints.npz` 的名字——把「★」或「(候選)」寫進去,那幾個字就會
+    原樣變成人名。標示一律做在視覺層(網頁版是 CSS 的琥珀底,原生版是下拉清單的
+    itemconfigure)。突變 M185 守著這條。
+    ⚠️ **候選就算不在與會名單裡也要列進來**:名單與聲紋庫是兩份資料,聲紋庫記得的
+    人不見得還在名單上。線索那行都已經把名字講出來了,選單裡卻找不到,只會逼使用者
+    自己打字——而打錯一個字就是聲紋庫裡多一個人。
+    ⚠️ **順序與筆數必須出自同一次計算**:標色認的是「最前面 N 筆」,N 一旦與實際
+    前綴長度對不上,底色就落在別人身上——而**標錯人比不標更糟**。"""
+    head = list(dict.fromkeys(rivals or ()))      # 保序去重
+    if not head:
+        return known, 0
+    seen = set(head)
+    return head + [x for x in known if x not in seen], len(head)
 
 
 def _hint_text(hint, rivals=None) -> str | None:

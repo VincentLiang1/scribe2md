@@ -16,6 +16,7 @@ faster-whisper(內建 Silero VAD、condition_on_previous_text=False 防
 成品質不穩的「翻譯」;要恢復多語就是把 LANGUAGE 改回參數,兩條路徑都
 從這個常數取值,不必再考古各自寫死的字面值)。
 """
+import functools
 import logging
 import os
 from collections.abc import Callable
@@ -48,8 +49,8 @@ MODEL_CHOICES = {"fast": "large-v3-turbo", "accurate": "large-v3"}
 
 # faster-whisper download_model() 用的 HF repo 對應與檔案清單(1.2.1 實查)。
 # 不經 download_model 而直呼 snapshot_download 的原因:download_model 寫死
-# tqdm_class=disabled_tqdm,首次下載 1.5~3GB 期間全程無進度可言;直呼才
-# 交得出自己的進度條類別(models.hub_tqdm),把進度送上網頁的進度條。
+# tqdm_class=disabled_tqdm,首次下載 1.5~3GB 期間黑視窗全程無進度,README
+# 「下載進度顯示在黑色視窗」直接落空;直呼可用 hub 原生 tqdm 進度條。
 # cache_dir 與 download_model 相同,既有使用者快取無縫沿用。
 _HF_REPOS = {
     "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
@@ -78,7 +79,9 @@ ProgressFn = Callable[[float], None]
 _PREP_FRAC = 0.05
 
 
+@functools.lru_cache(maxsize=1)
 def _cuda_available() -> bool:
+    """(結果快取,理由見 `_intel_gpu_available`。)"""
     try:
         import ctranslate2
 
@@ -87,7 +90,19 @@ def _cuda_available() -> bool:
         return False
 
 
+@functools.lru_cache(maxsize=1)
 def _intel_gpu_available() -> bool:
+    r"""這台機器有沒有 OpenVINO 認得的 GPU。
+
+    ⚠️ **結果整個行程只算一次**(2026-09-04 剖析原生視窗的啟動路徑時加的):這一支
+    要 `import openvino`(256ms)再列舉裝置,一趟約 **475ms**,而開窗時它被問了
+    **三次**(「進階參數設定」那張卡問兩次:一次拿說明文字、一次拿預設模型;而預設
+    模型那支自己又問一次)——**光是重複的那兩趟就是 0.95 秒**。硬體不會在程式跑的
+    中途變,所以答案只需要算一次。
+    ⚠️ **快取要放在這一層、不可以放到 `predicted_device`**:測試換掉的是**這一支**
+    (`monkeypatch.setattr(transcribe, "_intel_gpu_available", …)`),快取蓋在上層
+    就會把假貨整個跳過,而症狀是那幾條測試莫名其妙地開始看真實硬體。
+    """
     # 只看「OpenVINO 列得出 GPU 裝置」,不分強弱:效能驗證僅涵蓋標準機
     # Arc 140V;老款弱 iGPU(UHD 6xx 等)也會被路由到 OV-GPU,可能慢於
     # faster-whisper CPU 而不會自動降級(不拋錯就不降級)——已列 spec §11
@@ -148,7 +163,7 @@ def _model_dir(name: str) -> str:
 
     local-first:快取完整時以 local_files_only 解析、完全不連網——兌現
     README「唯一的網路行為是第一次下載」,並消除批次每檔的 HF revision
-    檢查延遲;快取不完整才連網下載(進度經 models.hub_tqdm 回報)。
+    檢查延遲;快取不完整才連網下載(hub 原生 tqdm 進度條顯示於黑視窗)。
     下載失敗以繁中訊息浮出(spec §8),呼叫端不得安靜降級改抓其他模型。"""
     if name in _model_dirs:
         return _model_dirs[name]
@@ -159,17 +174,13 @@ def _model_dir(name: str) -> str:
     try:
         path = snapshot_download(repo, local_files_only=True, **kwargs)
     except Exception:
-        # ⚠️ **這幾行不能用 print**:這支多半跑在轉錄子行程裡,而那裡的 stdout
-        # 是 NDJSON 專用通道(見 models._progress_sink 的 ⚠️)。走 report_progress
-        # 才會一路回到父行程、進到網頁的進度條上
-        models.reset_hub_progress("轉錄模型")
-        models.report_progress(f"首次使用需下載轉錄模型 {name}(約 1.5~3GB)", 0.0)
+        try:
+            print(f"首次使用需下載轉錄模型 {name}(約 1.5~3GB),進度如下:", flush=True)
+        except Exception:
+            pass  # 主控台顯示問題絕不能中止下載
         try:
             # with_tls_rescue:公司網路做 TLS 攔截時改用系統憑證再試一次
-            path = models.with_tls_rescue(
-                lambda: snapshot_download(repo, tqdm_class=models.hub_tqdm(), **kwargs),
-                "模型",
-            )
+            path = models.with_tls_rescue(lambda: snapshot_download(repo, **kwargs), "模型")
         except Exception as e:
             raise models.download_failed("模型", name, e) from e
     _model_dirs[name] = path

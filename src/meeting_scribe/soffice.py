@@ -260,10 +260,10 @@ def _download_and_install() -> Path:
     root = _install_root()
     url = _resolve_msi_url()
     msi = root / url.rsplit("/", 1)[-1]
-    models.report_progress(  # 同 models.download:走 log 通道,不用 print
+    print(  # noqa: T201 - 黑視窗的進度回饋,同 models.download
         "首次轉換舊版 Office 檔(副檔名沒有 x 的 doc/xls/ppt 等舊格式)需要下載 "
-        "LibreOffice(約 370MB,只需一次);docx/xlsx/pptx 這類新格式不必下載。",
-        0.0,
+        "LibreOffice(約 370MB,只需一次);docx/xlsx/pptx 這類新格式不必下載。"
+        "進度如下:", flush=True,
     )
     root.mkdir(parents=True, exist_ok=True)
     models.download(url, msi, min_bytes=_MIN_MSI_BYTES, what="LibreOffice 安裝檔")

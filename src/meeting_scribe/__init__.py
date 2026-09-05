@@ -8,14 +8,13 @@ best-effort,失敗不影響轉檔。
 """
 
 import os
-import tempfile
 from pathlib import Path
 
-# gradio/HF 遙測在任何 import gradio 之前關閉(spec §7):UI 相關模組
-# (app/ui_style/data_tabs)都會 import gradio,開關放在套件根保證任何
-# import 順序都先經過這裡(app.py 開頭另留一份,保 `python app.py` 直跑
-# 不經套件 __init__ 的情況;setdefault 冪等)。
-os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
+# HF 遙測在任何 import 之前關閉(spec §7:對外遙測全部關掉)。開關放在套件根,
+# 保證不管誰先被 import 都會先經過這裡;`setdefault` 冪等。
+# ⚠️ **2026-09-05 少了 `GRADIO_ANALYTICS_ENABLED` 那一行**:gradio 連同它那套介面
+# 一起移除了,那個變數已經沒有對象。隱私那條規格本身沒有放寬——它現在只剩
+# huggingface_hub 這一個會對外說話的相依。
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 # oneDNN 的 OpenCL 探測失敗訊息一律不印(2026-08-30 使用者把黑視窗的內容貼過來
 # 才發現)。⚠️ **這不是錯誤**:OpenVINO 照樣在 Intel Arc iGPU 上跑完轉錄(實測有無
@@ -27,59 +26,6 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 # ⚠️ **`setdefault`**:自己要查 oneDNN 時,外面設 `ONEDNN_VERBOSE=all` 仍然蓋得過。
 # ⚠️ 必須在**任何** import openvino 之前——同上面兩個遙測開關的理由。
 os.environ.setdefault("ONEDNN_VERBOSE", "none")
-# gradio 供應快取改指本行程專屬目錄(隱私:對外供應的檔案——下載區逐字稿、
-# 試聽片段——會被 gradio「複製」進這裡,預設位置 %TEMP%\gradio 整機共用且
-# gradio 從不清理,機敏副本會永遠堆著)。此處只講「在這裡設定」的三個理由:
-# 必須在 import gradio 之前(gradio import 時就讀取)、前綴必須等同
-# pipeline.TMP_PREFIX(啟動清掃靠它認孤兒;不直接 import pipeline——套件根
-# 要保持輕量,一致性由測試守著)、帶 pid 讓多實例不互踩。
-# 存活鎖與正常退場清理的完整說明見 app._hold_serve_cache。
-os.environ.setdefault(
-    "GRADIO_TEMP_DIR",
-    str(Path(tempfile.gettempdir()) / f"meeting-scribe-serve-{os.getpid()}"),
-)
-
-
-# 本機一律不經代理的主機名(httpx / requests 都認 NO_PROXY 這三個寫法)
-_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
-
-
-def _bypass_proxy_for_localhost() -> None:
-    """把 localhost 排除在系統代理之外——公司電腦不這樣做會連不上自己。
-
-    gradio 的 `launch()` 收尾有一道自我健檢:用 httpx 打自己一槍
-    `http://127.0.0.1:<port>/gradio_api/startup-events`(blocks.py)。而 httpx
-    預設 `trust_env=True` → `urllib.request.getproxies()`,**那在 Windows 上
-    會讀登錄檔的系統/IE 代理設定**(`HKCU\\...\\Internet Settings`);偏偏 httpx
-    只認 `NO_PROXY`,**完全不理會**代理設定裡「近端網址不使用 Proxy 伺服器」
-    那個勾(`ProxyOverride` 的 `<local>`)。於是打給 127.0.0.1 的請求被送去
-    公司代理,代理不幫你連別人的 localhost、回 **403**,gradio 當場拋例外、
-    整個工具啟動失敗(2026-08-12 同仁的公司電腦實際回報;開發機沒有代理設定,
-    所以這條路永遠測不出來)。所以我們自己補上那個勾的效果。
-
-    ⚠️ **不能只設 `NO_PROXY` 了事**:`getproxies()` 是
-    `getproxies_environment() or getproxies_registry()`——只要環境變數裡出現
-    **任何一個** `*_proxy`,登錄檔就整個不讀了。公司電腦要靠代理才連得出去,
-    只設 `NO_PROXY` 會把首次下載 AI 模型(2-3 GB)一起弄死,而症狀會變成
-    「模型下載失敗」這個看不出真因的樣子。所以先把登錄檔讀到的代理**明確
-    搬進環境變數**,再排除本機:本機自檢直連、對外下載照走公司代理,兩邊都保住。
-
-    純本機的環境變數操作,不連任何網路。
-    """
-    from urllib.request import getproxies
-
-    proxies = getproxies()  # 環境變數優先,其次(Windows)登錄檔
-    for scheme in ("http", "https"):
-        url = proxies.get(scheme)
-        # 已由使用者/IT 明設的不覆蓋,只補登錄檔那一份
-        if url and not os.environ.get(f"{scheme.upper()}_PROXY"):
-            os.environ[f"{scheme.upper()}_PROXY"] = url
-    # 保留原本的例外清單(公司可能已列了內網主機),只補上缺的本機寫法
-    listed = [h.strip() for h in os.environ.get("NO_PROXY", "").split(",") if h.strip()]
-    lowered = {h.lower() for h in listed}
-    os.environ["NO_PROXY"] = ",".join(listed + [h for h in _LOCAL_HOSTS if h not in lowered])
-
-
 def _trust_bundled_certificates() -> None:
     r"""把 certifi 的公開根憑證**疊加**到 Python 的驗證清單上——不這樣做,
     有些公司電腦一下載 AI 模型就死在憑證驗證,而瀏覽器明明開得了同一個網址。
@@ -126,6 +72,24 @@ def _disable_openvino_telemetry() -> None:
         pass  # best-effort:寫入失敗不影響轉檔
 
 
-_bypass_proxy_for_localhost()
 _trust_bundled_certificates()
 _disable_openvino_telemetry()
+
+
+# ---- Windows 桌面外殼的共用層(2026-08-29,原生介面遷移的階段 3)----
+# ⚠️ **綁在套件根**:任何子模組被 import 都會先經過這裡,所以「忘了 bind」不會
+# 發生在正常的執行路徑上——連那支跑在安裝當下的 `make_shortcut.py` 也一樣
+# (它走 `from meeting_scribe.brand import …`,而匯入子模組必先匯入父套件)。
+# ⚠️ **位置要我們自己算,不可以讓 winkit 用它的 `__file__` 推**:那幾支模組住在
+# 下游的時候「我在哪」是 `Path(__file__).parents[2]`,搬進共用包之後那條會指到
+# winkit 自己——紀錄檔寫進 `winkit\logs`、版本號讀成 winkit 的 `.git`、皮膚資產
+# 找不到,而**三個症狀都沒有錯誤訊息**。
+# ⚠️ `repo_root` 也不可以從 `package_dir` 往上推:本專案是 src layout(往上兩層),
+# 姊妹專案 NotebookLM_OCR 是 flat layout(一層),推的那個版本會在一邊安靜地算錯。
+import winkit  # noqa: E402
+
+from meeting_scribe import brand  # noqa: E402
+
+winkit.bind(brand,
+            package_dir=Path(__file__).resolve().parent,
+            repo_root=Path(__file__).resolve().parents[2])

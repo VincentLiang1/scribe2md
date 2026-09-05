@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "0.8.12"
+version = "0.9.0"
 description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
 # AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
 # 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
@@ -15,7 +15,6 @@ dependencies = [
     "faster-whisper>=1.1.0",
     "sherpa-onnx>=1.12.0",
     "opencc>=1.1.9",
-    "gradio>=6.0",
     "static-ffmpeg>=2.13",
     "numpy>=1.26",
     # API surface(WhisperPipeline chunks 欄位等)以 2026.2 實測驗證,下限不低於此
@@ -33,6 +32,14 @@ dependencies = [
     # sounddevice 的原因見 record.py 模組 docstring(sounddevice 內建的
     # PortAudio 沒有 loopback,2026-07-21 本機實測)
     "soundcard>=0.4.6",
+    # ---- Windows 桌面外殼(2026-08-29,原生介面遷移的階段 3)----
+    # 路徑、色票、Windows 整合、皮膚、捷徑、無黑框啟動器的共用層。
+    # ⚠️ **相對路徑相依是看不見的**:只把這個專案傳給別人時 `uv sync` 會失敗,
+    # 而錯誤訊息是 uv 的路徑錯誤、說不出「你少複製了 winkit」。公開版靠
+    # `make_public.py` 把它併進交付物(見 docs/dev/native-ui.md §5)。
+    # ⚠️ 它是 **MIT**,而本專案是 AGPL:方向是對的(MIT 進得了 AGPL 作品),
+    # 但散布時 winkit 的 LICENSE 必須跟著走。
+    "winkit",
     # ---- 文件轉 Markdown(doc* 模組群)----
     # Office 三兄弟:各自是該格式最成熟的純 Python 讀取器,零原生相依
     "python-docx>=1.1",
@@ -54,8 +61,9 @@ dependencies = [
     # 台灣的 csv/txt 很多是 cp950 不是 UTF-8,判錯整份亂碼。只當
     # doctext.read_text_auto 的「同分裁判」,不當第一判準(理由見該函式)
     "charset-normalizer>=3.3",
-    # 影像處理(階段二 OCR 的前置正規化)。已是 gradio 的傳遞相依,但
-    # 直接用就必須明寫——上游哪天換掉會靜默壞掉
+    # 影像處理(階段二 OCR 的前置正規化、原生視窗的彩色 emoji 與截圖)。
+    # ⚠️ 註解原本寫「已是 gradio 的傳遞相依,但直接用就必須明寫」——2026-09-05
+    # gradio 移除之後,它**只剩這一行撐著**,而那正是當初明寫的理由。
     "pillow>=10",
     # ---- 階段二:OCR(掃描頁 / 影像檔 / 文件內嵌圖)----
     # RapidOCR 的 det/cls/rec 三顆模型**打包在 wheel 內**(2026-08-03 實測:
@@ -89,17 +97,34 @@ dependencies = [
 ]
 
 [project.scripts]
-meeting-scribe = "meeting_scribe.app:main"
 # 文件轉 Markdown 的命令列入口。存在的理由是「給 AI 讀」——Claude Code
 # 讀 PDF 是逐頁當圖片送、docx/pptx 根本讀不了,先轉 md 能省一個量級的
 # token(見 doccli 模組 docstring 與使用者層級的 doc2md Skill)
 doc2md = "meeting_scribe.doccli:main"
 
+[tool.uv.sources]
+# ⚠️ **winkit 在哪只寫在這一行**:搬家或改名就只改這裡(啟動器的守門清單
+# 由產生器從這裡算出來,不准再抄第二份字面值)
+winkit = { path = "../winkit", editable = true }
+
 [dependency-groups]
 dev = [
+    # 圖示產生器(`scripts/make_icon.py`)拿它把 SVG 渲染成 PNG——**不是為了測網頁**。
+    # ⚠️ 2026-09-05 移除 gradio 時差點跟著拿掉(那一輪它看起來只跟 `measure_ui.py`
+    # 有關,而那支確實是量網頁版的、已刪);漏掉的症狀是 `test_icon.py` 整支 collect
+    # 就失敗。
     "playwright>=1.62.0",
+    # 皮膚產生器(`scripts/make_skin.py`)收尾用它把 PNG 再無損壓一次。⚠️ **Pillow 的
+    # optimize 對那批圖一個位元組都沒省**(實測),而它省 24.6%——那批佔交付 zip 的
+    # 一半。⚠️ 純 Rust binding、零系統相依;沒裝也產得出東西(只是檔案大一點)。
+    "pyoxipng>=9.0",
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    # ⚠️ **2026-09-05 從傳遞相依升格成明寫**:`test_help_text.py` 拿它把 repo 裡
+    # 每一份 Markdown 真的渲染一次(CommonMark 的 flanking 有幾種寫法會讓 `**`
+    # 原樣印出來,而寫的人看原始碼完全看不出異狀)。它先前是 gradio 帶進來的,
+    # gradio 一走,那條測試會變成「找不到模組」——而它守的是全 repo 的文件。
+    "markdown-it-py>=3.0",
 ]
 
 [build-system]

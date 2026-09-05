@@ -1,0 +1,13887 @@
+{
+ "scales": [
+  1.0,
+  1.25,
+  1.5,
+  1.75,
+  2.0,
+  2.25,
+  2.5,
+  3.0
+ ],
+ "variants": {
+  "dark@1": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#2c2c2e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.accent_page": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#1c1c1e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.accent_small": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#2c2c2e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.button": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#2c2c2e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.button_page": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#1c1c1e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.button_run": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#2c2c2e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.button_run_page": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#1c1c1e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.card": {
+     "border": 21,
+     "height": 43,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 43
+    },
+    "Sq.cta": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#2c2c2e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.cta_page": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#1c1c1e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.drop": {
+     "border": 11,
+     "height": 23,
+     "on": "#2c2c2e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 23
+    },
+    "Sq.field": {
+     "border": 11,
+     "height": 23,
+     "on": "#2c2c2e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 23
+    },
+    "Sq.pbar": {
+     "border": [
+      4,
+      0,
+      4,
+      0
+     ],
+     "height": 7,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 10
+    },
+    "Sq.seg": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 37,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.seg_on": {
+     "border": [
+      13,
+      0,
+      13,
+      0
+     ],
+     "height": 25,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 27
+    },
+    "Sq.stop": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#2c2c2e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.stop_page": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#1c1c1e",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.subtab": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.toc": {
+     "border": 15,
+     "height": 31,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.toc_on": {
+     "border": 13,
+     "height": 27,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 27
+    },
+    "Sq.tree": {
+     "border": 11,
+     "height": 23,
+     "on": "#2c2c2e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 23
+    },
+    "Sq.trough": {
+     "border": [
+      4,
+      0,
+      4,
+      0
+     ],
+     "height": 7,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 10
+    }
+   },
+   "file": "skin-dark@1x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     56,
+     40
+    ],
+    "accent-hover": [
+     0,
+     40,
+     56,
+     40
+    ],
+    "accent-page-dis": [
+     0,
+     80,
+     56,
+     40
+    ],
+    "accent-page-hover": [
+     0,
+     120,
+     56,
+     40
+    ],
+    "accent-page-pressed": [
+     0,
+     160,
+     56,
+     40
+    ],
+    "accent-page-rest": [
+     0,
+     200,
+     56,
+     40
+    ],
+    "accent-pressed": [
+     0,
+     240,
+     56,
+     40
+    ],
+    "accent-rest": [
+     0,
+     280,
+     56,
+     40
+    ],
+    "accentsmall-dis": [
+     0,
+     320,
+     46,
+     30
+    ],
+    "accentsmall-hover": [
+     0,
+     350,
+     46,
+     30
+    ],
+    "accentsmall-pressed": [
+     0,
+     380,
+     46,
+     30
+    ],
+    "accentsmall-rest": [
+     0,
+     410,
+     46,
+     30
+    ],
+    "button-dis": [
+     0,
+     440,
+     46,
+     30
+    ],
+    "button-hover": [
+     0,
+     470,
+     46,
+     30
+    ],
+    "button-pressed": [
+     0,
+     500,
+     46,
+     30
+    ],
+    "button-rest": [
+     0,
+     530,
+     46,
+     30
+    ],
+    "buttonpage-dis": [
+     0,
+     560,
+     46,
+     30
+    ],
+    "buttonpage-hover": [
+     0,
+     590,
+     46,
+     30
+    ],
+    "buttonpage-pressed": [
+     0,
+     620,
+     46,
+     30
+    ],
+    "buttonpage-rest": [
+     0,
+     650,
+     46,
+     30
+    ],
+    "buttonrun-dis": [
+     0,
+     680,
+     56,
+     40
+    ],
+    "buttonrun-hover": [
+     0,
+     720,
+     56,
+     40
+    ],
+    "buttonrun-pressed": [
+     0,
+     760,
+     56,
+     40
+    ],
+    "buttonrun-rest": [
+     0,
+     800,
+     56,
+     40
+    ],
+    "buttonrunpage-dis": [
+     0,
+     840,
+     56,
+     40
+    ],
+    "buttonrunpage-hover": [
+     0,
+     880,
+     56,
+     40
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     920,
+     56,
+     40
+    ],
+    "buttonrunpage-rest": [
+     0,
+     960,
+     56,
+     40
+    ],
+    "card-rest": [
+     0,
+     1000,
+     138,
+     138
+    ],
+    "cta-dis": [
+     0,
+     1138,
+     46,
+     30
+    ],
+    "cta-hover": [
+     0,
+     1168,
+     46,
+     30
+    ],
+    "cta-pressed": [
+     0,
+     1198,
+     46,
+     30
+    ],
+    "cta-rest": [
+     0,
+     1228,
+     46,
+     30
+    ],
+    "ctapage-dis": [
+     0,
+     1258,
+     46,
+     30
+    ],
+    "ctapage-hover": [
+     0,
+     1288,
+     46,
+     30
+    ],
+    "ctapage-pressed": [
+     0,
+     1318,
+     46,
+     30
+    ],
+    "ctapage-rest": [
+     0,
+     1348,
+     46,
+     30
+    ],
+    "drop-rest": [
+     0,
+     1378,
+     118,
+     118
+    ],
+    "field-focus": [
+     0,
+     1496,
+     118,
+     118
+    ],
+    "field-rest": [
+     0,
+     1614,
+     118,
+     118
+    ],
+    "pbar": [
+     0,
+     1732,
+     105,
+     7
+    ],
+    "seg-on": [
+     0,
+     1739,
+     42,
+     25
+    ],
+    "seg-track": [
+     0,
+     1764,
+     54,
+     37
+    ],
+    "stop-dis": [
+     0,
+     1801,
+     56,
+     40
+    ],
+    "stop-hover": [
+     0,
+     1841,
+     56,
+     40
+    ],
+    "stop-page-dis": [
+     0,
+     1881,
+     56,
+     40
+    ],
+    "stop-page-hover": [
+     0,
+     1921,
+     56,
+     40
+    ],
+    "stop-page-pressed": [
+     0,
+     1961,
+     56,
+     40
+    ],
+    "stop-page-rest": [
+     0,
+     2001,
+     56,
+     40
+    ],
+    "stop-pressed": [
+     0,
+     2041,
+     56,
+     40
+    ],
+    "stop-rest": [
+     0,
+     2081,
+     56,
+     40
+    ],
+    "subtab": [
+     0,
+     2121,
+     46,
+     30
+    ],
+    "toc-on": [
+     0,
+     2151,
+     122,
+     122
+    ],
+    "toc-wrap": [
+     0,
+     2273,
+     126,
+     126
+    ],
+    "tree-rest": [
+     0,
+     2399,
+     118,
+     118
+    ],
+    "trough": [
+     0,
+     2517,
+     105,
+     7
+    ]
+   }
+  },
+  "dark@1.25": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#2c2c2e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.accent_page": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#1c1c1e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.accent_small": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#2c2c2e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.button": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#2c2c2e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.button_page": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#1c1c1e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.button_run": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#2c2c2e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.button_run_page": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#1c1c1e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.card": {
+     "border": 26,
+     "height": 53,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.cta": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#2c2c2e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.cta_page": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#1c1c1e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.drop": {
+     "border": 13,
+     "height": 27,
+     "on": "#2c2c2e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 27
+    },
+    "Sq.field": {
+     "border": 13,
+     "height": 27,
+     "on": "#2c2c2e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 27
+    },
+    "Sq.pbar": {
+     "border": [
+      5,
+      0,
+      5,
+      0
+     ],
+     "height": 9,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 12
+    },
+    "Sq.seg": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 46,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.seg_on": {
+     "border": [
+      16,
+      0,
+      16,
+      0
+     ],
+     "height": 31,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 33
+    },
+    "Sq.stop": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#2c2c2e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.stop_page": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#1c1c1e",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.subtab": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.toc": {
+     "border": 19,
+     "height": 39,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.toc_on": {
+     "border": 15,
+     "height": 31,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.tree": {
+     "border": 13,
+     "height": 27,
+     "on": "#2c2c2e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 27
+    },
+    "Sq.trough": {
+     "border": [
+      5,
+      0,
+      5,
+      0
+     ],
+     "height": 9,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 12
+    }
+   },
+   "file": "skin-dark@1.25x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     70,
+     50
+    ],
+    "accent-hover": [
+     0,
+     50,
+     70,
+     50
+    ],
+    "accent-page-dis": [
+     0,
+     100,
+     70,
+     50
+    ],
+    "accent-page-hover": [
+     0,
+     150,
+     70,
+     50
+    ],
+    "accent-page-pressed": [
+     0,
+     200,
+     70,
+     50
+    ],
+    "accent-page-rest": [
+     0,
+     250,
+     70,
+     50
+    ],
+    "accent-pressed": [
+     0,
+     300,
+     70,
+     50
+    ],
+    "accent-rest": [
+     0,
+     350,
+     70,
+     50
+    ],
+    "accentsmall-dis": [
+     0,
+     400,
+     58,
+     38
+    ],
+    "accentsmall-hover": [
+     0,
+     438,
+     58,
+     38
+    ],
+    "accentsmall-pressed": [
+     0,
+     476,
+     58,
+     38
+    ],
+    "accentsmall-rest": [
+     0,
+     514,
+     58,
+     38
+    ],
+    "button-dis": [
+     0,
+     552,
+     58,
+     38
+    ],
+    "button-hover": [
+     0,
+     590,
+     58,
+     38
+    ],
+    "button-pressed": [
+     0,
+     628,
+     58,
+     38
+    ],
+    "button-rest": [
+     0,
+     666,
+     58,
+     38
+    ],
+    "buttonpage-dis": [
+     0,
+     704,
+     58,
+     38
+    ],
+    "buttonpage-hover": [
+     0,
+     742,
+     58,
+     38
+    ],
+    "buttonpage-pressed": [
+     0,
+     780,
+     58,
+     38
+    ],
+    "buttonpage-rest": [
+     0,
+     818,
+     58,
+     38
+    ],
+    "buttonrun-dis": [
+     0,
+     856,
+     70,
+     50
+    ],
+    "buttonrun-hover": [
+     0,
+     906,
+     70,
+     50
+    ],
+    "buttonrun-pressed": [
+     0,
+     956,
+     70,
+     50
+    ],
+    "buttonrun-rest": [
+     0,
+     1006,
+     70,
+     50
+    ],
+    "buttonrunpage-dis": [
+     0,
+     1056,
+     70,
+     50
+    ],
+    "buttonrunpage-hover": [
+     0,
+     1106,
+     70,
+     50
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     1156,
+     70,
+     50
+    ],
+    "buttonrunpage-rest": [
+     0,
+     1206,
+     70,
+     50
+    ],
+    "card-rest": [
+     0,
+     1256,
+     172,
+     172
+    ],
+    "cta-dis": [
+     0,
+     1428,
+     58,
+     38
+    ],
+    "cta-hover": [
+     0,
+     1466,
+     58,
+     38
+    ],
+    "cta-pressed": [
+     0,
+     1504,
+     58,
+     38
+    ],
+    "cta-rest": [
+     0,
+     1542,
+     58,
+     38
+    ],
+    "ctapage-dis": [
+     0,
+     1580,
+     58,
+     38
+    ],
+    "ctapage-hover": [
+     0,
+     1618,
+     58,
+     38
+    ],
+    "ctapage-pressed": [
+     0,
+     1656,
+     58,
+     38
+    ],
+    "ctapage-rest": [
+     0,
+     1694,
+     58,
+     38
+    ],
+    "drop-rest": [
+     0,
+     1732,
+     146,
+     146
+    ],
+    "field-focus": [
+     0,
+     1878,
+     146,
+     146
+    ],
+    "field-rest": [
+     0,
+     2024,
+     146,
+     146
+    ],
+    "pbar": [
+     0,
+     2170,
+     131,
+     9
+    ],
+    "seg-on": [
+     0,
+     2179,
+     52,
+     31
+    ],
+    "seg-track": [
+     0,
+     2210,
+     66,
+     46
+    ],
+    "stop-dis": [
+     0,
+     2256,
+     70,
+     50
+    ],
+    "stop-hover": [
+     0,
+     2306,
+     70,
+     50
+    ],
+    "stop-page-dis": [
+     0,
+     2356,
+     70,
+     50
+    ],
+    "stop-page-hover": [
+     0,
+     2406,
+     70,
+     50
+    ],
+    "stop-page-pressed": [
+     0,
+     2456,
+     70,
+     50
+    ],
+    "stop-page-rest": [
+     0,
+     2506,
+     70,
+     50
+    ],
+    "stop-pressed": [
+     0,
+     2556,
+     70,
+     50
+    ],
+    "stop-rest": [
+     0,
+     2606,
+     70,
+     50
+    ],
+    "subtab": [
+     0,
+     2656,
+     58,
+     38
+    ],
+    "toc-on": [
+     0,
+     2694,
+     150,
+     150
+    ],
+    "toc-wrap": [
+     0,
+     2844,
+     158,
+     158
+    ],
+    "tree-rest": [
+     0,
+     3002,
+     146,
+     146
+    ],
+    "trough": [
+     0,
+     3148,
+     131,
+     9
+    ]
+   }
+  },
+  "dark@1.5": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#2c2c2e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.accent_page": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#1c1c1e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.accent_small": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#2c2c2e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.button": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#2c2c2e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.button_page": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#1c1c1e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.button_run": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#2c2c2e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.button_run_page": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#1c1c1e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.card": {
+     "border": 31,
+     "height": 63,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.cta": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#2c2c2e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.cta_page": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#1c1c1e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.drop": {
+     "border": 16,
+     "height": 33,
+     "on": "#2c2c2e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 33
+    },
+    "Sq.field": {
+     "border": 16,
+     "height": 33,
+     "on": "#2c2c2e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 33
+    },
+    "Sq.pbar": {
+     "border": [
+      6,
+      0,
+      6,
+      0
+     ],
+     "height": 10,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 13
+    },
+    "Sq.seg": {
+     "border": [
+      28,
+      0,
+      28,
+      0
+     ],
+     "height": 56,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 57
+    },
+    "Sq.seg_on": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.stop": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#2c2c2e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.stop_page": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#1c1c1e",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.subtab": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.toc": {
+     "border": 22,
+     "height": 45,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 45
+    },
+    "Sq.toc_on": {
+     "border": 19,
+     "height": 39,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.tree": {
+     "border": 16,
+     "height": 33,
+     "on": "#2c2c2e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 33
+    },
+    "Sq.trough": {
+     "border": [
+      6,
+      0,
+      6,
+      0
+     ],
+     "height": 10,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 13
+    }
+   },
+   "file": "skin-dark@1.5x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     84,
+     60
+    ],
+    "accent-hover": [
+     0,
+     60,
+     84,
+     60
+    ],
+    "accent-page-dis": [
+     0,
+     120,
+     84,
+     60
+    ],
+    "accent-page-hover": [
+     0,
+     180,
+     84,
+     60
+    ],
+    "accent-page-pressed": [
+     0,
+     240,
+     84,
+     60
+    ],
+    "accent-page-rest": [
+     0,
+     300,
+     84,
+     60
+    ],
+    "accent-pressed": [
+     0,
+     360,
+     84,
+     60
+    ],
+    "accent-rest": [
+     0,
+     420,
+     84,
+     60
+    ],
+    "accentsmall-dis": [
+     0,
+     480,
+     70,
+     45
+    ],
+    "accentsmall-hover": [
+     0,
+     525,
+     70,
+     45
+    ],
+    "accentsmall-pressed": [
+     0,
+     570,
+     70,
+     45
+    ],
+    "accentsmall-rest": [
+     0,
+     615,
+     70,
+     45
+    ],
+    "button-dis": [
+     0,
+     660,
+     70,
+     45
+    ],
+    "button-hover": [
+     0,
+     705,
+     70,
+     45
+    ],
+    "button-pressed": [
+     0,
+     750,
+     70,
+     45
+    ],
+    "button-rest": [
+     0,
+     795,
+     70,
+     45
+    ],
+    "buttonpage-dis": [
+     0,
+     840,
+     70,
+     45
+    ],
+    "buttonpage-hover": [
+     0,
+     885,
+     70,
+     45
+    ],
+    "buttonpage-pressed": [
+     0,
+     930,
+     70,
+     45
+    ],
+    "buttonpage-rest": [
+     0,
+     975,
+     70,
+     45
+    ],
+    "buttonrun-dis": [
+     0,
+     1020,
+     84,
+     60
+    ],
+    "buttonrun-hover": [
+     0,
+     1080,
+     84,
+     60
+    ],
+    "buttonrun-pressed": [
+     0,
+     1140,
+     84,
+     60
+    ],
+    "buttonrun-rest": [
+     0,
+     1200,
+     84,
+     60
+    ],
+    "buttonrunpage-dis": [
+     0,
+     1260,
+     84,
+     60
+    ],
+    "buttonrunpage-hover": [
+     0,
+     1320,
+     84,
+     60
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     1380,
+     84,
+     60
+    ],
+    "buttonrunpage-rest": [
+     0,
+     1440,
+     84,
+     60
+    ],
+    "card-rest": [
+     0,
+     1500,
+     206,
+     206
+    ],
+    "cta-dis": [
+     0,
+     1706,
+     70,
+     45
+    ],
+    "cta-hover": [
+     0,
+     1751,
+     70,
+     45
+    ],
+    "cta-pressed": [
+     0,
+     1796,
+     70,
+     45
+    ],
+    "cta-rest": [
+     0,
+     1841,
+     70,
+     45
+    ],
+    "ctapage-dis": [
+     0,
+     1886,
+     70,
+     45
+    ],
+    "ctapage-hover": [
+     0,
+     1931,
+     70,
+     45
+    ],
+    "ctapage-pressed": [
+     0,
+     1976,
+     70,
+     45
+    ],
+    "ctapage-rest": [
+     0,
+     2021,
+     70,
+     45
+    ],
+    "drop-rest": [
+     0,
+     2066,
+     176,
+     176
+    ],
+    "field-focus": [
+     0,
+     2242,
+     176,
+     176
+    ],
+    "field-rest": [
+     0,
+     2418,
+     176,
+     176
+    ],
+    "pbar": [
+     0,
+     2594,
+     156,
+     10
+    ],
+    "seg-on": [
+     0,
+     2604,
+     62,
+     38
+    ],
+    "seg-track": [
+     0,
+     2642,
+     80,
+     56
+    ],
+    "stop-dis": [
+     0,
+     2698,
+     84,
+     60
+    ],
+    "stop-hover": [
+     0,
+     2758,
+     84,
+     60
+    ],
+    "stop-page-dis": [
+     0,
+     2818,
+     84,
+     60
+    ],
+    "stop-page-hover": [
+     0,
+     2878,
+     84,
+     60
+    ],
+    "stop-page-pressed": [
+     0,
+     2938,
+     84,
+     60
+    ],
+    "stop-page-rest": [
+     0,
+     2998,
+     84,
+     60
+    ],
+    "stop-pressed": [
+     0,
+     3058,
+     84,
+     60
+    ],
+    "stop-rest": [
+     0,
+     3118,
+     84,
+     60
+    ],
+    "subtab": [
+     0,
+     3178,
+     70,
+     45
+    ],
+    "toc-on": [
+     0,
+     3223,
+     182,
+     182
+    ],
+    "toc-wrap": [
+     0,
+     3405,
+     188,
+     188
+    ],
+    "tree-rest": [
+     0,
+     3593,
+     176,
+     176
+    ],
+    "trough": [
+     0,
+     3769,
+     156,
+     10
+    ]
+   }
+  },
+  "dark@1.75": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#2c2c2e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.accent_page": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#1c1c1e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.accent_small": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#2c2c2e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.button": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#2c2c2e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.button_page": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#1c1c1e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.button_run": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#2c2c2e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.button_run_page": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#1c1c1e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.card": {
+     "border": 36,
+     "height": 73,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 73
+    },
+    "Sq.cta": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#2c2c2e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.cta_page": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#1c1c1e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.drop": {
+     "border": 19,
+     "height": 39,
+     "on": "#2c2c2e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.field": {
+     "border": 19,
+     "height": 39,
+     "on": "#2c2c2e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.pbar": {
+     "border": [
+      7,
+      0,
+      7,
+      0
+     ],
+     "height": 12,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 15
+    },
+    "Sq.seg": {
+     "border": [
+      33,
+      0,
+      33,
+      0
+     ],
+     "height": 65,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 67
+    },
+    "Sq.seg_on": {
+     "border": [
+      22,
+      0,
+      22,
+      0
+     ],
+     "height": 44,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 45
+    },
+    "Sq.stop": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#2c2c2e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.stop_page": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#1c1c1e",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.subtab": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.toc": {
+     "border": 25,
+     "height": 51,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.toc_on": {
+     "border": 23,
+     "height": 47,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.tree": {
+     "border": 19,
+     "height": 39,
+     "on": "#2c2c2e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.trough": {
+     "border": [
+      7,
+      0,
+      7,
+      0
+     ],
+     "height": 12,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 15
+    }
+   },
+   "file": "skin-dark@1.75x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     98,
+     70
+    ],
+    "accent-hover": [
+     0,
+     70,
+     98,
+     70
+    ],
+    "accent-page-dis": [
+     0,
+     140,
+     98,
+     70
+    ],
+    "accent-page-hover": [
+     0,
+     210,
+     98,
+     70
+    ],
+    "accent-page-pressed": [
+     0,
+     280,
+     98,
+     70
+    ],
+    "accent-page-rest": [
+     0,
+     350,
+     98,
+     70
+    ],
+    "accent-pressed": [
+     0,
+     420,
+     98,
+     70
+    ],
+    "accent-rest": [
+     0,
+     490,
+     98,
+     70
+    ],
+    "accentsmall-dis": [
+     0,
+     560,
+     80,
+     52
+    ],
+    "accentsmall-hover": [
+     0,
+     612,
+     80,
+     52
+    ],
+    "accentsmall-pressed": [
+     0,
+     664,
+     80,
+     52
+    ],
+    "accentsmall-rest": [
+     0,
+     716,
+     80,
+     52
+    ],
+    "button-dis": [
+     0,
+     768,
+     80,
+     52
+    ],
+    "button-hover": [
+     0,
+     820,
+     80,
+     52
+    ],
+    "button-pressed": [
+     0,
+     872,
+     80,
+     52
+    ],
+    "button-rest": [
+     0,
+     924,
+     80,
+     52
+    ],
+    "buttonpage-dis": [
+     0,
+     976,
+     80,
+     52
+    ],
+    "buttonpage-hover": [
+     0,
+     1028,
+     80,
+     52
+    ],
+    "buttonpage-pressed": [
+     0,
+     1080,
+     80,
+     52
+    ],
+    "buttonpage-rest": [
+     0,
+     1132,
+     80,
+     52
+    ],
+    "buttonrun-dis": [
+     0,
+     1184,
+     98,
+     70
+    ],
+    "buttonrun-hover": [
+     0,
+     1254,
+     98,
+     70
+    ],
+    "buttonrun-pressed": [
+     0,
+     1324,
+     98,
+     70
+    ],
+    "buttonrun-rest": [
+     0,
+     1394,
+     98,
+     70
+    ],
+    "buttonrunpage-dis": [
+     0,
+     1464,
+     98,
+     70
+    ],
+    "buttonrunpage-hover": [
+     0,
+     1534,
+     98,
+     70
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     1604,
+     98,
+     70
+    ],
+    "buttonrunpage-rest": [
+     0,
+     1674,
+     98,
+     70
+    ],
+    "card-rest": [
+     0,
+     1744,
+     240,
+     240
+    ],
+    "cta-dis": [
+     0,
+     1984,
+     80,
+     52
+    ],
+    "cta-hover": [
+     0,
+     2036,
+     80,
+     52
+    ],
+    "cta-pressed": [
+     0,
+     2088,
+     80,
+     52
+    ],
+    "cta-rest": [
+     0,
+     2140,
+     80,
+     52
+    ],
+    "ctapage-dis": [
+     0,
+     2192,
+     80,
+     52
+    ],
+    "ctapage-hover": [
+     0,
+     2244,
+     80,
+     52
+    ],
+    "ctapage-pressed": [
+     0,
+     2296,
+     80,
+     52
+    ],
+    "ctapage-rest": [
+     0,
+     2348,
+     80,
+     52
+    ],
+    "drop-rest": [
+     0,
+     2400,
+     206,
+     206
+    ],
+    "field-focus": [
+     0,
+     2606,
+     206,
+     206
+    ],
+    "field-rest": [
+     0,
+     2812,
+     206,
+     206
+    ],
+    "pbar": [
+     0,
+     3018,
+     182,
+     12
+    ],
+    "seg-on": [
+     0,
+     3030,
+     72,
+     44
+    ],
+    "seg-track": [
+     0,
+     3074,
+     94,
+     65
+    ],
+    "stop-dis": [
+     0,
+     3139,
+     98,
+     70
+    ],
+    "stop-hover": [
+     0,
+     3209,
+     98,
+     70
+    ],
+    "stop-page-dis": [
+     0,
+     3279,
+     98,
+     70
+    ],
+    "stop-page-hover": [
+     0,
+     3349,
+     98,
+     70
+    ],
+    "stop-page-pressed": [
+     0,
+     3419,
+     98,
+     70
+    ],
+    "stop-page-rest": [
+     0,
+     3489,
+     98,
+     70
+    ],
+    "stop-pressed": [
+     0,
+     3559,
+     98,
+     70
+    ],
+    "stop-rest": [
+     0,
+     3629,
+     98,
+     70
+    ],
+    "subtab": [
+     0,
+     3699,
+     80,
+     52
+    ],
+    "toc-on": [
+     0,
+     3751,
+     214,
+     214
+    ],
+    "toc-wrap": [
+     0,
+     3965,
+     218,
+     218
+    ],
+    "tree-rest": [
+     0,
+     4183,
+     206,
+     206
+    ],
+    "trough": [
+     0,
+     4389,
+     182,
+     12
+    ]
+   }
+  },
+  "dark@2": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#2c2c2e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.accent_page": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#1c1c1e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.accent_small": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#2c2c2e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.button": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#2c2c2e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.button_page": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#1c1c1e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.button_run": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#2c2c2e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.button_run_page": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#1c1c1e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.card": {
+     "border": 41,
+     "height": 83,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 83
+    },
+    "Sq.cta": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#2c2c2e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.cta_page": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#1c1c1e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.drop": {
+     "border": 21,
+     "height": 43,
+     "on": "#2c2c2e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 43
+    },
+    "Sq.field": {
+     "border": 21,
+     "height": 43,
+     "on": "#2c2c2e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 43
+    },
+    "Sq.pbar": {
+     "border": [
+      8,
+      0,
+      8,
+      0
+     ],
+     "height": 14,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 17
+    },
+    "Sq.seg": {
+     "border": [
+      37,
+      0,
+      37,
+      0
+     ],
+     "height": 74,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 75
+    },
+    "Sq.seg_on": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.stop": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#2c2c2e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.stop_page": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#1c1c1e",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.subtab": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.toc": {
+     "border": 29,
+     "height": 59,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 59
+    },
+    "Sq.toc_on": {
+     "border": 25,
+     "height": 51,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.tree": {
+     "border": 21,
+     "height": 43,
+     "on": "#2c2c2e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 43
+    },
+    "Sq.trough": {
+     "border": [
+      8,
+      0,
+      8,
+      0
+     ],
+     "height": 14,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 17
+    }
+   },
+   "file": "skin-dark@2x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     112,
+     80
+    ],
+    "accent-hover": [
+     0,
+     80,
+     112,
+     80
+    ],
+    "accent-page-dis": [
+     0,
+     160,
+     112,
+     80
+    ],
+    "accent-page-hover": [
+     0,
+     240,
+     112,
+     80
+    ],
+    "accent-page-pressed": [
+     0,
+     320,
+     112,
+     80
+    ],
+    "accent-page-rest": [
+     0,
+     400,
+     112,
+     80
+    ],
+    "accent-pressed": [
+     0,
+     480,
+     112,
+     80
+    ],
+    "accent-rest": [
+     0,
+     560,
+     112,
+     80
+    ],
+    "accentsmall-dis": [
+     0,
+     640,
+     92,
+     60
+    ],
+    "accentsmall-hover": [
+     0,
+     700,
+     92,
+     60
+    ],
+    "accentsmall-pressed": [
+     0,
+     760,
+     92,
+     60
+    ],
+    "accentsmall-rest": [
+     0,
+     820,
+     92,
+     60
+    ],
+    "button-dis": [
+     0,
+     880,
+     92,
+     60
+    ],
+    "button-hover": [
+     0,
+     940,
+     92,
+     60
+    ],
+    "button-pressed": [
+     0,
+     1000,
+     92,
+     60
+    ],
+    "button-rest": [
+     0,
+     1060,
+     92,
+     60
+    ],
+    "buttonpage-dis": [
+     0,
+     1120,
+     92,
+     60
+    ],
+    "buttonpage-hover": [
+     0,
+     1180,
+     92,
+     60
+    ],
+    "buttonpage-pressed": [
+     0,
+     1240,
+     92,
+     60
+    ],
+    "buttonpage-rest": [
+     0,
+     1300,
+     92,
+     60
+    ],
+    "buttonrun-dis": [
+     0,
+     1360,
+     112,
+     80
+    ],
+    "buttonrun-hover": [
+     0,
+     1440,
+     112,
+     80
+    ],
+    "buttonrun-pressed": [
+     0,
+     1520,
+     112,
+     80
+    ],
+    "buttonrun-rest": [
+     0,
+     1600,
+     112,
+     80
+    ],
+    "buttonrunpage-dis": [
+     0,
+     1680,
+     112,
+     80
+    ],
+    "buttonrunpage-hover": [
+     0,
+     1760,
+     112,
+     80
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     1840,
+     112,
+     80
+    ],
+    "buttonrunpage-rest": [
+     0,
+     1920,
+     112,
+     80
+    ],
+    "card-rest": [
+     0,
+     2000,
+     274,
+     274
+    ],
+    "cta-dis": [
+     0,
+     2274,
+     92,
+     60
+    ],
+    "cta-hover": [
+     0,
+     2334,
+     92,
+     60
+    ],
+    "cta-pressed": [
+     0,
+     2394,
+     92,
+     60
+    ],
+    "cta-rest": [
+     0,
+     2454,
+     92,
+     60
+    ],
+    "ctapage-dis": [
+     0,
+     2514,
+     92,
+     60
+    ],
+    "ctapage-hover": [
+     0,
+     2574,
+     92,
+     60
+    ],
+    "ctapage-pressed": [
+     0,
+     2634,
+     92,
+     60
+    ],
+    "ctapage-rest": [
+     0,
+     2694,
+     92,
+     60
+    ],
+    "drop-rest": [
+     0,
+     2754,
+     234,
+     234
+    ],
+    "field-focus": [
+     0,
+     2988,
+     234,
+     234
+    ],
+    "field-rest": [
+     0,
+     3222,
+     234,
+     234
+    ],
+    "pbar": [
+     0,
+     3456,
+     208,
+     14
+    ],
+    "seg-on": [
+     0,
+     3470,
+     82,
+     50
+    ],
+    "seg-track": [
+     0,
+     3520,
+     106,
+     74
+    ],
+    "stop-dis": [
+     0,
+     3594,
+     112,
+     80
+    ],
+    "stop-hover": [
+     0,
+     3674,
+     112,
+     80
+    ],
+    "stop-page-dis": [
+     0,
+     3754,
+     112,
+     80
+    ],
+    "stop-page-hover": [
+     0,
+     3834,
+     112,
+     80
+    ],
+    "stop-page-pressed": [
+     0,
+     3914,
+     112,
+     80
+    ],
+    "stop-page-rest": [
+     0,
+     3994,
+     112,
+     80
+    ],
+    "stop-pressed": [
+     0,
+     4074,
+     112,
+     80
+    ],
+    "stop-rest": [
+     0,
+     4154,
+     112,
+     80
+    ],
+    "subtab": [
+     0,
+     4234,
+     92,
+     60
+    ],
+    "toc-on": [
+     0,
+     4294,
+     242,
+     242
+    ],
+    "toc-wrap": [
+     0,
+     4536,
+     250,
+     250
+    ],
+    "tree-rest": [
+     0,
+     4786,
+     234,
+     234
+    ],
+    "trough": [
+     0,
+     5020,
+     208,
+     14
+    ]
+   }
+  },
+  "dark@2.25": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#2c2c2e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.accent_page": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#1c1c1e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.accent_small": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#2c2c2e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.button": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#2c2c2e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.button_page": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#1c1c1e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.button_run": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#2c2c2e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.button_run_page": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#1c1c1e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.card": {
+     "border": 46,
+     "height": 93,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 93
+    },
+    "Sq.cta": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#2c2c2e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.cta_page": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#1c1c1e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.drop": {
+     "border": 23,
+     "height": 47,
+     "on": "#2c2c2e",
+     "padding": 11,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.field": {
+     "border": 23,
+     "height": 47,
+     "on": "#2c2c2e",
+     "padding": 11,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.pbar": {
+     "border": [
+      9,
+      0,
+      9,
+      0
+     ],
+     "height": 16,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 19
+    },
+    "Sq.seg": {
+     "border": [
+      42,
+      0,
+      42,
+      0
+     ],
+     "height": 83,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 85
+    },
+    "Sq.seg_on": {
+     "border": [
+      28,
+      0,
+      28,
+      0
+     ],
+     "height": 56,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 57
+    },
+    "Sq.stop": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#2c2c2e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.stop_page": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#1c1c1e",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.subtab": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.toc": {
+     "border": 33,
+     "height": 67,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 67
+    },
+    "Sq.toc_on": {
+     "border": 27,
+     "height": 55,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 55
+    },
+    "Sq.tree": {
+     "border": 23,
+     "height": 47,
+     "on": "#2c2c2e",
+     "padding": 11,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.trough": {
+     "border": [
+      9,
+      0,
+      9,
+      0
+     ],
+     "height": 16,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 19
+    }
+   },
+   "file": "skin-dark@2.25x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     126,
+     90
+    ],
+    "accent-hover": [
+     0,
+     90,
+     126,
+     90
+    ],
+    "accent-page-dis": [
+     0,
+     180,
+     126,
+     90
+    ],
+    "accent-page-hover": [
+     0,
+     270,
+     126,
+     90
+    ],
+    "accent-page-pressed": [
+     0,
+     360,
+     126,
+     90
+    ],
+    "accent-page-rest": [
+     0,
+     450,
+     126,
+     90
+    ],
+    "accent-pressed": [
+     0,
+     540,
+     126,
+     90
+    ],
+    "accent-rest": [
+     0,
+     630,
+     126,
+     90
+    ],
+    "accentsmall-dis": [
+     0,
+     720,
+     104,
+     68
+    ],
+    "accentsmall-hover": [
+     0,
+     788,
+     104,
+     68
+    ],
+    "accentsmall-pressed": [
+     0,
+     856,
+     104,
+     68
+    ],
+    "accentsmall-rest": [
+     0,
+     924,
+     104,
+     68
+    ],
+    "button-dis": [
+     0,
+     992,
+     104,
+     68
+    ],
+    "button-hover": [
+     0,
+     1060,
+     104,
+     68
+    ],
+    "button-pressed": [
+     0,
+     1128,
+     104,
+     68
+    ],
+    "button-rest": [
+     0,
+     1196,
+     104,
+     68
+    ],
+    "buttonpage-dis": [
+     0,
+     1264,
+     104,
+     68
+    ],
+    "buttonpage-hover": [
+     0,
+     1332,
+     104,
+     68
+    ],
+    "buttonpage-pressed": [
+     0,
+     1400,
+     104,
+     68
+    ],
+    "buttonpage-rest": [
+     0,
+     1468,
+     104,
+     68
+    ],
+    "buttonrun-dis": [
+     0,
+     1536,
+     126,
+     90
+    ],
+    "buttonrun-hover": [
+     0,
+     1626,
+     126,
+     90
+    ],
+    "buttonrun-pressed": [
+     0,
+     1716,
+     126,
+     90
+    ],
+    "buttonrun-rest": [
+     0,
+     1806,
+     126,
+     90
+    ],
+    "buttonrunpage-dis": [
+     0,
+     1896,
+     126,
+     90
+    ],
+    "buttonrunpage-hover": [
+     0,
+     1986,
+     126,
+     90
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     2076,
+     126,
+     90
+    ],
+    "buttonrunpage-rest": [
+     0,
+     2166,
+     126,
+     90
+    ],
+    "card-rest": [
+     0,
+     2256,
+     308,
+     308
+    ],
+    "cta-dis": [
+     0,
+     2564,
+     104,
+     68
+    ],
+    "cta-hover": [
+     0,
+     2632,
+     104,
+     68
+    ],
+    "cta-pressed": [
+     0,
+     2700,
+     104,
+     68
+    ],
+    "cta-rest": [
+     0,
+     2768,
+     104,
+     68
+    ],
+    "ctapage-dis": [
+     0,
+     2836,
+     104,
+     68
+    ],
+    "ctapage-hover": [
+     0,
+     2904,
+     104,
+     68
+    ],
+    "ctapage-pressed": [
+     0,
+     2972,
+     104,
+     68
+    ],
+    "ctapage-rest": [
+     0,
+     3040,
+     104,
+     68
+    ],
+    "drop-rest": [
+     0,
+     3108,
+     262,
+     262
+    ],
+    "field-focus": [
+     0,
+     3370,
+     262,
+     262
+    ],
+    "field-rest": [
+     0,
+     3632,
+     262,
+     262
+    ],
+    "pbar": [
+     0,
+     3894,
+     234,
+     16
+    ],
+    "seg-on": [
+     0,
+     3910,
+     92,
+     56
+    ],
+    "seg-track": [
+     0,
+     3966,
+     120,
+     83
+    ],
+    "stop-dis": [
+     0,
+     4049,
+     126,
+     90
+    ],
+    "stop-hover": [
+     0,
+     4139,
+     126,
+     90
+    ],
+    "stop-page-dis": [
+     0,
+     4229,
+     126,
+     90
+    ],
+    "stop-page-hover": [
+     0,
+     4319,
+     126,
+     90
+    ],
+    "stop-page-pressed": [
+     0,
+     4409,
+     126,
+     90
+    ],
+    "stop-page-rest": [
+     0,
+     4499,
+     126,
+     90
+    ],
+    "stop-pressed": [
+     0,
+     4589,
+     126,
+     90
+    ],
+    "stop-rest": [
+     0,
+     4679,
+     126,
+     90
+    ],
+    "subtab": [
+     0,
+     4769,
+     104,
+     68
+    ],
+    "toc-on": [
+     0,
+     4837,
+     270,
+     270
+    ],
+    "toc-wrap": [
+     0,
+     5107,
+     282,
+     282
+    ],
+    "tree-rest": [
+     0,
+     5389,
+     262,
+     262
+    ],
+    "trough": [
+     0,
+     5651,
+     234,
+     16
+    ]
+   }
+  },
+  "dark@2.5": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#2c2c2e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.accent_page": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#1c1c1e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.accent_small": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#2c2c2e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.button": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#2c2c2e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.button_page": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#1c1c1e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.button_run": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#2c2c2e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.button_run_page": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#1c1c1e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.card": {
+     "border": 51,
+     "height": 103,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 103
+    },
+    "Sq.cta": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#2c2c2e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.cta_page": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#1c1c1e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.drop": {
+     "border": 26,
+     "height": 53,
+     "on": "#2c2c2e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.field": {
+     "border": 26,
+     "height": 53,
+     "on": "#2c2c2e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.pbar": {
+     "border": [
+      10,
+      0,
+      10,
+      0
+     ],
+     "height": 18,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 21
+    },
+    "Sq.seg": {
+     "border": [
+      46,
+      0,
+      46,
+      0
+     ],
+     "height": 92,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 93
+    },
+    "Sq.seg_on": {
+     "border": [
+      31,
+      0,
+      31,
+      0
+     ],
+     "height": 62,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.stop": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#2c2c2e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.stop_page": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#1c1c1e",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.subtab": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.toc": {
+     "border": 36,
+     "height": 73,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 73
+    },
+    "Sq.toc_on": {
+     "border": 31,
+     "height": 63,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.tree": {
+     "border": 26,
+     "height": 53,
+     "on": "#2c2c2e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.trough": {
+     "border": [
+      10,
+      0,
+      10,
+      0
+     ],
+     "height": 18,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 21
+    }
+   },
+   "file": "skin-dark@2.5x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     140,
+     100
+    ],
+    "accent-hover": [
+     0,
+     100,
+     140,
+     100
+    ],
+    "accent-page-dis": [
+     0,
+     200,
+     140,
+     100
+    ],
+    "accent-page-hover": [
+     0,
+     300,
+     140,
+     100
+    ],
+    "accent-page-pressed": [
+     0,
+     400,
+     140,
+     100
+    ],
+    "accent-page-rest": [
+     0,
+     500,
+     140,
+     100
+    ],
+    "accent-pressed": [
+     0,
+     600,
+     140,
+     100
+    ],
+    "accent-rest": [
+     0,
+     700,
+     140,
+     100
+    ],
+    "accentsmall-dis": [
+     0,
+     800,
+     116,
+     75
+    ],
+    "accentsmall-hover": [
+     0,
+     875,
+     116,
+     75
+    ],
+    "accentsmall-pressed": [
+     0,
+     950,
+     116,
+     75
+    ],
+    "accentsmall-rest": [
+     0,
+     1025,
+     116,
+     75
+    ],
+    "button-dis": [
+     0,
+     1100,
+     116,
+     75
+    ],
+    "button-hover": [
+     0,
+     1175,
+     116,
+     75
+    ],
+    "button-pressed": [
+     0,
+     1250,
+     116,
+     75
+    ],
+    "button-rest": [
+     0,
+     1325,
+     116,
+     75
+    ],
+    "buttonpage-dis": [
+     0,
+     1400,
+     116,
+     75
+    ],
+    "buttonpage-hover": [
+     0,
+     1475,
+     116,
+     75
+    ],
+    "buttonpage-pressed": [
+     0,
+     1550,
+     116,
+     75
+    ],
+    "buttonpage-rest": [
+     0,
+     1625,
+     116,
+     75
+    ],
+    "buttonrun-dis": [
+     0,
+     1700,
+     140,
+     100
+    ],
+    "buttonrun-hover": [
+     0,
+     1800,
+     140,
+     100
+    ],
+    "buttonrun-pressed": [
+     0,
+     1900,
+     140,
+     100
+    ],
+    "buttonrun-rest": [
+     0,
+     2000,
+     140,
+     100
+    ],
+    "buttonrunpage-dis": [
+     0,
+     2100,
+     140,
+     100
+    ],
+    "buttonrunpage-hover": [
+     0,
+     2200,
+     140,
+     100
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     2300,
+     140,
+     100
+    ],
+    "buttonrunpage-rest": [
+     0,
+     2400,
+     140,
+     100
+    ],
+    "card-rest": [
+     0,
+     2500,
+     342,
+     342
+    ],
+    "cta-dis": [
+     0,
+     2842,
+     116,
+     75
+    ],
+    "cta-hover": [
+     0,
+     2917,
+     116,
+     75
+    ],
+    "cta-pressed": [
+     0,
+     2992,
+     116,
+     75
+    ],
+    "cta-rest": [
+     0,
+     3067,
+     116,
+     75
+    ],
+    "ctapage-dis": [
+     0,
+     3142,
+     116,
+     75
+    ],
+    "ctapage-hover": [
+     0,
+     3217,
+     116,
+     75
+    ],
+    "ctapage-pressed": [
+     0,
+     3292,
+     116,
+     75
+    ],
+    "ctapage-rest": [
+     0,
+     3367,
+     116,
+     75
+    ],
+    "drop-rest": [
+     0,
+     3442,
+     292,
+     292
+    ],
+    "field-focus": [
+     0,
+     3734,
+     292,
+     292
+    ],
+    "field-rest": [
+     0,
+     4026,
+     292,
+     292
+    ],
+    "pbar": [
+     0,
+     4318,
+     260,
+     18
+    ],
+    "seg-on": [
+     0,
+     4336,
+     102,
+     62
+    ],
+    "seg-track": [
+     0,
+     4398,
+     132,
+     92
+    ],
+    "stop-dis": [
+     0,
+     4490,
+     140,
+     100
+    ],
+    "stop-hover": [
+     0,
+     4590,
+     140,
+     100
+    ],
+    "stop-page-dis": [
+     0,
+     4690,
+     140,
+     100
+    ],
+    "stop-page-hover": [
+     0,
+     4790,
+     140,
+     100
+    ],
+    "stop-page-pressed": [
+     0,
+     4890,
+     140,
+     100
+    ],
+    "stop-page-rest": [
+     0,
+     4990,
+     140,
+     100
+    ],
+    "stop-pressed": [
+     0,
+     5090,
+     140,
+     100
+    ],
+    "stop-rest": [
+     0,
+     5190,
+     140,
+     100
+    ],
+    "subtab": [
+     0,
+     5290,
+     116,
+     75
+    ],
+    "toc-on": [
+     0,
+     5365,
+     302,
+     302
+    ],
+    "toc-wrap": [
+     0,
+     5667,
+     312,
+     312
+    ],
+    "tree-rest": [
+     0,
+     5979,
+     292,
+     292
+    ],
+    "trough": [
+     0,
+     6271,
+     260,
+     18
+    ]
+   }
+  },
+  "dark@3": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#2c2c2e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.accent_page": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#1c1c1e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.accent_small": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#2c2c2e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.button": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#2c2c2e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.button_page": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#1c1c1e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.button_run": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#2c2c2e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.button_run_page": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#1c1c1e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.card": {
+     "border": 61,
+     "height": 123,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 123
+    },
+    "Sq.cta": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#2c2c2e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.cta_page": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#1c1c1e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.drop": {
+     "border": 31,
+     "height": 63,
+     "on": "#2c2c2e",
+     "padding": 15,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.field": {
+     "border": 31,
+     "height": 63,
+     "on": "#2c2c2e",
+     "padding": 15,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.pbar": {
+     "border": [
+      11,
+      0,
+      11,
+      0
+     ],
+     "height": 21,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 24
+    },
+    "Sq.seg": {
+     "border": [
+      56,
+      0,
+      56,
+      0
+     ],
+     "height": 111,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 113
+    },
+    "Sq.seg_on": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.stop": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#2c2c2e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.stop_page": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#1c1c1e",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.subtab": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#1c1c1e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.toc": {
+     "border": 43,
+     "height": 87,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 87
+    },
+    "Sq.toc_on": {
+     "border": 37,
+     "height": 75,
+     "on": "#3a3a3c",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 75
+    },
+    "Sq.tree": {
+     "border": 31,
+     "height": 63,
+     "on": "#2c2c2e",
+     "padding": 15,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.trough": {
+     "border": [
+      11,
+      0,
+      11,
+      0
+     ],
+     "height": 21,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 24
+    }
+   },
+   "file": "skin-dark@3x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     168,
+     120
+    ],
+    "accent-hover": [
+     0,
+     120,
+     168,
+     120
+    ],
+    "accent-page-dis": [
+     0,
+     240,
+     168,
+     120
+    ],
+    "accent-page-hover": [
+     0,
+     360,
+     168,
+     120
+    ],
+    "accent-page-pressed": [
+     0,
+     480,
+     168,
+     120
+    ],
+    "accent-page-rest": [
+     0,
+     600,
+     168,
+     120
+    ],
+    "accent-pressed": [
+     0,
+     720,
+     168,
+     120
+    ],
+    "accent-rest": [
+     0,
+     840,
+     168,
+     120
+    ],
+    "accentsmall-dis": [
+     0,
+     960,
+     138,
+     90
+    ],
+    "accentsmall-hover": [
+     0,
+     1050,
+     138,
+     90
+    ],
+    "accentsmall-pressed": [
+     0,
+     1140,
+     138,
+     90
+    ],
+    "accentsmall-rest": [
+     0,
+     1230,
+     138,
+     90
+    ],
+    "button-dis": [
+     0,
+     1320,
+     138,
+     90
+    ],
+    "button-hover": [
+     0,
+     1410,
+     138,
+     90
+    ],
+    "button-pressed": [
+     0,
+     1500,
+     138,
+     90
+    ],
+    "button-rest": [
+     0,
+     1590,
+     138,
+     90
+    ],
+    "buttonpage-dis": [
+     0,
+     1680,
+     138,
+     90
+    ],
+    "buttonpage-hover": [
+     0,
+     1770,
+     138,
+     90
+    ],
+    "buttonpage-pressed": [
+     0,
+     1860,
+     138,
+     90
+    ],
+    "buttonpage-rest": [
+     0,
+     1950,
+     138,
+     90
+    ],
+    "buttonrun-dis": [
+     0,
+     2040,
+     168,
+     120
+    ],
+    "buttonrun-hover": [
+     0,
+     2160,
+     168,
+     120
+    ],
+    "buttonrun-pressed": [
+     0,
+     2280,
+     168,
+     120
+    ],
+    "buttonrun-rest": [
+     0,
+     2400,
+     168,
+     120
+    ],
+    "buttonrunpage-dis": [
+     0,
+     2520,
+     168,
+     120
+    ],
+    "buttonrunpage-hover": [
+     0,
+     2640,
+     168,
+     120
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     2760,
+     168,
+     120
+    ],
+    "buttonrunpage-rest": [
+     0,
+     2880,
+     168,
+     120
+    ],
+    "card-rest": [
+     0,
+     3000,
+     410,
+     410
+    ],
+    "cta-dis": [
+     0,
+     3410,
+     138,
+     90
+    ],
+    "cta-hover": [
+     0,
+     3500,
+     138,
+     90
+    ],
+    "cta-pressed": [
+     0,
+     3590,
+     138,
+     90
+    ],
+    "cta-rest": [
+     0,
+     3680,
+     138,
+     90
+    ],
+    "ctapage-dis": [
+     0,
+     3770,
+     138,
+     90
+    ],
+    "ctapage-hover": [
+     0,
+     3860,
+     138,
+     90
+    ],
+    "ctapage-pressed": [
+     0,
+     3950,
+     138,
+     90
+    ],
+    "ctapage-rest": [
+     0,
+     4040,
+     138,
+     90
+    ],
+    "drop-rest": [
+     0,
+     4130,
+     350,
+     350
+    ],
+    "field-focus": [
+     0,
+     4480,
+     350,
+     350
+    ],
+    "field-rest": [
+     0,
+     4830,
+     350,
+     350
+    ],
+    "pbar": [
+     0,
+     5180,
+     311,
+     21
+    ],
+    "seg-on": [
+     0,
+     5201,
+     124,
+     75
+    ],
+    "seg-track": [
+     0,
+     5276,
+     160,
+     111
+    ],
+    "stop-dis": [
+     0,
+     5387,
+     168,
+     120
+    ],
+    "stop-hover": [
+     0,
+     5507,
+     168,
+     120
+    ],
+    "stop-page-dis": [
+     0,
+     5627,
+     168,
+     120
+    ],
+    "stop-page-hover": [
+     0,
+     5747,
+     168,
+     120
+    ],
+    "stop-page-pressed": [
+     0,
+     5867,
+     168,
+     120
+    ],
+    "stop-page-rest": [
+     0,
+     5987,
+     168,
+     120
+    ],
+    "stop-pressed": [
+     0,
+     6107,
+     168,
+     120
+    ],
+    "stop-rest": [
+     0,
+     6227,
+     168,
+     120
+    ],
+    "subtab": [
+     0,
+     6347,
+     138,
+     90
+    ],
+    "toc-on": [
+     0,
+     6437,
+     362,
+     362
+    ],
+    "toc-wrap": [
+     0,
+     6799,
+     374,
+     374
+    ],
+    "tree-rest": [
+     0,
+     7173,
+     350,
+     350
+    ],
+    "trough": [
+     0,
+     7523,
+     311,
+     21
+    ]
+   }
+  },
+  "light@1": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#ffffff",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.accent_page": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#f5f5f7",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.accent_small": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#ffffff",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.button": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#ffffff",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.button_page": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#f5f5f7",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.button_run": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#ffffff",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.button_run_page": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#f5f5f7",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.card": {
+     "border": 21,
+     "height": 43,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 43
+    },
+    "Sq.cta": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#ffffff",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.cta_page": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#f5f5f7",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.drop": {
+     "border": 11,
+     "height": 23,
+     "on": "#ffffff",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 23
+    },
+    "Sq.field": {
+     "border": 11,
+     "height": 23,
+     "on": "#ffffff",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 23
+    },
+    "Sq.pbar": {
+     "border": [
+      4,
+      0,
+      4,
+      0
+     ],
+     "height": 7,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 10
+    },
+    "Sq.seg": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 37,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.seg_on": {
+     "border": [
+      13,
+      0,
+      13,
+      0
+     ],
+     "height": 25,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 27
+    },
+    "Sq.stop": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#ffffff",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.stop_page": {
+     "border": [
+      20,
+      0,
+      20,
+      0
+     ],
+     "height": 40,
+     "on": "#f5f5f7",
+     "padding": 4,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 41
+    },
+    "Sq.subtab": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.toc": {
+     "border": 15,
+     "height": 31,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.toc_on": {
+     "border": 13,
+     "height": 27,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 27
+    },
+    "Sq.tree": {
+     "border": 11,
+     "height": 23,
+     "on": "#ffffff",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 23
+    },
+    "Sq.trough": {
+     "border": [
+      4,
+      0,
+      4,
+      0
+     ],
+     "height": 7,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 10
+    }
+   },
+   "file": "skin-light@1x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     56,
+     40
+    ],
+    "accent-hover": [
+     0,
+     40,
+     56,
+     40
+    ],
+    "accent-page-dis": [
+     0,
+     80,
+     56,
+     40
+    ],
+    "accent-page-hover": [
+     0,
+     120,
+     56,
+     40
+    ],
+    "accent-page-pressed": [
+     0,
+     160,
+     56,
+     40
+    ],
+    "accent-page-rest": [
+     0,
+     200,
+     56,
+     40
+    ],
+    "accent-pressed": [
+     0,
+     240,
+     56,
+     40
+    ],
+    "accent-rest": [
+     0,
+     280,
+     56,
+     40
+    ],
+    "accentsmall-dis": [
+     0,
+     320,
+     46,
+     30
+    ],
+    "accentsmall-hover": [
+     0,
+     350,
+     46,
+     30
+    ],
+    "accentsmall-pressed": [
+     0,
+     380,
+     46,
+     30
+    ],
+    "accentsmall-rest": [
+     0,
+     410,
+     46,
+     30
+    ],
+    "button-dis": [
+     0,
+     440,
+     46,
+     30
+    ],
+    "button-hover": [
+     0,
+     470,
+     46,
+     30
+    ],
+    "button-pressed": [
+     0,
+     500,
+     46,
+     30
+    ],
+    "button-rest": [
+     0,
+     530,
+     46,
+     30
+    ],
+    "buttonpage-dis": [
+     0,
+     560,
+     46,
+     30
+    ],
+    "buttonpage-hover": [
+     0,
+     590,
+     46,
+     30
+    ],
+    "buttonpage-pressed": [
+     0,
+     620,
+     46,
+     30
+    ],
+    "buttonpage-rest": [
+     0,
+     650,
+     46,
+     30
+    ],
+    "buttonrun-dis": [
+     0,
+     680,
+     56,
+     40
+    ],
+    "buttonrun-hover": [
+     0,
+     720,
+     56,
+     40
+    ],
+    "buttonrun-pressed": [
+     0,
+     760,
+     56,
+     40
+    ],
+    "buttonrun-rest": [
+     0,
+     800,
+     56,
+     40
+    ],
+    "buttonrunpage-dis": [
+     0,
+     840,
+     56,
+     40
+    ],
+    "buttonrunpage-hover": [
+     0,
+     880,
+     56,
+     40
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     920,
+     56,
+     40
+    ],
+    "buttonrunpage-rest": [
+     0,
+     960,
+     56,
+     40
+    ],
+    "card-rest": [
+     0,
+     1000,
+     138,
+     138
+    ],
+    "cta-dis": [
+     0,
+     1138,
+     46,
+     30
+    ],
+    "cta-hover": [
+     0,
+     1168,
+     46,
+     30
+    ],
+    "cta-pressed": [
+     0,
+     1198,
+     46,
+     30
+    ],
+    "cta-rest": [
+     0,
+     1228,
+     46,
+     30
+    ],
+    "ctapage-dis": [
+     0,
+     1258,
+     46,
+     30
+    ],
+    "ctapage-hover": [
+     0,
+     1288,
+     46,
+     30
+    ],
+    "ctapage-pressed": [
+     0,
+     1318,
+     46,
+     30
+    ],
+    "ctapage-rest": [
+     0,
+     1348,
+     46,
+     30
+    ],
+    "drop-rest": [
+     0,
+     1378,
+     118,
+     118
+    ],
+    "field-focus": [
+     0,
+     1496,
+     118,
+     118
+    ],
+    "field-rest": [
+     0,
+     1614,
+     118,
+     118
+    ],
+    "pbar": [
+     0,
+     1732,
+     105,
+     7
+    ],
+    "seg-on": [
+     0,
+     1739,
+     42,
+     25
+    ],
+    "seg-track": [
+     0,
+     1764,
+     54,
+     37
+    ],
+    "stop-dis": [
+     0,
+     1801,
+     56,
+     40
+    ],
+    "stop-hover": [
+     0,
+     1841,
+     56,
+     40
+    ],
+    "stop-page-dis": [
+     0,
+     1881,
+     56,
+     40
+    ],
+    "stop-page-hover": [
+     0,
+     1921,
+     56,
+     40
+    ],
+    "stop-page-pressed": [
+     0,
+     1961,
+     56,
+     40
+    ],
+    "stop-page-rest": [
+     0,
+     2001,
+     56,
+     40
+    ],
+    "stop-pressed": [
+     0,
+     2041,
+     56,
+     40
+    ],
+    "stop-rest": [
+     0,
+     2081,
+     56,
+     40
+    ],
+    "subtab": [
+     0,
+     2121,
+     46,
+     30
+    ],
+    "toc-on": [
+     0,
+     2151,
+     122,
+     122
+    ],
+    "toc-wrap": [
+     0,
+     2273,
+     126,
+     126
+    ],
+    "tree-rest": [
+     0,
+     2399,
+     118,
+     118
+    ],
+    "trough": [
+     0,
+     2517,
+     105,
+     7
+    ]
+   }
+  },
+  "light@1.25": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#ffffff",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.accent_page": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#f5f5f7",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.accent_small": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#ffffff",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.button": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#ffffff",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.button_page": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#f5f5f7",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.button_run": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#ffffff",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.button_run_page": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#f5f5f7",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.card": {
+     "border": 26,
+     "height": 53,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.cta": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#ffffff",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.cta_page": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#f5f5f7",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.drop": {
+     "border": 13,
+     "height": 27,
+     "on": "#ffffff",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 27
+    },
+    "Sq.field": {
+     "border": 13,
+     "height": 27,
+     "on": "#ffffff",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 27
+    },
+    "Sq.pbar": {
+     "border": [
+      5,
+      0,
+      5,
+      0
+     ],
+     "height": 9,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 12
+    },
+    "Sq.seg": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 46,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.seg_on": {
+     "border": [
+      16,
+      0,
+      16,
+      0
+     ],
+     "height": 31,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 33
+    },
+    "Sq.stop": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#ffffff",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.stop_page": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#f5f5f7",
+     "padding": 5,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.subtab": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.toc": {
+     "border": 19,
+     "height": 39,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.toc_on": {
+     "border": 15,
+     "height": 31,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
+    },
+    "Sq.tree": {
+     "border": 13,
+     "height": 27,
+     "on": "#ffffff",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 27
+    },
+    "Sq.trough": {
+     "border": [
+      5,
+      0,
+      5,
+      0
+     ],
+     "height": 9,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 12
+    }
+   },
+   "file": "skin-light@1.25x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     70,
+     50
+    ],
+    "accent-hover": [
+     0,
+     50,
+     70,
+     50
+    ],
+    "accent-page-dis": [
+     0,
+     100,
+     70,
+     50
+    ],
+    "accent-page-hover": [
+     0,
+     150,
+     70,
+     50
+    ],
+    "accent-page-pressed": [
+     0,
+     200,
+     70,
+     50
+    ],
+    "accent-page-rest": [
+     0,
+     250,
+     70,
+     50
+    ],
+    "accent-pressed": [
+     0,
+     300,
+     70,
+     50
+    ],
+    "accent-rest": [
+     0,
+     350,
+     70,
+     50
+    ],
+    "accentsmall-dis": [
+     0,
+     400,
+     58,
+     38
+    ],
+    "accentsmall-hover": [
+     0,
+     438,
+     58,
+     38
+    ],
+    "accentsmall-pressed": [
+     0,
+     476,
+     58,
+     38
+    ],
+    "accentsmall-rest": [
+     0,
+     514,
+     58,
+     38
+    ],
+    "button-dis": [
+     0,
+     552,
+     58,
+     38
+    ],
+    "button-hover": [
+     0,
+     590,
+     58,
+     38
+    ],
+    "button-pressed": [
+     0,
+     628,
+     58,
+     38
+    ],
+    "button-rest": [
+     0,
+     666,
+     58,
+     38
+    ],
+    "buttonpage-dis": [
+     0,
+     704,
+     58,
+     38
+    ],
+    "buttonpage-hover": [
+     0,
+     742,
+     58,
+     38
+    ],
+    "buttonpage-pressed": [
+     0,
+     780,
+     58,
+     38
+    ],
+    "buttonpage-rest": [
+     0,
+     818,
+     58,
+     38
+    ],
+    "buttonrun-dis": [
+     0,
+     856,
+     70,
+     50
+    ],
+    "buttonrun-hover": [
+     0,
+     906,
+     70,
+     50
+    ],
+    "buttonrun-pressed": [
+     0,
+     956,
+     70,
+     50
+    ],
+    "buttonrun-rest": [
+     0,
+     1006,
+     70,
+     50
+    ],
+    "buttonrunpage-dis": [
+     0,
+     1056,
+     70,
+     50
+    ],
+    "buttonrunpage-hover": [
+     0,
+     1106,
+     70,
+     50
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     1156,
+     70,
+     50
+    ],
+    "buttonrunpage-rest": [
+     0,
+     1206,
+     70,
+     50
+    ],
+    "card-rest": [
+     0,
+     1256,
+     172,
+     172
+    ],
+    "cta-dis": [
+     0,
+     1428,
+     58,
+     38
+    ],
+    "cta-hover": [
+     0,
+     1466,
+     58,
+     38
+    ],
+    "cta-pressed": [
+     0,
+     1504,
+     58,
+     38
+    ],
+    "cta-rest": [
+     0,
+     1542,
+     58,
+     38
+    ],
+    "ctapage-dis": [
+     0,
+     1580,
+     58,
+     38
+    ],
+    "ctapage-hover": [
+     0,
+     1618,
+     58,
+     38
+    ],
+    "ctapage-pressed": [
+     0,
+     1656,
+     58,
+     38
+    ],
+    "ctapage-rest": [
+     0,
+     1694,
+     58,
+     38
+    ],
+    "drop-rest": [
+     0,
+     1732,
+     146,
+     146
+    ],
+    "field-focus": [
+     0,
+     1878,
+     146,
+     146
+    ],
+    "field-rest": [
+     0,
+     2024,
+     146,
+     146
+    ],
+    "pbar": [
+     0,
+     2170,
+     131,
+     9
+    ],
+    "seg-on": [
+     0,
+     2179,
+     52,
+     31
+    ],
+    "seg-track": [
+     0,
+     2210,
+     66,
+     46
+    ],
+    "stop-dis": [
+     0,
+     2256,
+     70,
+     50
+    ],
+    "stop-hover": [
+     0,
+     2306,
+     70,
+     50
+    ],
+    "stop-page-dis": [
+     0,
+     2356,
+     70,
+     50
+    ],
+    "stop-page-hover": [
+     0,
+     2406,
+     70,
+     50
+    ],
+    "stop-page-pressed": [
+     0,
+     2456,
+     70,
+     50
+    ],
+    "stop-page-rest": [
+     0,
+     2506,
+     70,
+     50
+    ],
+    "stop-pressed": [
+     0,
+     2556,
+     70,
+     50
+    ],
+    "stop-rest": [
+     0,
+     2606,
+     70,
+     50
+    ],
+    "subtab": [
+     0,
+     2656,
+     58,
+     38
+    ],
+    "toc-on": [
+     0,
+     2694,
+     150,
+     150
+    ],
+    "toc-wrap": [
+     0,
+     2844,
+     158,
+     158
+    ],
+    "tree-rest": [
+     0,
+     3002,
+     146,
+     146
+    ],
+    "trough": [
+     0,
+     3148,
+     131,
+     9
+    ]
+   }
+  },
+  "light@1.5": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#ffffff",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.accent_page": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#f5f5f7",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.accent_small": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#ffffff",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.button": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#ffffff",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.button_page": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#f5f5f7",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.button_run": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#ffffff",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.button_run_page": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#f5f5f7",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.card": {
+     "border": 31,
+     "height": 63,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.cta": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#ffffff",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.cta_page": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#f5f5f7",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.drop": {
+     "border": 16,
+     "height": 33,
+     "on": "#ffffff",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 33
+    },
+    "Sq.field": {
+     "border": 16,
+     "height": 33,
+     "on": "#ffffff",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 33
+    },
+    "Sq.pbar": {
+     "border": [
+      6,
+      0,
+      6,
+      0
+     ],
+     "height": 10,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 13
+    },
+    "Sq.seg": {
+     "border": [
+      28,
+      0,
+      28,
+      0
+     ],
+     "height": 56,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 57
+    },
+    "Sq.seg_on": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.stop": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#ffffff",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.stop_page": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#f5f5f7",
+     "padding": 6,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.subtab": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.toc": {
+     "border": 22,
+     "height": 45,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 45
+    },
+    "Sq.toc_on": {
+     "border": 19,
+     "height": 39,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.tree": {
+     "border": 16,
+     "height": 33,
+     "on": "#ffffff",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 33
+    },
+    "Sq.trough": {
+     "border": [
+      6,
+      0,
+      6,
+      0
+     ],
+     "height": 10,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 13
+    }
+   },
+   "file": "skin-light@1.5x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     84,
+     60
+    ],
+    "accent-hover": [
+     0,
+     60,
+     84,
+     60
+    ],
+    "accent-page-dis": [
+     0,
+     120,
+     84,
+     60
+    ],
+    "accent-page-hover": [
+     0,
+     180,
+     84,
+     60
+    ],
+    "accent-page-pressed": [
+     0,
+     240,
+     84,
+     60
+    ],
+    "accent-page-rest": [
+     0,
+     300,
+     84,
+     60
+    ],
+    "accent-pressed": [
+     0,
+     360,
+     84,
+     60
+    ],
+    "accent-rest": [
+     0,
+     420,
+     84,
+     60
+    ],
+    "accentsmall-dis": [
+     0,
+     480,
+     70,
+     45
+    ],
+    "accentsmall-hover": [
+     0,
+     525,
+     70,
+     45
+    ],
+    "accentsmall-pressed": [
+     0,
+     570,
+     70,
+     45
+    ],
+    "accentsmall-rest": [
+     0,
+     615,
+     70,
+     45
+    ],
+    "button-dis": [
+     0,
+     660,
+     70,
+     45
+    ],
+    "button-hover": [
+     0,
+     705,
+     70,
+     45
+    ],
+    "button-pressed": [
+     0,
+     750,
+     70,
+     45
+    ],
+    "button-rest": [
+     0,
+     795,
+     70,
+     45
+    ],
+    "buttonpage-dis": [
+     0,
+     840,
+     70,
+     45
+    ],
+    "buttonpage-hover": [
+     0,
+     885,
+     70,
+     45
+    ],
+    "buttonpage-pressed": [
+     0,
+     930,
+     70,
+     45
+    ],
+    "buttonpage-rest": [
+     0,
+     975,
+     70,
+     45
+    ],
+    "buttonrun-dis": [
+     0,
+     1020,
+     84,
+     60
+    ],
+    "buttonrun-hover": [
+     0,
+     1080,
+     84,
+     60
+    ],
+    "buttonrun-pressed": [
+     0,
+     1140,
+     84,
+     60
+    ],
+    "buttonrun-rest": [
+     0,
+     1200,
+     84,
+     60
+    ],
+    "buttonrunpage-dis": [
+     0,
+     1260,
+     84,
+     60
+    ],
+    "buttonrunpage-hover": [
+     0,
+     1320,
+     84,
+     60
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     1380,
+     84,
+     60
+    ],
+    "buttonrunpage-rest": [
+     0,
+     1440,
+     84,
+     60
+    ],
+    "card-rest": [
+     0,
+     1500,
+     206,
+     206
+    ],
+    "cta-dis": [
+     0,
+     1706,
+     70,
+     45
+    ],
+    "cta-hover": [
+     0,
+     1751,
+     70,
+     45
+    ],
+    "cta-pressed": [
+     0,
+     1796,
+     70,
+     45
+    ],
+    "cta-rest": [
+     0,
+     1841,
+     70,
+     45
+    ],
+    "ctapage-dis": [
+     0,
+     1886,
+     70,
+     45
+    ],
+    "ctapage-hover": [
+     0,
+     1931,
+     70,
+     45
+    ],
+    "ctapage-pressed": [
+     0,
+     1976,
+     70,
+     45
+    ],
+    "ctapage-rest": [
+     0,
+     2021,
+     70,
+     45
+    ],
+    "drop-rest": [
+     0,
+     2066,
+     176,
+     176
+    ],
+    "field-focus": [
+     0,
+     2242,
+     176,
+     176
+    ],
+    "field-rest": [
+     0,
+     2418,
+     176,
+     176
+    ],
+    "pbar": [
+     0,
+     2594,
+     156,
+     10
+    ],
+    "seg-on": [
+     0,
+     2604,
+     62,
+     38
+    ],
+    "seg-track": [
+     0,
+     2642,
+     80,
+     56
+    ],
+    "stop-dis": [
+     0,
+     2698,
+     84,
+     60
+    ],
+    "stop-hover": [
+     0,
+     2758,
+     84,
+     60
+    ],
+    "stop-page-dis": [
+     0,
+     2818,
+     84,
+     60
+    ],
+    "stop-page-hover": [
+     0,
+     2878,
+     84,
+     60
+    ],
+    "stop-page-pressed": [
+     0,
+     2938,
+     84,
+     60
+    ],
+    "stop-page-rest": [
+     0,
+     2998,
+     84,
+     60
+    ],
+    "stop-pressed": [
+     0,
+     3058,
+     84,
+     60
+    ],
+    "stop-rest": [
+     0,
+     3118,
+     84,
+     60
+    ],
+    "subtab": [
+     0,
+     3178,
+     70,
+     45
+    ],
+    "toc-on": [
+     0,
+     3223,
+     182,
+     182
+    ],
+    "toc-wrap": [
+     0,
+     3405,
+     188,
+     188
+    ],
+    "tree-rest": [
+     0,
+     3593,
+     176,
+     176
+    ],
+    "trough": [
+     0,
+     3769,
+     156,
+     10
+    ]
+   }
+  },
+  "light@1.75": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#ffffff",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.accent_page": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#f5f5f7",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.accent_small": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#ffffff",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.button": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#ffffff",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.button_page": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#f5f5f7",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.button_run": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#ffffff",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.button_run_page": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#f5f5f7",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.card": {
+     "border": 36,
+     "height": 73,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 73
+    },
+    "Sq.cta": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#ffffff",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.cta_page": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#f5f5f7",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.drop": {
+     "border": 19,
+     "height": 39,
+     "on": "#ffffff",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.field": {
+     "border": 19,
+     "height": 39,
+     "on": "#ffffff",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.pbar": {
+     "border": [
+      7,
+      0,
+      7,
+      0
+     ],
+     "height": 12,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 15
+    },
+    "Sq.seg": {
+     "border": [
+      33,
+      0,
+      33,
+      0
+     ],
+     "height": 65,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 67
+    },
+    "Sq.seg_on": {
+     "border": [
+      22,
+      0,
+      22,
+      0
+     ],
+     "height": 44,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 45
+    },
+    "Sq.stop": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#ffffff",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.stop_page": {
+     "border": [
+      35,
+      0,
+      35,
+      0
+     ],
+     "height": 70,
+     "on": "#f5f5f7",
+     "padding": 7,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 71
+    },
+    "Sq.subtab": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.toc": {
+     "border": 25,
+     "height": 51,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.toc_on": {
+     "border": 23,
+     "height": 47,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.tree": {
+     "border": 19,
+     "height": 39,
+     "on": "#ffffff",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
+    "Sq.trough": {
+     "border": [
+      7,
+      0,
+      7,
+      0
+     ],
+     "height": 12,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 15
+    }
+   },
+   "file": "skin-light@1.75x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     98,
+     70
+    ],
+    "accent-hover": [
+     0,
+     70,
+     98,
+     70
+    ],
+    "accent-page-dis": [
+     0,
+     140,
+     98,
+     70
+    ],
+    "accent-page-hover": [
+     0,
+     210,
+     98,
+     70
+    ],
+    "accent-page-pressed": [
+     0,
+     280,
+     98,
+     70
+    ],
+    "accent-page-rest": [
+     0,
+     350,
+     98,
+     70
+    ],
+    "accent-pressed": [
+     0,
+     420,
+     98,
+     70
+    ],
+    "accent-rest": [
+     0,
+     490,
+     98,
+     70
+    ],
+    "accentsmall-dis": [
+     0,
+     560,
+     80,
+     52
+    ],
+    "accentsmall-hover": [
+     0,
+     612,
+     80,
+     52
+    ],
+    "accentsmall-pressed": [
+     0,
+     664,
+     80,
+     52
+    ],
+    "accentsmall-rest": [
+     0,
+     716,
+     80,
+     52
+    ],
+    "button-dis": [
+     0,
+     768,
+     80,
+     52
+    ],
+    "button-hover": [
+     0,
+     820,
+     80,
+     52
+    ],
+    "button-pressed": [
+     0,
+     872,
+     80,
+     52
+    ],
+    "button-rest": [
+     0,
+     924,
+     80,
+     52
+    ],
+    "buttonpage-dis": [
+     0,
+     976,
+     80,
+     52
+    ],
+    "buttonpage-hover": [
+     0,
+     1028,
+     80,
+     52
+    ],
+    "buttonpage-pressed": [
+     0,
+     1080,
+     80,
+     52
+    ],
+    "buttonpage-rest": [
+     0,
+     1132,
+     80,
+     52
+    ],
+    "buttonrun-dis": [
+     0,
+     1184,
+     98,
+     70
+    ],
+    "buttonrun-hover": [
+     0,
+     1254,
+     98,
+     70
+    ],
+    "buttonrun-pressed": [
+     0,
+     1324,
+     98,
+     70
+    ],
+    "buttonrun-rest": [
+     0,
+     1394,
+     98,
+     70
+    ],
+    "buttonrunpage-dis": [
+     0,
+     1464,
+     98,
+     70
+    ],
+    "buttonrunpage-hover": [
+     0,
+     1534,
+     98,
+     70
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     1604,
+     98,
+     70
+    ],
+    "buttonrunpage-rest": [
+     0,
+     1674,
+     98,
+     70
+    ],
+    "card-rest": [
+     0,
+     1744,
+     240,
+     240
+    ],
+    "cta-dis": [
+     0,
+     1984,
+     80,
+     52
+    ],
+    "cta-hover": [
+     0,
+     2036,
+     80,
+     52
+    ],
+    "cta-pressed": [
+     0,
+     2088,
+     80,
+     52
+    ],
+    "cta-rest": [
+     0,
+     2140,
+     80,
+     52
+    ],
+    "ctapage-dis": [
+     0,
+     2192,
+     80,
+     52
+    ],
+    "ctapage-hover": [
+     0,
+     2244,
+     80,
+     52
+    ],
+    "ctapage-pressed": [
+     0,
+     2296,
+     80,
+     52
+    ],
+    "ctapage-rest": [
+     0,
+     2348,
+     80,
+     52
+    ],
+    "drop-rest": [
+     0,
+     2400,
+     206,
+     206
+    ],
+    "field-focus": [
+     0,
+     2606,
+     206,
+     206
+    ],
+    "field-rest": [
+     0,
+     2812,
+     206,
+     206
+    ],
+    "pbar": [
+     0,
+     3018,
+     182,
+     12
+    ],
+    "seg-on": [
+     0,
+     3030,
+     72,
+     44
+    ],
+    "seg-track": [
+     0,
+     3074,
+     94,
+     65
+    ],
+    "stop-dis": [
+     0,
+     3139,
+     98,
+     70
+    ],
+    "stop-hover": [
+     0,
+     3209,
+     98,
+     70
+    ],
+    "stop-page-dis": [
+     0,
+     3279,
+     98,
+     70
+    ],
+    "stop-page-hover": [
+     0,
+     3349,
+     98,
+     70
+    ],
+    "stop-page-pressed": [
+     0,
+     3419,
+     98,
+     70
+    ],
+    "stop-page-rest": [
+     0,
+     3489,
+     98,
+     70
+    ],
+    "stop-pressed": [
+     0,
+     3559,
+     98,
+     70
+    ],
+    "stop-rest": [
+     0,
+     3629,
+     98,
+     70
+    ],
+    "subtab": [
+     0,
+     3699,
+     80,
+     52
+    ],
+    "toc-on": [
+     0,
+     3751,
+     214,
+     214
+    ],
+    "toc-wrap": [
+     0,
+     3965,
+     218,
+     218
+    ],
+    "tree-rest": [
+     0,
+     4183,
+     206,
+     206
+    ],
+    "trough": [
+     0,
+     4389,
+     182,
+     12
+    ]
+   }
+  },
+  "light@2": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#ffffff",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.accent_page": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#f5f5f7",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.accent_small": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#ffffff",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.button": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#ffffff",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.button_page": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#f5f5f7",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.button_run": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#ffffff",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.button_run_page": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#f5f5f7",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.card": {
+     "border": 41,
+     "height": 83,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 83
+    },
+    "Sq.cta": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#ffffff",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.cta_page": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#f5f5f7",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.drop": {
+     "border": 21,
+     "height": 43,
+     "on": "#ffffff",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 43
+    },
+    "Sq.field": {
+     "border": 21,
+     "height": 43,
+     "on": "#ffffff",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 43
+    },
+    "Sq.pbar": {
+     "border": [
+      8,
+      0,
+      8,
+      0
+     ],
+     "height": 14,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 17
+    },
+    "Sq.seg": {
+     "border": [
+      37,
+      0,
+      37,
+      0
+     ],
+     "height": 74,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 75
+    },
+    "Sq.seg_on": {
+     "border": [
+      25,
+      0,
+      25,
+      0
+     ],
+     "height": 50,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.stop": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#ffffff",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.stop_page": {
+     "border": [
+      40,
+      0,
+      40,
+      0
+     ],
+     "height": 80,
+     "on": "#f5f5f7",
+     "padding": 8,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 81
+    },
+    "Sq.subtab": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
+    },
+    "Sq.toc": {
+     "border": 29,
+     "height": 59,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 59
+    },
+    "Sq.toc_on": {
+     "border": 25,
+     "height": 51,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 51
+    },
+    "Sq.tree": {
+     "border": 21,
+     "height": 43,
+     "on": "#ffffff",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 43
+    },
+    "Sq.trough": {
+     "border": [
+      8,
+      0,
+      8,
+      0
+     ],
+     "height": 14,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 17
+    }
+   },
+   "file": "skin-light@2x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     112,
+     80
+    ],
+    "accent-hover": [
+     0,
+     80,
+     112,
+     80
+    ],
+    "accent-page-dis": [
+     0,
+     160,
+     112,
+     80
+    ],
+    "accent-page-hover": [
+     0,
+     240,
+     112,
+     80
+    ],
+    "accent-page-pressed": [
+     0,
+     320,
+     112,
+     80
+    ],
+    "accent-page-rest": [
+     0,
+     400,
+     112,
+     80
+    ],
+    "accent-pressed": [
+     0,
+     480,
+     112,
+     80
+    ],
+    "accent-rest": [
+     0,
+     560,
+     112,
+     80
+    ],
+    "accentsmall-dis": [
+     0,
+     640,
+     92,
+     60
+    ],
+    "accentsmall-hover": [
+     0,
+     700,
+     92,
+     60
+    ],
+    "accentsmall-pressed": [
+     0,
+     760,
+     92,
+     60
+    ],
+    "accentsmall-rest": [
+     0,
+     820,
+     92,
+     60
+    ],
+    "button-dis": [
+     0,
+     880,
+     92,
+     60
+    ],
+    "button-hover": [
+     0,
+     940,
+     92,
+     60
+    ],
+    "button-pressed": [
+     0,
+     1000,
+     92,
+     60
+    ],
+    "button-rest": [
+     0,
+     1060,
+     92,
+     60
+    ],
+    "buttonpage-dis": [
+     0,
+     1120,
+     92,
+     60
+    ],
+    "buttonpage-hover": [
+     0,
+     1180,
+     92,
+     60
+    ],
+    "buttonpage-pressed": [
+     0,
+     1240,
+     92,
+     60
+    ],
+    "buttonpage-rest": [
+     0,
+     1300,
+     92,
+     60
+    ],
+    "buttonrun-dis": [
+     0,
+     1360,
+     112,
+     80
+    ],
+    "buttonrun-hover": [
+     0,
+     1440,
+     112,
+     80
+    ],
+    "buttonrun-pressed": [
+     0,
+     1520,
+     112,
+     80
+    ],
+    "buttonrun-rest": [
+     0,
+     1600,
+     112,
+     80
+    ],
+    "buttonrunpage-dis": [
+     0,
+     1680,
+     112,
+     80
+    ],
+    "buttonrunpage-hover": [
+     0,
+     1760,
+     112,
+     80
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     1840,
+     112,
+     80
+    ],
+    "buttonrunpage-rest": [
+     0,
+     1920,
+     112,
+     80
+    ],
+    "card-rest": [
+     0,
+     2000,
+     274,
+     274
+    ],
+    "cta-dis": [
+     0,
+     2274,
+     92,
+     60
+    ],
+    "cta-hover": [
+     0,
+     2334,
+     92,
+     60
+    ],
+    "cta-pressed": [
+     0,
+     2394,
+     92,
+     60
+    ],
+    "cta-rest": [
+     0,
+     2454,
+     92,
+     60
+    ],
+    "ctapage-dis": [
+     0,
+     2514,
+     92,
+     60
+    ],
+    "ctapage-hover": [
+     0,
+     2574,
+     92,
+     60
+    ],
+    "ctapage-pressed": [
+     0,
+     2634,
+     92,
+     60
+    ],
+    "ctapage-rest": [
+     0,
+     2694,
+     92,
+     60
+    ],
+    "drop-rest": [
+     0,
+     2754,
+     234,
+     234
+    ],
+    "field-focus": [
+     0,
+     2988,
+     234,
+     234
+    ],
+    "field-rest": [
+     0,
+     3222,
+     234,
+     234
+    ],
+    "pbar": [
+     0,
+     3456,
+     208,
+     14
+    ],
+    "seg-on": [
+     0,
+     3470,
+     82,
+     50
+    ],
+    "seg-track": [
+     0,
+     3520,
+     106,
+     74
+    ],
+    "stop-dis": [
+     0,
+     3594,
+     112,
+     80
+    ],
+    "stop-hover": [
+     0,
+     3674,
+     112,
+     80
+    ],
+    "stop-page-dis": [
+     0,
+     3754,
+     112,
+     80
+    ],
+    "stop-page-hover": [
+     0,
+     3834,
+     112,
+     80
+    ],
+    "stop-page-pressed": [
+     0,
+     3914,
+     112,
+     80
+    ],
+    "stop-page-rest": [
+     0,
+     3994,
+     112,
+     80
+    ],
+    "stop-pressed": [
+     0,
+     4074,
+     112,
+     80
+    ],
+    "stop-rest": [
+     0,
+     4154,
+     112,
+     80
+    ],
+    "subtab": [
+     0,
+     4234,
+     92,
+     60
+    ],
+    "toc-on": [
+     0,
+     4294,
+     242,
+     242
+    ],
+    "toc-wrap": [
+     0,
+     4536,
+     250,
+     250
+    ],
+    "tree-rest": [
+     0,
+     4786,
+     234,
+     234
+    ],
+    "trough": [
+     0,
+     5020,
+     208,
+     14
+    ]
+   }
+  },
+  "light@2.25": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#ffffff",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.accent_page": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#f5f5f7",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.accent_small": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#ffffff",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.button": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#ffffff",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.button_page": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#f5f5f7",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.button_run": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#ffffff",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.button_run_page": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#f5f5f7",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.card": {
+     "border": 46,
+     "height": 93,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 93
+    },
+    "Sq.cta": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#ffffff",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.cta_page": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#f5f5f7",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.drop": {
+     "border": 23,
+     "height": 47,
+     "on": "#ffffff",
+     "padding": 11,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.field": {
+     "border": 23,
+     "height": 47,
+     "on": "#ffffff",
+     "padding": 11,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.pbar": {
+     "border": [
+      9,
+      0,
+      9,
+      0
+     ],
+     "height": 16,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 19
+    },
+    "Sq.seg": {
+     "border": [
+      42,
+      0,
+      42,
+      0
+     ],
+     "height": 83,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 85
+    },
+    "Sq.seg_on": {
+     "border": [
+      28,
+      0,
+      28,
+      0
+     ],
+     "height": 56,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 57
+    },
+    "Sq.stop": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#ffffff",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.stop_page": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#f5f5f7",
+     "padding": 9,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.subtab": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
+    },
+    "Sq.toc": {
+     "border": 33,
+     "height": 67,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 67
+    },
+    "Sq.toc_on": {
+     "border": 27,
+     "height": 55,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 55
+    },
+    "Sq.tree": {
+     "border": 23,
+     "height": 47,
+     "on": "#ffffff",
+     "padding": 11,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.trough": {
+     "border": [
+      9,
+      0,
+      9,
+      0
+     ],
+     "height": 16,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 19
+    }
+   },
+   "file": "skin-light@2.25x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     126,
+     90
+    ],
+    "accent-hover": [
+     0,
+     90,
+     126,
+     90
+    ],
+    "accent-page-dis": [
+     0,
+     180,
+     126,
+     90
+    ],
+    "accent-page-hover": [
+     0,
+     270,
+     126,
+     90
+    ],
+    "accent-page-pressed": [
+     0,
+     360,
+     126,
+     90
+    ],
+    "accent-page-rest": [
+     0,
+     450,
+     126,
+     90
+    ],
+    "accent-pressed": [
+     0,
+     540,
+     126,
+     90
+    ],
+    "accent-rest": [
+     0,
+     630,
+     126,
+     90
+    ],
+    "accentsmall-dis": [
+     0,
+     720,
+     104,
+     68
+    ],
+    "accentsmall-hover": [
+     0,
+     788,
+     104,
+     68
+    ],
+    "accentsmall-pressed": [
+     0,
+     856,
+     104,
+     68
+    ],
+    "accentsmall-rest": [
+     0,
+     924,
+     104,
+     68
+    ],
+    "button-dis": [
+     0,
+     992,
+     104,
+     68
+    ],
+    "button-hover": [
+     0,
+     1060,
+     104,
+     68
+    ],
+    "button-pressed": [
+     0,
+     1128,
+     104,
+     68
+    ],
+    "button-rest": [
+     0,
+     1196,
+     104,
+     68
+    ],
+    "buttonpage-dis": [
+     0,
+     1264,
+     104,
+     68
+    ],
+    "buttonpage-hover": [
+     0,
+     1332,
+     104,
+     68
+    ],
+    "buttonpage-pressed": [
+     0,
+     1400,
+     104,
+     68
+    ],
+    "buttonpage-rest": [
+     0,
+     1468,
+     104,
+     68
+    ],
+    "buttonrun-dis": [
+     0,
+     1536,
+     126,
+     90
+    ],
+    "buttonrun-hover": [
+     0,
+     1626,
+     126,
+     90
+    ],
+    "buttonrun-pressed": [
+     0,
+     1716,
+     126,
+     90
+    ],
+    "buttonrun-rest": [
+     0,
+     1806,
+     126,
+     90
+    ],
+    "buttonrunpage-dis": [
+     0,
+     1896,
+     126,
+     90
+    ],
+    "buttonrunpage-hover": [
+     0,
+     1986,
+     126,
+     90
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     2076,
+     126,
+     90
+    ],
+    "buttonrunpage-rest": [
+     0,
+     2166,
+     126,
+     90
+    ],
+    "card-rest": [
+     0,
+     2256,
+     308,
+     308
+    ],
+    "cta-dis": [
+     0,
+     2564,
+     104,
+     68
+    ],
+    "cta-hover": [
+     0,
+     2632,
+     104,
+     68
+    ],
+    "cta-pressed": [
+     0,
+     2700,
+     104,
+     68
+    ],
+    "cta-rest": [
+     0,
+     2768,
+     104,
+     68
+    ],
+    "ctapage-dis": [
+     0,
+     2836,
+     104,
+     68
+    ],
+    "ctapage-hover": [
+     0,
+     2904,
+     104,
+     68
+    ],
+    "ctapage-pressed": [
+     0,
+     2972,
+     104,
+     68
+    ],
+    "ctapage-rest": [
+     0,
+     3040,
+     104,
+     68
+    ],
+    "drop-rest": [
+     0,
+     3108,
+     262,
+     262
+    ],
+    "field-focus": [
+     0,
+     3370,
+     262,
+     262
+    ],
+    "field-rest": [
+     0,
+     3632,
+     262,
+     262
+    ],
+    "pbar": [
+     0,
+     3894,
+     234,
+     16
+    ],
+    "seg-on": [
+     0,
+     3910,
+     92,
+     56
+    ],
+    "seg-track": [
+     0,
+     3966,
+     120,
+     83
+    ],
+    "stop-dis": [
+     0,
+     4049,
+     126,
+     90
+    ],
+    "stop-hover": [
+     0,
+     4139,
+     126,
+     90
+    ],
+    "stop-page-dis": [
+     0,
+     4229,
+     126,
+     90
+    ],
+    "stop-page-hover": [
+     0,
+     4319,
+     126,
+     90
+    ],
+    "stop-page-pressed": [
+     0,
+     4409,
+     126,
+     90
+    ],
+    "stop-page-rest": [
+     0,
+     4499,
+     126,
+     90
+    ],
+    "stop-pressed": [
+     0,
+     4589,
+     126,
+     90
+    ],
+    "stop-rest": [
+     0,
+     4679,
+     126,
+     90
+    ],
+    "subtab": [
+     0,
+     4769,
+     104,
+     68
+    ],
+    "toc-on": [
+     0,
+     4837,
+     270,
+     270
+    ],
+    "toc-wrap": [
+     0,
+     5107,
+     282,
+     282
+    ],
+    "tree-rest": [
+     0,
+     5389,
+     262,
+     262
+    ],
+    "trough": [
+     0,
+     5651,
+     234,
+     16
+    ]
+   }
+  },
+  "light@2.5": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#ffffff",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.accent_page": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#f5f5f7",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.accent_small": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#ffffff",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.button": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#ffffff",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.button_page": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#f5f5f7",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.button_run": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#ffffff",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.button_run_page": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#f5f5f7",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.card": {
+     "border": 51,
+     "height": 103,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 103
+    },
+    "Sq.cta": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#ffffff",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.cta_page": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#f5f5f7",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.drop": {
+     "border": 26,
+     "height": 53,
+     "on": "#ffffff",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.field": {
+     "border": 26,
+     "height": 53,
+     "on": "#ffffff",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.pbar": {
+     "border": [
+      10,
+      0,
+      10,
+      0
+     ],
+     "height": 18,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 21
+    },
+    "Sq.seg": {
+     "border": [
+      46,
+      0,
+      46,
+      0
+     ],
+     "height": 92,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 93
+    },
+    "Sq.seg_on": {
+     "border": [
+      31,
+      0,
+      31,
+      0
+     ],
+     "height": 62,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.stop": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#ffffff",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.stop_page": {
+     "border": [
+      50,
+      0,
+      50,
+      0
+     ],
+     "height": 100,
+     "on": "#f5f5f7",
+     "padding": 10,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 101
+    },
+    "Sq.subtab": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.toc": {
+     "border": 36,
+     "height": 73,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 73
+    },
+    "Sq.toc_on": {
+     "border": 31,
+     "height": 63,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.tree": {
+     "border": 26,
+     "height": 53,
+     "on": "#ffffff",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
+    },
+    "Sq.trough": {
+     "border": [
+      10,
+      0,
+      10,
+      0
+     ],
+     "height": 18,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 21
+    }
+   },
+   "file": "skin-light@2.5x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     140,
+     100
+    ],
+    "accent-hover": [
+     0,
+     100,
+     140,
+     100
+    ],
+    "accent-page-dis": [
+     0,
+     200,
+     140,
+     100
+    ],
+    "accent-page-hover": [
+     0,
+     300,
+     140,
+     100
+    ],
+    "accent-page-pressed": [
+     0,
+     400,
+     140,
+     100
+    ],
+    "accent-page-rest": [
+     0,
+     500,
+     140,
+     100
+    ],
+    "accent-pressed": [
+     0,
+     600,
+     140,
+     100
+    ],
+    "accent-rest": [
+     0,
+     700,
+     140,
+     100
+    ],
+    "accentsmall-dis": [
+     0,
+     800,
+     116,
+     75
+    ],
+    "accentsmall-hover": [
+     0,
+     875,
+     116,
+     75
+    ],
+    "accentsmall-pressed": [
+     0,
+     950,
+     116,
+     75
+    ],
+    "accentsmall-rest": [
+     0,
+     1025,
+     116,
+     75
+    ],
+    "button-dis": [
+     0,
+     1100,
+     116,
+     75
+    ],
+    "button-hover": [
+     0,
+     1175,
+     116,
+     75
+    ],
+    "button-pressed": [
+     0,
+     1250,
+     116,
+     75
+    ],
+    "button-rest": [
+     0,
+     1325,
+     116,
+     75
+    ],
+    "buttonpage-dis": [
+     0,
+     1400,
+     116,
+     75
+    ],
+    "buttonpage-hover": [
+     0,
+     1475,
+     116,
+     75
+    ],
+    "buttonpage-pressed": [
+     0,
+     1550,
+     116,
+     75
+    ],
+    "buttonpage-rest": [
+     0,
+     1625,
+     116,
+     75
+    ],
+    "buttonrun-dis": [
+     0,
+     1700,
+     140,
+     100
+    ],
+    "buttonrun-hover": [
+     0,
+     1800,
+     140,
+     100
+    ],
+    "buttonrun-pressed": [
+     0,
+     1900,
+     140,
+     100
+    ],
+    "buttonrun-rest": [
+     0,
+     2000,
+     140,
+     100
+    ],
+    "buttonrunpage-dis": [
+     0,
+     2100,
+     140,
+     100
+    ],
+    "buttonrunpage-hover": [
+     0,
+     2200,
+     140,
+     100
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     2300,
+     140,
+     100
+    ],
+    "buttonrunpage-rest": [
+     0,
+     2400,
+     140,
+     100
+    ],
+    "card-rest": [
+     0,
+     2500,
+     342,
+     342
+    ],
+    "cta-dis": [
+     0,
+     2842,
+     116,
+     75
+    ],
+    "cta-hover": [
+     0,
+     2917,
+     116,
+     75
+    ],
+    "cta-pressed": [
+     0,
+     2992,
+     116,
+     75
+    ],
+    "cta-rest": [
+     0,
+     3067,
+     116,
+     75
+    ],
+    "ctapage-dis": [
+     0,
+     3142,
+     116,
+     75
+    ],
+    "ctapage-hover": [
+     0,
+     3217,
+     116,
+     75
+    ],
+    "ctapage-pressed": [
+     0,
+     3292,
+     116,
+     75
+    ],
+    "ctapage-rest": [
+     0,
+     3367,
+     116,
+     75
+    ],
+    "drop-rest": [
+     0,
+     3442,
+     292,
+     292
+    ],
+    "field-focus": [
+     0,
+     3734,
+     292,
+     292
+    ],
+    "field-rest": [
+     0,
+     4026,
+     292,
+     292
+    ],
+    "pbar": [
+     0,
+     4318,
+     260,
+     18
+    ],
+    "seg-on": [
+     0,
+     4336,
+     102,
+     62
+    ],
+    "seg-track": [
+     0,
+     4398,
+     132,
+     92
+    ],
+    "stop-dis": [
+     0,
+     4490,
+     140,
+     100
+    ],
+    "stop-hover": [
+     0,
+     4590,
+     140,
+     100
+    ],
+    "stop-page-dis": [
+     0,
+     4690,
+     140,
+     100
+    ],
+    "stop-page-hover": [
+     0,
+     4790,
+     140,
+     100
+    ],
+    "stop-page-pressed": [
+     0,
+     4890,
+     140,
+     100
+    ],
+    "stop-page-rest": [
+     0,
+     4990,
+     140,
+     100
+    ],
+    "stop-pressed": [
+     0,
+     5090,
+     140,
+     100
+    ],
+    "stop-rest": [
+     0,
+     5190,
+     140,
+     100
+    ],
+    "subtab": [
+     0,
+     5290,
+     116,
+     75
+    ],
+    "toc-on": [
+     0,
+     5365,
+     302,
+     302
+    ],
+    "toc-wrap": [
+     0,
+     5667,
+     312,
+     312
+    ],
+    "tree-rest": [
+     0,
+     5979,
+     292,
+     292
+    ],
+    "trough": [
+     0,
+     6271,
+     260,
+     18
+    ]
+   }
+  },
+  "light@3": {
+   "elements": {
+    "Sq.accent": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#ffffff",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "accent-rest"
+      ],
+      [
+       "disabled",
+       "accent-dis"
+      ],
+      [
+       "pressed",
+       "accent-pressed"
+      ],
+      [
+       "active",
+       "accent-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.accent_page": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#f5f5f7",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "accent-page-rest"
+      ],
+      [
+       "disabled",
+       "accent-page-dis"
+      ],
+      [
+       "pressed",
+       "accent-page-pressed"
+      ],
+      [
+       "active",
+       "accent-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.accent_small": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#ffffff",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "accentsmall-rest"
+      ],
+      [
+       "disabled",
+       "accentsmall-dis"
+      ],
+      [
+       "pressed",
+       "accentsmall-pressed"
+      ],
+      [
+       "active",
+       "accentsmall-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.button": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#ffffff",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "button-rest"
+      ],
+      [
+       "disabled",
+       "button-dis"
+      ],
+      [
+       "pressed",
+       "button-pressed"
+      ],
+      [
+       "active",
+       "button-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.button_page": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#f5f5f7",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "buttonpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonpage-pressed"
+      ],
+      [
+       "active",
+       "buttonpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.button_run": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#ffffff",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "buttonrun-rest"
+      ],
+      [
+       "disabled",
+       "buttonrun-dis"
+      ],
+      [
+       "pressed",
+       "buttonrun-pressed"
+      ],
+      [
+       "active",
+       "buttonrun-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.button_run_page": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#f5f5f7",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "buttonrunpage-rest"
+      ],
+      [
+       "disabled",
+       "buttonrunpage-dis"
+      ],
+      [
+       "pressed",
+       "buttonrunpage-pressed"
+      ],
+      [
+       "active",
+       "buttonrunpage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.card": {
+     "border": 61,
+     "height": 123,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "card-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 123
+    },
+    "Sq.cta": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#ffffff",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "cta-rest"
+      ],
+      [
+       "disabled",
+       "cta-dis"
+      ],
+      [
+       "pressed",
+       "cta-pressed"
+      ],
+      [
+       "active",
+       "cta-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.cta_page": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#f5f5f7",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "ctapage-rest"
+      ],
+      [
+       "disabled",
+       "ctapage-dis"
+      ],
+      [
+       "pressed",
+       "ctapage-pressed"
+      ],
+      [
+       "active",
+       "ctapage-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.drop": {
+     "border": 31,
+     "height": 63,
+     "on": "#ffffff",
+     "padding": 15,
+     "states": [
+      [
+       "",
+       "drop-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.field": {
+     "border": 31,
+     "height": 63,
+     "on": "#ffffff",
+     "padding": 15,
+     "states": [
+      [
+       "",
+       "field-rest"
+      ],
+      [
+       "focus",
+       "field-focus"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.pbar": {
+     "border": [
+      11,
+      0,
+      11,
+      0
+     ],
+     "height": 21,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "pbar"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 24
+    },
+    "Sq.seg": {
+     "border": [
+      56,
+      0,
+      56,
+      0
+     ],
+     "height": 111,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-track"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 113
+    },
+    "Sq.seg_on": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
+    },
+    "Sq.stop": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#ffffff",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "stop-rest"
+      ],
+      [
+       "disabled",
+       "stop-dis"
+      ],
+      [
+       "pressed",
+       "stop-pressed"
+      ],
+      [
+       "active",
+       "stop-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.stop_page": {
+     "border": [
+      60,
+      0,
+      60,
+      0
+     ],
+     "height": 120,
+     "on": "#f5f5f7",
+     "padding": 12,
+     "states": [
+      [
+       "",
+       "stop-page-rest"
+      ],
+      [
+       "disabled",
+       "stop-page-dis"
+      ],
+      [
+       "pressed",
+       "stop-page-pressed"
+      ],
+      [
+       "active",
+       "stop-page-hover"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 121
+    },
+    "Sq.subtab": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#f5f5f7",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "subtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
+    },
+    "Sq.toc": {
+     "border": 43,
+     "height": 87,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-wrap"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 87
+    },
+    "Sq.toc_on": {
+     "border": 37,
+     "height": 75,
+     "on": "#e8e8ed",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "toc-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 75
+    },
+    "Sq.tree": {
+     "border": 31,
+     "height": 63,
+     "on": "#ffffff",
+     "padding": 15,
+     "states": [
+      [
+       "",
+       "tree-rest"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 63
+    },
+    "Sq.trough": {
+     "border": [
+      11,
+      0,
+      11,
+      0
+     ],
+     "height": 21,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "trough"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 24
+    }
+   },
+   "file": "skin-light@3x.png",
+   "sprites": {
+    "accent-dis": [
+     0,
+     0,
+     168,
+     120
+    ],
+    "accent-hover": [
+     0,
+     120,
+     168,
+     120
+    ],
+    "accent-page-dis": [
+     0,
+     240,
+     168,
+     120
+    ],
+    "accent-page-hover": [
+     0,
+     360,
+     168,
+     120
+    ],
+    "accent-page-pressed": [
+     0,
+     480,
+     168,
+     120
+    ],
+    "accent-page-rest": [
+     0,
+     600,
+     168,
+     120
+    ],
+    "accent-pressed": [
+     0,
+     720,
+     168,
+     120
+    ],
+    "accent-rest": [
+     0,
+     840,
+     168,
+     120
+    ],
+    "accentsmall-dis": [
+     0,
+     960,
+     138,
+     90
+    ],
+    "accentsmall-hover": [
+     0,
+     1050,
+     138,
+     90
+    ],
+    "accentsmall-pressed": [
+     0,
+     1140,
+     138,
+     90
+    ],
+    "accentsmall-rest": [
+     0,
+     1230,
+     138,
+     90
+    ],
+    "button-dis": [
+     0,
+     1320,
+     138,
+     90
+    ],
+    "button-hover": [
+     0,
+     1410,
+     138,
+     90
+    ],
+    "button-pressed": [
+     0,
+     1500,
+     138,
+     90
+    ],
+    "button-rest": [
+     0,
+     1590,
+     138,
+     90
+    ],
+    "buttonpage-dis": [
+     0,
+     1680,
+     138,
+     90
+    ],
+    "buttonpage-hover": [
+     0,
+     1770,
+     138,
+     90
+    ],
+    "buttonpage-pressed": [
+     0,
+     1860,
+     138,
+     90
+    ],
+    "buttonpage-rest": [
+     0,
+     1950,
+     138,
+     90
+    ],
+    "buttonrun-dis": [
+     0,
+     2040,
+     168,
+     120
+    ],
+    "buttonrun-hover": [
+     0,
+     2160,
+     168,
+     120
+    ],
+    "buttonrun-pressed": [
+     0,
+     2280,
+     168,
+     120
+    ],
+    "buttonrun-rest": [
+     0,
+     2400,
+     168,
+     120
+    ],
+    "buttonrunpage-dis": [
+     0,
+     2520,
+     168,
+     120
+    ],
+    "buttonrunpage-hover": [
+     0,
+     2640,
+     168,
+     120
+    ],
+    "buttonrunpage-pressed": [
+     0,
+     2760,
+     168,
+     120
+    ],
+    "buttonrunpage-rest": [
+     0,
+     2880,
+     168,
+     120
+    ],
+    "card-rest": [
+     0,
+     3000,
+     410,
+     410
+    ],
+    "cta-dis": [
+     0,
+     3410,
+     138,
+     90
+    ],
+    "cta-hover": [
+     0,
+     3500,
+     138,
+     90
+    ],
+    "cta-pressed": [
+     0,
+     3590,
+     138,
+     90
+    ],
+    "cta-rest": [
+     0,
+     3680,
+     138,
+     90
+    ],
+    "ctapage-dis": [
+     0,
+     3770,
+     138,
+     90
+    ],
+    "ctapage-hover": [
+     0,
+     3860,
+     138,
+     90
+    ],
+    "ctapage-pressed": [
+     0,
+     3950,
+     138,
+     90
+    ],
+    "ctapage-rest": [
+     0,
+     4040,
+     138,
+     90
+    ],
+    "drop-rest": [
+     0,
+     4130,
+     350,
+     350
+    ],
+    "field-focus": [
+     0,
+     4480,
+     350,
+     350
+    ],
+    "field-rest": [
+     0,
+     4830,
+     350,
+     350
+    ],
+    "pbar": [
+     0,
+     5180,
+     311,
+     21
+    ],
+    "seg-on": [
+     0,
+     5201,
+     124,
+     75
+    ],
+    "seg-track": [
+     0,
+     5276,
+     160,
+     111
+    ],
+    "stop-dis": [
+     0,
+     5387,
+     168,
+     120
+    ],
+    "stop-hover": [
+     0,
+     5507,
+     168,
+     120
+    ],
+    "stop-page-dis": [
+     0,
+     5627,
+     168,
+     120
+    ],
+    "stop-page-hover": [
+     0,
+     5747,
+     168,
+     120
+    ],
+    "stop-page-pressed": [
+     0,
+     5867,
+     168,
+     120
+    ],
+    "stop-page-rest": [
+     0,
+     5987,
+     168,
+     120
+    ],
+    "stop-pressed": [
+     0,
+     6107,
+     168,
+     120
+    ],
+    "stop-rest": [
+     0,
+     6227,
+     168,
+     120
+    ],
+    "subtab": [
+     0,
+     6347,
+     138,
+     90
+    ],
+    "toc-on": [
+     0,
+     6437,
+     362,
+     362
+    ],
+    "toc-wrap": [
+     0,
+     6799,
+     374,
+     374
+    ],
+    "tree-rest": [
+     0,
+     7173,
+     350,
+     350
+    ],
+    "trough": [
+     0,
+     7523,
+     311,
+     21
+    ]
+   }
+  }
+ },
+ "version": 2
+}

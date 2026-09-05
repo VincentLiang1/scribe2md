@@ -16,6 +16,15 @@ UNKNOWN_SPEAKER = -1
 # 兩端才不會各改各的悄悄走鐘。
 MAX_SPEAKERS = 30
 
+# 執行裝置的顯示名。⚠️ **住這裡不住 `app.py`**(2026-08-29 搬過來):兩套介面都要
+# 用它——網頁版拿去填「本機偵測」那句與使用說明,原生視窗的使用說明同樣要,而
+# `app.py` 是 gradio 專屬的、原生視窗不能碰。
+# ⚠️ **只報「實際在算的」裝置**:標準機還有一顆 NPU(AI Boost),但本專案沒有任何
+# 運算跑在上面,列出來會讓人以為它在幫忙(曾短暫顯示「Intel NPU+GPU」,2026-08-03
+# 使用者以「完全沒有使用」為由指定退回;轉錄搬上 NPU 的實測結論見
+# `scripts/bench_npu.py`)。
+DEVICE_NAMES = {"cuda": "NVIDIA GPU", "intel-gpu": "Intel GPU", "cpu": "CPU"}
+
 
 @dataclass(frozen=True)
 class TranscriptSegment:

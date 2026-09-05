@@ -61,6 +61,37 @@ def preview_summary(text, recursive: bool = True) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
+def audio_summary(text, recursive: bool = False) -> str:
+    """「聲音→MD」選檔區的摘要:這樣選會走**單檔**(轉完命名)還是**批次**(不命名)。
+
+    與 `preview_summary` 同一個位置、同一個用途,但規則是音訊自己那一套:模式看
+    輸入的**形狀**(`srcfile.looks_like_batch`,使用者 2026-08-06 拍板),白名單是
+    `srcfile.SUPPORTED_TYPES`(混用會讓「聲音→MD」那顆「開始轉檔」開始接受 PDF)。
+    使用者是在這裡決定要不要一次丟一批的——等 30 分鐘後才發現沒有命名就白花了。
+
+    住在這裡而不是 `srcfile`:它要用 `docsrc.validate_batch`,而 `docsrc` 已經
+    import 了 `srcfile`,反向 import 就是循環。**兩套介面共用這一份**(網頁版
+    `app._src_summary` 只多包一層 `gr.update`;原生視窗 2026-09-02 補上多檔/資料夾
+    時直接用),空字串 = 沒話說。
+
+    只做即時回饋、**不控制按鈕**:把關全落在按下「開始轉檔」那一步。這裡不能拋
+    例外——路徑打到一半必然是「找不到」,那不是錯誤。單檔那句刻意不講「選了 1 個
+    檔案」:路徑打到一半時那句等於宣稱檔案存在(而它還不存在);這裡只講模式,
+    那句話什麼時候都是真的。"""
+    if not srcfile.clean_paths(text):
+        return ""
+    if not srcfile.looks_like_batch(text):
+        return "**單一檔案**:轉完會讓你替每位講者命名。"
+    try:
+        files, skipped = docsrc.validate_batch(
+            text, recursive=bool(recursive), types=srcfile.SUPPORTED_TYPES,
+            what="錄音或錄影檔", hint=srcfile.supported_hint(),
+        )
+    except UserFacingError as e:
+        return str(e)
+    return f"{docsrc.summarize(files, skipped)}(整批連續轉,不做講者命名)"
+
+
 def _append_paths(current, added: str) -> str:
     """把新選的路徑接在現有內容後面(實作在 srcfile,兩個分頁共用同一份)。"""
     return srcfile.append_paths(current, added)

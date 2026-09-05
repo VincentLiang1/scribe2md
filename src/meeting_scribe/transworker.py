@@ -18,7 +18,6 @@ below-normal 好讓「電腦還能用」(2026-08-04 指定),而 **gradio 的網�
 指令:
   {"cmd":"transcribe","wav":"<檔>","model":"fast","progress":true}
       → {"progress":0.13}                     執行中的中間訊息
-      → {"note":"下載轉錄模型:37%…","frac":0.37}  同上,但要換掉進度條上的字
       → {"log":"轉錄進行中:47/369 塊…","level":"INFO"}
       → {"ok":true,"segments":[[起,訖,文字],…],"device":"intel-gpu"}
   EOF → 退出
@@ -75,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         threads = int(argv[argv.index("--threads") + 1])
 
     try:
-        from meeting_scribe import models, power, transcribe
+        from meeting_scribe import power, transcribe
 
         if threads > 0:
             power.set_worker_count(threads)
@@ -83,11 +82,6 @@ def main(argv: list[str] | None = None) -> int:
         own = logging.getLogger("meeting_scribe")
         own.setLevel(logging.INFO)
         own.addHandler(_ForwardHandler())
-        # 首次下載模型(1.5~3GB)就發生在這個行程裡,而使用者盯著的是網頁上的
-        # 進度條。⚠️ **必須走結構化訊息**:log 那條會被父端當成一般訊息重播,
-        # 到不了 gr.Progress;而 print 會直接弄壞這條 NDJSON 通道
-        models.set_progress_sink(
-            lambda text, frac: _reply({"note": text, "frac": float(frac)}))
     except Exception as e:  # pragma: no cover - import 失敗
         _reply({"ready": False, "error": f"{type(e).__name__}: {e}"})
         return 1

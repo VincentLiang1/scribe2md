@@ -31,7 +31,6 @@ from meeting_scribe import (
     export,
     loopdetect,
     merge,
-    models,
     power,
     punctuate,
     runstate,
@@ -97,16 +96,6 @@ _STAGE_SPANS = {
     "輸出": (0.95, 0.05),
 }
 
-# 進度條上的字可以在階段名後面接一段補充(目前只有「首次下載模型」用它)。
-STAGE_NOTE_SEP = " — "
-
-
-def _stage_span(stage: str) -> tuple[float, float]:
-    r"""階段名 → (起點, 寬度)。⚠️ **查表前要先切掉補充說明**:查不到的階段名
-    會落到 `(1.0, 0.0)`,也就是**把進度條一次推到 100%**——而下載進度之後
-    真正的轉錄才要開始跑,進度條會先衝到底再掉回去。"""
-    return _STAGE_SPANS.get(stage.split(STAGE_NOTE_SEP, 1)[0], (1.0, 0.0))
-
 # 平行階段內兩引擎的進度權重:轉錄是主要耗時者(標準機粗估 3:1)
 _TRANSCRIBE_WEIGHT = 0.75
 _DIARIZE_WEIGHT = 0.25
@@ -147,6 +136,25 @@ class PipelineResult:
     blocks: list | None = None
 
 
+def apply_worker_count(value) -> None:
+    """套用介面指定的 CPU 核心數;**有變動才**清掉吃 CPU 執行緒的引擎快取
+    (執行緒數在引擎建構時就固定,不清快取新值不會生效)。
+
+    ⚠️ **兩套介面共用**(2026-09-02 從 `app._apply_cpu_cores` 搬來,原生視窗那條線
+    也要在每一條工作路徑開始前呼叫一次)。⚠️ `transproc` 走函式內 import,同本檔對
+    子行程管理器的既有慣例(見 `_transcribe_and_diarize`)。"""
+    if power.set_worker_count(power.normalize_worker_count(value)):
+        diarize.clear_engine_cache()
+        punctuate.clear_engine_cache()
+        transcribe.clear_engine_cache()
+        # 轉錄子行程的執行緒數是**啟動時用參數傳進去的**,清主行程的快取對它毫無
+        # 作用——留著那支等於使用者調了核心數卻沒有生效,而且完全看不出來。收掉即可,
+        # 下次轉檔會用新的數字重開一支(`transproc.get` 也會自己比對,這裡是把時機
+        # 提前到「按下開始」)。
+        from meeting_scribe import transproc
+        transproc.shutdown()
+
+
 def _speaker_hints(spoken) -> dict[int, tuple[int, str, float, float]]:
     """命名欄位的認人線索:{講者標籤: (發言段數, 最長一句, 該句起秒, 迄秒)}。
 
@@ -181,7 +189,7 @@ def _speaker_hints(spoken) -> dict[int, tuple[int, str, float, float]]:
     return hints
 
 
-def _run_transcribe(wav: Path, model_key: str, progress, note=None):
+def _run_transcribe(wav: Path, model_key: str, progress):
     """轉錄:優先走子行程,起不來就退回主行程。
 
     **為什麼要子行程**(使用者 2026-08-07 選定):轉檔要降到 below-normal
@@ -195,8 +203,7 @@ def _run_transcribe(wav: Path, model_key: str, progress, note=None):
     from meeting_scribe import transproc
 
     try:
-        return transproc.get().transcribe(
-            wav, model_key=model_key, progress=progress, note=note)
+        return transproc.get().transcribe(wav, model_key=model_key, progress=progress)
     except cancel.Cancelled:
         raise  # 停止鈕:原樣往上拋,不可被下面的兜底吞掉當成「子行程壞了」
     except Exception:
@@ -205,12 +212,10 @@ def _run_transcribe(wav: Path, model_key: str, progress, note=None):
             exc_info=True,
         )
         transproc.shutdown()
-        # 退回主行程時下載就在這裡發生,sink 直接掛上(沒有 pipe 要跨)
-        with models.progress_sink(note):
-            return transcribe.transcribe(wav, model_key=model_key, progress=progress)
+        return transcribe.transcribe(wav, model_key=model_key, progress=progress)
 
 
-def _run_diarize(wav: Path, num_speakers: int, progress, features_out=None, note=None):
+def _run_diarize(wav: Path, num_speakers: int, progress, features_out=None):
     """講者分析:同上,優先走子行程。
 
     ⚠️ 這一支**也**要搬出去,只搬轉錄是不夠的:sherpa 的 pybind11 綁定在
@@ -225,8 +230,6 @@ def _run_diarize(wav: Path, num_speakers: int, progress, features_out=None, note
     proc = None
     try:
         proc = diarproc.DiarProcess(below_normal=True)
-        # ⚠️ **要在 start() 之前掛**:模型缺了是在子行程回報 ready 之前下載的
-        proc.on_note = note
         proc.start()
         proc.on_progress = progress
         return proc.diarize(
@@ -238,11 +241,9 @@ def _run_diarize(wav: Path, num_speakers: int, progress, features_out=None, note
             "講者分析子行程不可用,改在主行程執行(轉檔期間網頁介面會比較不順)",
             exc_info=True,
         )
-        # 退回主行程時下載就在這裡發生,sink 直接掛上(沒有 pipe 要跨)
-        with models.progress_sink(note):
-            return diarize.diarize(
-                wav, num_speakers=num_speakers, progress=progress,
-                features_out=features_out)
+        return diarize.diarize(
+            wav, num_speakers=num_speakers, progress=progress,
+            features_out=features_out)
     finally:
         if proc is not None:
             proc.close()
@@ -285,28 +286,11 @@ def _transcribe_and_diarize(
             runstate.update(key, fracs[key])
         return cb
 
-    def note(text: str, frac: float) -> None:
-        r"""首次下載模型時,把進度條上的**字**換成下載進度。
-
-        ⚠️ **這條路存在的理由**(使用者 2026-08-30 選定):黑視窗藏起來之後,
-        首次轉檔要先下載 1.5~3GB,而那十幾分鐘裡進度條會停在「轉錄與講者分析」
-        一動也不動——README 至今還特別為此寫了一段「看似卡住」的說明。
-        ⚠️ **只換字、不動進度數字**:下載完之後真正的轉錄才開始跑,把下載的
-        百分比餵進同一根進度條會讓它先衝到 100% 再掉回去。
-        ⚠️ **要接在階段名後面,不能自己當一個階段**:`_stage_span` 查不到的
-        名字會落到 `(1.0, 0.0)`——那正是「先衝到 100%」的另一種寫法。"""
-        with lock:
-            combined = (
-                _TRANSCRIBE_WEIGHT * fracs["transcribe"]
-                + _DIARIZE_WEIGHT * fracs["diarize"]
-            )
-        report(f"轉錄與講者分析{STAGE_NOTE_SEP}{text}", combined)
-
     if not transcribe.gpu_available():
         segments, device = _run_transcribe(
-            wav, model_key, sub_progress("transcribe"), note)
+            wav, model_key, sub_progress("transcribe"))
         turns, voiceprints, quality = _run_diarize(
-            wav, num_speakers, sub_progress("diarize"), features_out, note)
+            wav, num_speakers, sub_progress("diarize"), features_out)
         return segments, device, turns, voiceprints, quality
 
     # gr.Progress 每次呼叫都經 contextvars 解析回報管道,而 worker 執行緒
@@ -316,11 +300,11 @@ def _transcribe_and_diarize(
     with ThreadPoolExecutor(max_workers=2) as ex:
         fut_t = ex.submit(
             contextvars.copy_context().run, _run_transcribe, wav,
-            model_key, sub_progress("transcribe"), note,
+            model_key, sub_progress("transcribe"),
         )
         fut_d = ex.submit(
             contextvars.copy_context().run, _run_diarize, wav,
-            num_speakers, sub_progress("diarize"), features_out, note,
+            num_speakers, sub_progress("diarize"), features_out,
         )
         segments, device = fut_t.result()
         turns, voiceprints, quality = fut_d.result()
@@ -403,7 +387,7 @@ def run_pipeline(
     docstring / transcribe.LANGUAGE / CLAUDE.md)。"""
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
-            start, width = _stage_span(stage)
+            start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
             on_stage(stage, min(start + width * inner_frac, 1.0))
 
     # 全程維持系統/螢幕喚醒:鎖定螢幕會觸發省電、壓抑 CPU 時脈拖慢轉檔。
@@ -479,7 +463,7 @@ def transcribe_to_markdown(
     違反 --out-dir「不要在別人的資料夾裡留東西」的用意。"""
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
-            start, width = _stage_span(stage)
+            start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
             on_stage(stage, min(start + width * inner_frac, 1.0))
 
     # 防睡眠與「不降主行程」的理由同 run_pipeline(那裡有完整說明);
@@ -560,7 +544,7 @@ def finalize(
     命名線索」——那正是單檔模式才有的東西。"""
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
-            start, width = _stage_span(stage)
+            start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
             on_stage(stage, min(start + width * inner_frac, 1.0))
 
     report("輸出")
@@ -590,10 +574,7 @@ def finalize(
     )
 
     # 這一行同樣是「不主動講就沒有人會發現」那一類:分群把幾個人塌成一群
-    # 時,逐字稿看起來只是少了一個人。⚠️ **黑視窗 2026-08-31 起已經不存在**,
-    # 所以這一行只到得了紀錄檔;使用者那一側靠的是 md 檔尾的完整診斷
-    # (`export.write_md`)與命名區的「建議優先核對」標記(`naming.py`)——
-    # 兩條都還在,留著這一行是為了事後分析時對得起來。
+    # 時,逐字稿看起來只是少了一個人,而黑視窗是使用者唯一會瞄一眼的地方
     check = export.check_first(quality or [])
     if check:
         logger.info(
