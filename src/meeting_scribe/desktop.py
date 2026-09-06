@@ -115,21 +115,25 @@ PAGE_PAD, CARD_PAD, CARD_GAP = 20, SP_XL, 20
 # 第 6 節(開真的視窗、逐個 widget 量墨跡中線)。
 NAV_LIFT, SUBNAV_LIFT = 3, 4
 
-# segmented control 的三個尺寸(邏輯 px)。⚠️ **前兩個必須與 `scripts/make_skin.py`
-# 的 `SQ_H_SEG` / `SQ_H_SEG_ON` 一模一樣**:膠囊底板的圖高與元件高度不相等時,Tk
-# 不是垂直重複貼(下緣長出第二段圓角)就是裁切(下半個圓被削平)——兩種都不報錯、
-# `reqheight` 也看不出來,只有截圖看得到。`tests/test_desktop.py` 兩邊釘在一起。
-# ⚠️ 第三個是灰槽左右各留的那一圈,**上下不用給**:選中段靠 `rowconfigure` 的
-# weight 垂直置中,而那不必先算出一個精確的內距(算錯就是上面那兩種症狀)。
-# ⚠️ **第三個值不是「好看就好」,它有一條幾何條件**(2026-09-01 使用者第二次圈出來
-# 的:灰槽的四個角上各有一小塊灰,壓在圓角外面)。Tk 疊不了兩個透明圓角——底板是
-# 不透明的圖,選中格的**圓角外側**畫的是灰槽色,那一塊只要超出灰槽的弧,就會把灰槽
-# 的圓角填平。所以內膠囊的**方角**必須落在外弧**內側**:
-#     (R − p)² + (R − g)² ≤ R²    (R = 槽高一半, p = 水平內距, g = 上下間隙)
-# 均勻一圈(p = g)時解出來是 g ≥ 0.293 × H;37 高的槽要 ≥ 10.8 實體 px,而先前給的
-# 是 4。⚠️ **`tests/test_desktop.py::test_the_selected_segment_never_covers_the_track_corner`
-# 對八個縮放檔逐檔驗這條式子**——它跟畫面無關,是純算的,所以在哪台跑都守得住。
-SEG_H, SEG_H_ON, SEG_PAD = 37, 25, 6
+# segmented control 的三個尺寸(邏輯 px)。⚠️ **`SEG_H_ON` 必須與 `scripts/make_skin.py`
+# 的 `SQ_H_SEG_ON` 一模一樣**:膠囊底板的圖高與元件高度不相等時,Tk 不是垂直重複貼
+# (下緣長出第二段圓角)就是裁切(下半個圓被削平)——兩種都不報錯、`reqheight` 也看
+# 不出來,只有截圖看得到。`tests/test_desktop.py` 兩邊釘在一起。
+# ⚠️ **2026-09-06 拿掉了灰槽**(使用者選案 H,四案對照見 `docs/dev/native-ui.md`):未選
+# 中的那幾格改成直接坐在卡片白上,選中的那格是白膠囊 ＋ 一圈 `accent` 描邊。成因是
+# **對比不是好看**——`muted` 坐在 `btn` 上淺色 8.85、深色 7.47,兩個模式都過不了共用包
+# 那條 9:1,而 `btn` 從來就不在 `winkit.palette.MUTED_SURFACES` 裡。
+# ⚠️ **`SEG_H` 因此只剩「那一列多高」,沒有對應的底板了**:它不再向皮膚問高度(沒有圖
+# 要對齊),直接 `px()`。選中段仍然靠 `rowconfigure` 的 weight 垂直置中,差出來的一圈
+# 現在單純是留白;`SEG_PAD` 也一樣,只是那一列左右各留的一圈。
+# ⚠️ **膠囊同日從 25 調回 31**(使用者選案,四個高度開真視窗逐一截圖比過):25 是灰槽
+# 時代那條外弧條件逼出來的,槽沒了就沒有理由留著。31 與一般按鈕/子分頁膠囊的 30 同一
+# 個量級,而**刻意低於主要動作鈕的 40**——它只是個選項,比主要動作鈕還重就本末倒置。
+# ⚠️ **一併消失的是「選中段的方角不可壓到槽的外弧」那條幾何條件**(2026-09-01 使用者
+# 第二次圈出來的那件事:槽的四個角上各有一小塊灰)。沒有槽就沒有外弧,選中段的圓角外
+# 側現在畫的是卡片白,所以那條式子與 `test_the_selected_segment_never_covers_the_track_corner`
+# 一起移除了——沿革留在 `docs/dev/native-ui.md`,不要照著舊註解把它推導回來。
+SEG_H, SEG_H_ON, SEG_PAD = 37, 31, 6
 
 # 兩排分頁選中那一格的膠囊高度。⚠️ **量網頁版得到的**:兩排都是 **45 實體 px**
 # @150%(頂層 y 339~383、子層 417~461),÷1.5 = 30——兩排一樣高不是巧合,它們在網頁版
@@ -627,9 +631,13 @@ STYLES = (
     ("Sub.TLabel", "page", "muted", 10, False),      # 未選中的子分頁
     ("SubOn.TLabel", "btn", "ink", 10, True),        # 選中的子分頁(膠囊底)
     # segmented control 的兩種格子(2026-09-01,見 `App._segmented`)。⚠️ **底色要
-    # 跟著各自坐的那一層**:沒選中的坐在灰槽上(`btn`)、選中的坐在白色膠囊上
-    # (`card`)——`ttk.Label` 是實色底、不是透明的,給錯就是一塊色差方塊壓在膠囊上。
-    ("Seg.TLabel", "btn", "muted", 10, False),       # 沒選中的那幾格
+    # 跟著各自坐的那一層**——`ttk.Label` 是實色底、不是透明的,給錯就是一塊色差方塊
+    # 壓在膠囊上。⚠️ **2026-09-06 起兩種都坐在卡片白上**(拿掉灰槽,使用者選案 H):
+    # 沒選中的直接畫在卡片上,選中的那格是白膠囊 ＋ 一圈 accent 描邊、底色也是白。
+    # ⚠️ **沒選中那格不可以改回 `btn`**:`muted` 坐在 `btn` 上深色只有 7.47:1,而共用包
+    # 承諾的只有 `page` / `card` / `field` 三階——`test_every_muted_style_sits_on_a_
+    # surface_the_shared_package_promises` 擋著,突變 M584 守著。
+    ("Seg.TLabel", "card", "muted", 10, False),      # 沒選中的那幾格
     ("SegOn.TLabel", "card", "ink", 10, True),       # 選中的那一格
     ("CardH.TLabel", "card", "ink", 11, True),       # 卡片標題
     ("Hint.TLabel", "card", "muted", 9, False),      # 卡片裡的說明小字
@@ -692,7 +700,12 @@ def configure_styles(root: tk.Misc, fam: str, pal: dict) -> None:
     # segmented 的格子**裡面**那一層(見 `App._segmented`)。⚠️ **不可以直接用
     # `SegOn.TFrame`**:那一支的 layout 被換成了一張膠囊底板,每用一次就多畫一顆膠
     # 囊——框中框,而症狀是文字被一條白邊切掉(看起來像沒對齊,不像樣式錯了)。
-    st.configure("SegCell.TFrame", background=pal["btn"])
+    # ⚠️ **`Seg.TFrame` 從 2026-09-06 起要在這裡設**:灰槽拿掉之後它沒有底板了,也就
+    # 不再進 `skin.SKIN_FRAMES`——那份名單才是「誰的底色由共用包設」的來源,不在裡面
+    # 就沒有人設它,而 ttk 會照後綴退到 `TFrame` 的預設灰:白卡片上一條說不出理由的
+    # 灰帶,而且不當掉、不報錯。
+    st.configure("Seg.TFrame", background=pal["card"])
+    st.configure("SegCell.TFrame", background=pal["card"])
     st.configure("SegOnBody.TFrame", background=pal["card"])
     # segmented 的**停用**外觀(2026-09-03 使用者:「現場錄音時,進階參數設定應該要
     # DISABLE」)。⚠️ **它本來就按不動,缺的是看得出來**:`_model_show` / `_scene_show`
@@ -2134,12 +2147,16 @@ class App(tk.Tk):
 
         (2026-09-01 使用者選案:網頁版那三排是灰底膠囊槽 + 白色的選中段,而原生版
         原本是方角小標籤與下拉選單。他的原話是「沒有膠囊圓角效果」「選單也不直覺」。)
+        ⚠️ **2026-09-06 又改過一次**(使用者選案 H,四案對照見 `docs/dev/native-ui.md`):
+        灰槽拿掉,未選中的那幾格直接坐在卡片白上,選中的那格是白膠囊 ＋ 一圈 `accent`
+        描邊。**成因是對比不是好看**——`muted` 坐在 `btn` 上兩個模式都過不了 9:1
+        (見 `STYLES` 那段),而那條路壓深色票已經算過是死的。
 
         ⚠️ **每一格等分、右緣齊頭**靠的是 `columnconfigure(uniform=)`:少了 uniform
         就只是「平分剩餘空間」,而「只錄電腦聲音」比「線上會議」多兩個字,那兩個字
         就是落差(網頁版當初也是為同一件事改過一次)。
-        ⚠️ **兩層高度都要自己釘死**:灰槽與選中段都是膠囊底板,而膠囊的圖高必須精確
-        等於元件高度(見 `SEG_H`)。槽用 `grid_propagate(False)` 關掉傳播,格子用
+        ⚠️ **兩層高度都要自己釘死**:那一列用 `grid_propagate(False)` 關掉傳播,格子
+        則因為選中態是一張膠囊底板、圖高必須精確等於元件高度(見 `SEG_H_ON`)。格子用
         `height=` 加**不垂直拉伸的 sticky**——`sticky="ew"` 只拉寬度,高度就留在它
         自己的 31,再靠 `rowconfigure(weight=1)` 垂直置中。
         ⚠️ **格子裡面那一層用 `place` 置中**:圖示與文字是兩個 Label(基線不同,見
@@ -2147,7 +2164,9 @@ class App(tk.Tk):
         所以格子的高度不會被內容撐開——那正是這裡最怕的一件事。"""
         track = ttk.Frame(parent, style="Seg.TFrame",
                           padding=(self.px(SEG_PAD), 0))
-        track.configure(height=self._plate_h("Sq.seg", SEG_H))
+        # ⚠️ 這一列**沒有底板**(2026-09-06 拿掉灰槽),所以高度直接 `px()`:沒有圖要
+        # 對齊,`_plate_h` 那條「要問皮膚不要自己算」只適用於穿著膠囊的那一層。
+        track.configure(height=self.px(SEG_H))
         track.grid_propagate(False)
         track.rowconfigure(0, weight=1)
         cells: dict[str, tuple] = {}

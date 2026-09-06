@@ -72,11 +72,11 @@ MUTED_MIN_CONTRAST = 9.0
 # 個設計元素**。所以這比較像**設計系統少了一條「未選中的段控格坐在次要底上」的規則**,
 # 不是哪一邊寫錯了一行。
 # ⚠️ **但「在共用包收就兩邊一起好」是錯的**(2026-09-03 當天寫錯、當天訂正):
-# meeting-scribe 的 `main` **完全不依賴本包**——`pyproject.toml` 與 `uv.lock` 都沒有
-# winkit、原始碼一處 import 都沒有(唯一的命中是 2026-08-29 留下的孤兒 `.pyc`,對應
-# 的 `.py` 早就不在版控裡了)。⚠️ **那正是本輪修 `check_downstreams` 的同一個事實,
-# 而我在這裡又假設了一次**——同一個錯誤前提,同一天犯兩次。**要全部蓋到是兩處各改
-# 一次**,在這裡收只到得了三個下游。
+# meeting-scribe 的 `main` **完全不依賴本包**,所以在這裡收只到得了三個下游,**要全部
+# 蓋到是兩處各改一次**。⚠️ **相依的現況不要在這裡查**(2026-09-05 收掉重述):那份
+# 清單住在 `scripts/check_downstreams.py`,而抄到這裡的那一份**會過期而沒有人想到要
+# 回來改**——`main` 哪天接回來,那邊有機械的更新理由(`wired` 那一格要翻成 True),
+# 這裡沒有,於是它會以查證過的姿態擋著下一個人,和本輪修掉的 8.7 是同一種東西。
 # ⚠️ 所以能共用的是**規則**、不是修法,連值都不共用:「未選中的段控格坐在次要底上,
 # 對比要各自訂門檻」——本包照 9(綁 Tk 那套算繪),gradio 那邊照 WCAG AA 的 4.5。
 # ⚠️ 深色反而是網頁版過、本包不過(它 #a1a1a6 對 #2c2c2e 是 5.42,本包 7.47 對 9)。
@@ -274,7 +274,7 @@ def contrast(fg: str, bg: str) -> float:
     「產生器與執行期都拿得到、不帶相依」。
 
     ⚠️ **這支不帶門檻,門檻由呼叫端決定。** `MUTED_MIN_CONTRAST`(9)只管 `muted`
-    那一個鍵——中文小字反鋸齒淡一階是靠拉高門檻吸收的。⚠️ **不要拿它當全介面的門檻**:
+    那一個鍵(**為什麼是 9** 見下一段,不在這裡重講)。⚠️ **不要拿它當全介面的門檻**:
     一般文字照 WCAG AA 的 4.5 就夠(MP4-2-SRT 線框鈕那條測試就是 4.5,藍字與白字都是
     一般文字),而**挑錯門檻的那一次不會報錯**,只會讓畫面莫名其妙變暗或漏掉真的太淡。
 
@@ -301,6 +301,31 @@ def contrast(fg: str, bg: str) -> float:
     return (hi + 0.05) / (lo + 0.05)
 
 
+def worst_contrast(fg_key: str, surface: str) -> float:
+    """`fg_key` 這個字色坐在 `surface` 這階底色上,**所有模式裡最差**的那個對比。
+
+    ⚠️ **這支存在的理由是「不要讓下游手寫模式名」**(2026-09-06 加)。`tests/test_palette.py`
+    已經替本包訂了這條(`MODES = tuple(PALETTES)`),理由寫得很清楚:**多一個模式時,
+    手寫的那一份會靜默地只測兩個**。⚠️ 但那條紀律沒有隨 API 送到下游,因為 API 沒給
+    下游遵守它的辦法——`muted_fits()` 同時寫死了字色鍵(`muted`)、門檻(9)與回傳型別
+    (bool),於是「同一件事、換一組鍵/門檻」在下游只能自己刻,而刻出來的三處全都寫死了
+    `("light", "dark")`。**改一次兩邊拿到,而漏的那半在你看不到的 repo 裡。**
+
+    ⚠️ **回的是數字、不是 bool**,這樣呼叫端講得出「差多少、哪個模式輸的」:原本
+    `muted_fits()` 回 False 之後,下游為了在訊息裡印一個數字得**再算一次**(而那一次
+    又是一個寫死模式名的迴圈)。
+
+    ⚠️ **不要反過來把 `muted_fits()` 換成通用的 `fits(fg, bg, minimum)`**:`contrast()`
+    的 docstring 自己寫了「**挑錯門檻的那一次不會報錯**」,把 9 藏在一個具名的 predicate
+    後面正是在防那件事。所以是**加基元、留具名 predicate**,不是合併成一支。
+    """
+    for key in (fg_key, surface):
+        missing = [m for m in PALETTES if key not in PALETTES[m]]
+        if missing:
+            raise ValueError(f"{key!r} 不是色票裡的鍵(這幾個模式沒有:{missing})")
+    return min(contrast(pal[fg_key], pal[surface]) for pal in PALETTES.values())
+
+
 def muted_fits(surface: str) -> bool:
     """`muted` 坐在這一階底色上,**兩個模式都**過得了 `MUTED_MIN_CONTRAST` 嗎?
 
@@ -312,20 +337,19 @@ def muted_fits(surface: str) -> bool:
     沒說「其他的不行」,剩下的全是第三種狀態——**沒禁止、也沒保證**。這支把它變成
     問得到的:選底色之前先問一句。
 
-    ⚠️ **一定要兩個模式都過才算數**,因為樣式只宣告一次、兩個模式共用同一份表
+    ⚠️ **一定要「最差的那個模式」都過才算數**(2026-09-06 起由 `worst_contrast()`
+    取最小值,這支只剩「拿它跟門檻比」一行),因為樣式只宣告一次、兩個模式共用同一份表
     (下游是 `background=pal[bg]` 這樣套的)。⚠️ 而**通過與否真的會分模式**:`trough`
     深色 11.20 過、淺色只有 8.85;`btn_lo` 深色 9.94 過、淺色只有 6.97。所以「我開起來
     看沒問題」本身就會騙人——他很可能只看了一個模式。
 
+    ⚠️ **先查 `MUTED_SURFACES`、問不到再問這支**:那一份是「**承諾**守住的三階」(改色
+    時有測試逐階量),這支是「今天**算**得過嗎」。⚠️ 這一句 2026-09-05 補的,因為承諾
+    那半在共用包之外沒有任何機器讀者——不從這裡指過去的話,它只是本包自言自語。
+
     ⚠️ 這支**不做決定、只報事實**。`muted_fits("btn")` 回 False 不代表「btn 該被修好」,
     要不要收、怎麼收(加專屬鍵,或讓那幾格改坐 `card`)是使用者的取捨——⚠️ 而**壓深
-    `muted` 那條路已經算過、是死的**:要在 `btn` 上過 9,與 `ink` 的間距上限是 1.53
-    (淺)與 1.16(深),都低於「次要文字要分得出正文」的下限 1.56,任何顏色都不行。
+    `muted` 那條路已經算過、是死的**(推導與那兩個上限數字**只留一份**,在
+    `MUTED_SURFACES` 的註解裡;2026-09-05 之前這段推導全文抄了四份)。
     """
-    missing = [m for m in PALETTES if surface not in PALETTES[m]]
-    if missing:
-        raise ValueError(f"{surface!r} 不是色票裡的鍵(這幾個模式沒有:{missing})")
-    return all(
-        contrast(pal["muted"], pal[surface]) >= MUTED_MIN_CONTRAST
-        for pal in PALETTES.values()
-    )
+    return worst_contrast("muted", surface) >= MUTED_MIN_CONTRAST

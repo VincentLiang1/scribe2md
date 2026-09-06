@@ -75,6 +75,20 @@ def skin_cache_env() -> str:
 UI_FONT = "Microsoft JhengHei UI"
 UI_FONT_FALLBACK = "Microsoft JhengHei"   # 舊版 Windows 沒有 UI 版
 
+# `apply()` 直接 `configure` 說明文字前景色的那幾個樣式,**其餘全靠後綴繼承**。
+# ⚠️ **這是給下游 import 的**(2026-09-06 加):下游要列舉「哪些樣式吃 muted 前景」時
+# 判準是**後綴**,而後綴要比對的那份根名單是 **winkit 的實作事實**、不是下游的身分
+# ——過一次 A/B 判準:三個下游吃的是同一支 `apply()`,答案對三個都一樣,所以是 B 類。
+# ⚠️ 這一格是踩出來才加的:MP4-2-SRT 的 `tests/test_gui.py` 2026-09-03 手抄了一份
+# `_MUTED_SUFFIXES = ("Muted.TLabel", "CardHint.Card.TLabel")`,而兩份之間**沒有任何
+# 連結**——這裡多 `configure` 一個吃 muted 前景的樣式(或改掉其中一個名字),那份就
+# 過期,它那條檢查變成**部分 no-op**。⚠️ 失效方式與 2026-09-03 那次同型:**測試是
+# 綠的、抓法看起來也對**,而那次的實測代價是「低於門檻連續三天沒有人發現」。
+# ⚠️ **這是「winkit 那半」**:下游可以在自己的 `configure_styles` 掛勾裡再加幾個
+# (meeting-scribe-native 的 `Seg.TLabel` 就是),那半是它自己的長相、要 union 上去
+# ——與 `palette.MUTED_SURFACES`(承諾)對 `muted_fits()`(現況)是同一種切法。
+MUTED_FG_STYLES = ("Muted.TLabel", "CardHint.Card.TLabel")
+
 class Button(NamedTuple):
     """一顆按鈕的完整規格。`vpad` 是**想要的**垂直內距,實際值由圖高反推收口
     (見 `_button_padding`);`vpad_bare` 是沒有皮膚那條路要還回去的那份。"""
@@ -603,16 +617,21 @@ def apply(root: tk.Misc, scale: float,
            foreground=[("disabled", pal["run_off_fg"]),
                        ("pressed", pal["on_accent"]),
                        ("active", pal["on_accent"])])
-    st.configure("Muted.TLabel", foreground=pal["muted"])
+    # ⚠️ **由 `MUTED_FG_STYLES` 驅動,不要在別處另寫一行 `foreground=pal["muted"]`**
+    # ——那個常數是下游拿去比對後綴的根名單,這裡多設一個而常數沒跟上,就等於讓下游
+    # 那份檢查靜默漏一格(`tests/test_skin.py` 有一條在守這件事)。
+    for _style in MUTED_FG_STYLES:
+        st.configure(_style, foreground=pal["muted"])
     # ⚠️ 樣式名**必須以 `.Muted.TLabel` 結尾**才繼承得到說明文字的前景色:ttk 是
     # 照後綴一層層往上找的(`Hint.Muted.TLabel` → `Muted.TLabel` → `TLabel`)。
     # 取名成 `Hint.TLabel` 就只會繼承到 `TLabel`,顏色會掉回預設的黑。
     # ⚠️ **這條同時是寫「檢查」的人的坑,不只是寫樣式的人的**(2026-09-03 由 MP4-2-SRT
     # 那邊踩出來):要在下游列舉「哪些樣式吃 muted 前景」時,**判準要用後綴、不可以用
-    # 字面比對** `configure` 過的那幾個名字——本函式只 `configure` 了 `Muted.TLabel` 與
-    # `CardHint.Card.TLabel` 兩個,其餘全靠後綴繼承。照字面抓那次只抓到 2 個,而**漏掉
-    # 的正好是拖放框那兩句**,也就是真的出過事的那兩個。⚠️ 失效方式很惡劣:測試是綠的、
-    # 抓法看起來也對。
+    # 字面比對**那幾個被 `configure` 的名字——直接設的只有 `MUTED_FG_STYLES` 那兩個,
+    # 其餘全靠後綴繼承。照字面抓那次只抓到 2 個,而**漏掉的正好是拖放框那兩句**,也就是
+    # 真的出過事的那兩個。⚠️ 失效方式很惡劣:測試是綠的、抓法看起來也對。
+    # ⚠️ 2026-09-06 補:那份根名單現在是模組層的 `MUTED_FG_STYLES`,**下游改 import
+    # 它、不要再手抄**——`str.endswith` 本來就吃 tuple,是一行的事。
     st.configure("Hint.Muted.TLabel", font=(fam, 9))
     # 視窗第一句。⚠️ 它坐在**視窗底**上(卡片之外),所以底色要跟著 `page`:
     # `ttk.Label` 是實色底、不是透明的,不指定就吃佈景的 #fafafa,那一行會是一塊
@@ -624,7 +643,9 @@ def apply(root: tk.Misc, scale: float,
     # `.Card.TLabel`(ttk 是逐段剝前綴往上找的)。
     st.configure("Card.TLabel", background=pal["card"])
     st.configure("CardTitle.Card.TLabel", font=(fam, 10, "bold"))
-    st.configure("CardHint.Card.TLabel", font=(fam, 9), foreground=pal["muted"])
+    # ⚠️ 前景色**不在這裡設**,由上面 `MUTED_FG_STYLES` 那個迴圈統一設掉(ttk 的
+    # `configure` 是累加的:同一個樣式分兩次設不同的選項不會互相清掉),這裡只剩字級。
+    st.configure("CardHint.Card.TLabel", font=(fam, 9))
     # ⚠️ 詳情那行**檔名沒有自己的樣式**:它 2026-08-27 之前是 `CardName.Card.TLabel`
     # (10pt 粗體),使用者指定拿掉粗體之後那支就只剩「跟 `Card.TLabel` 一模一樣」,
     # 留著是空樣式——所以整支刪掉,`gui` 那邊直接用 `Card.TLabel`。⚠️ 它的字級因此

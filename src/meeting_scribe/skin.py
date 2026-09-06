@@ -22,7 +22,7 @@ from winkit.skin import Button
 # ⚠️ **沒宣告的話共用包就整個不比對**(`getattr(spec, "SKIN_SCHEMA", None)`),而「舊資產
 # 配新程式」是可達的、失敗是完全無聲的——底下 `SKIN_FRAMES` / `SKIN_SWAPS` 每加一個
 # `Sq.*` 都要跳號,否則舊資產照樣載得起來、那幾顆的底板整個不畫。
-SKIN_SCHEMA = 2
+SKIN_SCHEMA = 3
 
 # 主要動作鈕的兩張皮(「開始轉檔」「開始錄音」「套用名字並下載」與「停止」)。⚠️ 樣式名**必須以 `.Accent.TButton` 結尾**才繼承得到那組
 # 圖片元件——ttk 是照後綴一層層往上找的
@@ -99,14 +99,15 @@ SKIN_FRAMES = (
     # 捲軸沒被包進去,對照組正是這個訊息區)。框在外層,兩者就都住得進去。
     # 內距 ≥ 圓角半徑的 0.29 倍,方角才不會伸進弧裡(圖片自帶 SQ_PAD_FIELD = 5px)
     ("Sunken.TFrame", "Sq.tree", "field"),
-    # segmented control(2026-09-01「照網頁版重排」):外面一條灰槽、裡面一顆白色的
-    # 選中段,兩張都是膠囊。⚠️ **是 Frame 不是 Button**——每一格裡面要放圖示與文字
-    # 兩個 Label(它們的基線不同,理由見 `desktop.App._icon_pad`),而 ttk 的 Button
-    # 只吃得下一個 image + 一段文字。
+    # segmented control 選中的那一格(白膠囊 ＋ 一圈 accent 描邊)。⚠️ **是 Frame 不是
+    # Button**——每一格裡面要放圖示與文字兩個 Label(它們的基線不同,理由見
+    # `desktop.App._icon_pad`),而 ttk 的 Button 只吃得下一個 image + 一段文字。
     # ⚠️ **膠囊底板的圖高必須精確等於元件高度**,所以用它的 Frame 一定要 `height=`
     # 釘死並關掉傳播(見 `desktop.App._segmented`);漏掉就是垂直重複貼或被裁,兩種
     # 都不報錯、`reqheight` 也看不出來,只有截圖看得到。
-    ("Seg.TFrame", "Sq.seg", "btn"),
+    # ⚠️ **那一列本身(`Seg.TFrame`)不在這裡**:2026-09-06 拿掉灰槽之後它沒有底板了,
+    # 底色改由 `desktop.configure_styles` 直接設成 `card`——這份名單是「誰的底色由共用
+    # 包設」的來源,把它留在這裡就是要一張不存在的圖。
     ("SegOn.TFrame", "Sq.seg_on", "card"),
     # 子分頁選中的那一顆。⚠️ **2026-09-01 從純色的方角 Frame 換過來**:整個畫面其他
     # 東西都是圓角,只有它是方角灰塊,使用者當場圈出來。同 segmented,用它的 cell
