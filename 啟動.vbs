@@ -55,8 +55,8 @@ End If
 If Not fso.FileExists(fso.BuildPath(here, "src\meeting_scribe\desktop.py")) Then
     missing = missing & vbCrLf & "¡@¡@src\meeting_scribe\desktop.py"
 End If
-If Not fso.FileExists(fso.BuildPath(here, "data\voiceprints.npz")) Then
-    missing = missing & vbCrLf & "¡@¡@data\voiceprints.npz"
+If Not fso.FileExists(fso.BuildPath(here, "data-default\replace.txt")) Then
+    missing = missing & vbCrLf & "¡@¡@data-default\replace.txt"
 End If
 If Not fso.FileExists(fso.BuildPath(here, "winkit\pyproject.toml")) Then
     missing = missing & vbCrLf & "¡@¡@winkit\pyproject.toml"
