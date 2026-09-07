@@ -27,7 +27,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from meeting_scribe import cancel, power
+from meeting_scribe import cancel, power, transcribe
 from meeting_scribe.types import TranscriptSegment
 
 logger = logging.getLogger(__name__)
@@ -122,12 +122,19 @@ class TransProcess:
         self, wav: Path | str, model_key: str = "fast",
         progress: Callable[[float], None] | None = None,
     ) -> tuple[list[TranscriptSegment], str]:
-        """回傳 (轉錄結果, 實際裝置);簽章與 transcribe.transcribe 一致。"""
+        r"""回傳 (轉錄結果, 實際裝置);簽章與 transcribe.transcribe 一致。
+
+        ⚠️ **「只用 CPU」是逐則指令帶過去的,不是啟動參數**(同 `--threads` 那條
+        的反面):這支子行程是模組層單例、活得越久越划算(OV 冷編譯 200 秒),而
+        使用者在對話框裡切換裝置是隨手的動作——做成啟動參數就得每切一次重開一
+        支,下一份檔案再付一次冷編譯。指令帶值則是零成本,而且不會有「父端已經
+        改了、子行程還沿用舊值」的空窗。"""
         self.on_progress = progress
         try:
             reply = self._request({
                 "cmd": "transcribe", "wav": str(Path(wav).resolve()),
                 "model": model_key, "progress": progress is not None,
+                "cpu_only": transcribe.cpu_only(),
             })
         finally:
             self.on_progress = None

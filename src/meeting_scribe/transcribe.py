@@ -119,19 +119,84 @@ def _intel_gpu_available() -> bool:
         return False
 
 
+# 使用者在「進階參數設定 → 運算裝置」選的「只用 CPU」(2026-09-07 加,起因是
+# 舊電腦的 iGPU 比 CPU 還慢——`_intel_gpu_available` 那段註解早就記著這件事,
+# 但當時只列進 spec §11 的已知限制,沒有給逃生口)。
+# ⚠️ **`None` 是「還沒從設定檔讀過」,不是 False**:命令列(doccli)與子行程都
+# 會走到這裡,而它們沒有介面可以設——lazy 讀檔讓每一個入口自動吃到同一份設定,
+# 不必各自記得要載入。
+# ⚠️ **子行程不靠這份檔**:轉錄實際跑在 `transworker` 裡,而那支是常駐單例
+# (`transproc`),啟動當下讀到的值之後不會再變。父端每一則轉錄指令都把當下的
+# 值帶過去(`transproc.transcribe`),改了設定不必重啟子行程。
+_cpu_only: bool | None = None
+
+
+def cpu_only() -> bool:
+    """使用者是不是要求「只用 CPU」(第一次問時才從設定檔讀)。"""
+    global _cpu_only
+    if _cpu_only is None:
+        from meeting_scribe import settings
+
+        _cpu_only = bool(settings.get(settings.KEY_CPU_ONLY, False))
+    return _cpu_only
+
+
+def set_cpu_only(on: bool, *, persist: bool = True) -> None:
+    r"""切換「只用 CPU」;`persist=False` 只改這個行程(子行程用這條)。
+
+    ⚠️ **一定要清引擎快取**:`_MODEL_CACHE` 的鍵含裝置,不清的話已經建好的
+    那顆 GPU 模型還會被下一趟沿用——使用者剛剛才明白地說不要用 GPU,而畫面上
+    完全看不出它其實還在用。"""
+    global _cpu_only
+    changed = _cpu_only != bool(on)
+    _cpu_only = bool(on)
+    if changed:
+        clear_engine_cache()
+    if persist:
+        from meeting_scribe import settings
+
+        settings.set(settings.KEY_CPU_ONLY, _cpu_only)
+
+
+def gpu_present() -> bool:
+    r"""這台機器**有沒有** GPU——不管使用者要不要用它。
+
+    ⚠️ **與 `gpu_available` 差的就是那個「要不要用」**,而介面兩種都要問:
+    「這一趟走哪裡」用 `predicted_device`,「這台電腦要不要給他那一排運算裝置的
+    選擇」用這一支。混用的症狀是關掉 GPU 之後那排自己變成「本機沒有 GPU」,
+    使用者再也切不回來。"""
+    return _cuda_available() or _intel_gpu_available()
+
+
+def _use_cuda() -> bool:
+    """這一趟要不要走 CUDA(硬體有 ＋ 使用者沒有關掉 GPU)。
+
+    ⚠️ **與 `_cuda_available` 分開**:那一支問的是「這台機器有沒有」,快取著、
+    也是測試 monkeypatch 的對象;把使用者的選擇混進去會讓那份快取變成錯的。"""
+    return not cpu_only() and _cuda_available()
+
+
+def _use_intel() -> bool:
+    """這一趟要不要走 Intel GPU(理由同 `_use_cuda`)。"""
+    return not cpu_only() and _intel_gpu_available()
+
+
 def gpu_available() -> bool:
     """轉錄是否會走 GPU 引擎(CUDA 或 Intel GPU)。
 
     pipeline 據此決定轉錄與講者分析要平行(異質資源,GPU+CPU)
-    或依序(兩者同吃 CPU,平行只會過度訂閱且推高峰值記憶體)。"""
-    return _cuda_available() or _intel_gpu_available()
+    或依序(兩者同吃 CPU,平行只會過度訂閱且推高峰值記憶體)。
+
+    ⚠️ 使用者關掉 GPU 之後這裡要回 False:兩條路都改吃 CPU,再平行下去就是
+    過度訂閱(那正是純 CPU 機一開始就依序執行的理由)。"""
+    return not cpu_only() and gpu_present()
 
 
 def predicted_device() -> str:
     """啟動時預告轉錄將走的裝置(偵測結果,非執行保證;中途降級以實際為準)。"""
-    if _cuda_available():
+    if _use_cuda():
         return "cuda"
-    if _intel_gpu_available():
+    if _use_intel():
         return "intel-gpu"
     return "cpu"
 
@@ -257,9 +322,12 @@ def transcribe(
     - 引擎「執行」失敗(CUDA DLL 缺失、OV 編譯失敗等)→ 安靜降級下一路;
     - 模型「下載」失敗(UserFacingError)→ 直接浮出明確提示重試——網路
       問題降級只會默默觸發另一場 1.5~3GB 下載再跑慢速路,不符降級初衷。
-      模型解析置於 try 之外即為此分流的實作點。"""
+      模型解析置於 try 之外即為此分流的實作點。
+
+    ⚠️ 使用者選了「只用 CPU」時兩條 GPU 路都不試(`_use_*`),直接走最後那條
+    ——那是「舊電腦的 GPU 反而更慢」的逃生口,不是降級。"""
     name = MODEL_CHOICES[model_key]
-    if _cuda_available():
+    if _use_cuda():
         model_dir = _model_dir(name)
         try:
             return _run(_load(model_dir, "cuda"), wav_path, progress), "cuda"
@@ -267,7 +335,7 @@ def transcribe(
             # 失敗的實例不得留在快取被下一檔重用(狀態可能已壞)
             _MODEL_CACHE.pop((model_dir, "cuda"), None)
             logger.warning("CUDA 執行失敗,嘗試下一個引擎", exc_info=True)
-    if _intel_gpu_available():
+    if _use_intel():
         ov_dir = str(models.ov_whisper_dir(model_key))
         try:
             return _transcribe_intel(wav_path, ov_dir, progress), "intel-gpu"

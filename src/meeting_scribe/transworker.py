@@ -105,6 +105,11 @@ def main(argv: list[str] | None = None) -> int:
                 def on_progress(f: float) -> None:  # noqa: F811
                     _reply({"progress": float(f)})
 
+            # ⚠️ **每一則指令都重設一次,而且 `persist=False`**:父端才是那份
+            # 設定的擁有者(使用者在對話框裡改的),子行程只是照辦——這裡若跟著
+            # 寫檔,兩個行程會對同一個檔案互相覆寫,而且子行程寫的永遠是它剛
+            # 收到的舊值。
+            transcribe.set_cpu_only(bool(msg.get("cpu_only")), persist=False)
             segments, device = transcribe.transcribe(
                 msg["wav"], model_key=msg.get("model", "fast"),
                 progress=on_progress,

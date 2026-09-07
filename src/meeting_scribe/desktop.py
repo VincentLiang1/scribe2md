@@ -251,31 +251,75 @@ SCENARIO_INFO = {
 # 給它們各配一顆圖示只會讓人以為那是兩種不同的功能。
 MODEL_OPTIONS = tuple((k, "", k) for k in MODEL_LABELS)
 
-# 模型的說明,依這台機器**有沒有 GPU** 換一句(同網頁版 `build_ui` 的 `model_info`;
-# 完整理由收在「使用說明」)。
-# ⚠️ **兩句都縮成半欄排得進一行的長度(≈ 16 個中文字)**(2026-09-02 使用者選案 C):
-# 摺疊區排成「模型｜CPU 核心數」兩欄之後左欄餘裕只剩 36 實體 px,任何一句多出一行
-# (+22)就只剩 14——`test_the_advanced_card_keeps_to_two_columns_and_one_line_hints`
-# 拿真的字型量。網頁版的長版(「文字更準,總時間和快速差不多」「改選精準會慢約 4 倍」)
-# 在 `app.py` 與使用說明裡都還在,這裡只留結論。
-# ⚠️ **餘裕只剩 5 實體 px**(2026-09-04,`MAX_CONTENT` 收成 1176 之後半欄是 291,而
-# 「沒有 GPU」那句 286):**再多一個字就折行**——要改這兩句就先拿那條測試量,不要
-# 照「≈ 16 個中文字」估(GPU、4 這種半形字比中文窄,字數算不出寬度)。
+# 模型的說明,依**這一趟會走哪裡**換一句(同網頁版 `build_ui` 的 `model_info`)。
+# ⚠️ **鍵是「走不走 GPU」,不是「有沒有 GPU」**(2026-09-07):有 GPU 而使用者自己
+# 關掉時,兩者不再是同一件事——寫「沒有 GPU」就是畫面在說謊,而他上一個動作正好
+# 就是那句話的成因。判準統一走 `transcribe.predicted_device()`。
+# ⚠️ **不可以寫「已選『精準』」那種話**(2026-09-07 拿掉):那是**啟動時**的預設值,而
+# 使用者本來就能自己改一格——切過裝置又手動選過模型之後,那句話就是在說謊。這兩句只講
+# 「這一趟走哪裡、那條路上兩個檔位差多少」,不管他選了哪一格都成立。
+# ⚠️ **每一句都必須排得進一行**(2026-09-07 使用者選案 D):那個版面是「左邊小標＋一行
+# 說明、右邊控制項」,說明一折行整列就散掉。文字欄只有 `ADV_TEXT_W`,而**中文的長句在
+# Tk 裡幾乎不能折**——它的自動換行只認空白、不在中文中間斷,所以折起來會是「第一行四個
+# 字」那種樣子。⚠️ **要改這幾句就先拿測試量**(`test_the_advanced_dialog_keeps_every_hint_to_one_line`),
+# 不要照字數估:GPU、4 這種半形字比中文窄。完整版的說法在「使用說明」的「⚙️ 調準確度與
+# 速度」那篇,這裡只留一句結論。
 MODEL_INFO = {
-    True: "有 GPU:已選「精準」,時間差不多",
-    False: "沒有 GPU:已選「快速」,精準慢 4 倍",
+    True: "走 GPU:「精準」和「快速」的總時間差不多",
+    False: "走 CPU:改選「精準」會慢約 4 倍",
 }
 
+# 「運算裝置」那一排 segmented(2026-09-07 使用者:「有些較舊的主機雖然有 GPU,但因為
+# 是舊電腦 GPU 效能不好,因此需要手動自行切換到 CPU」)。
+# ⚠️ **這件事程式判斷不出來**:`transcribe._intel_gpu_available` 只問「OpenVINO 列不列
+# 得出 GPU」、不分強弱,而那段註解早就寫著老款 iGPU 可能慢於 CPU 卻不會自動降級(不拋錯
+# 就不降級),當時只列進 spec §11 的已知限制——這一排就是那條限制的逃生口。做型號白名單
+# 的路已經否決過:清單必然過時而且誤殺。
+# ⚠️ **沒有圖示**(空字串,同「模型」那排):兩格是同一件事的兩個檔位。
+# ⚠️ **「只用 CPU」排左邊、「自動」排右邊**(使用者 2026-09-07 指定對調):這樣兩排
+# segmented 的**預設選中格都落在右邊**(模型那排預設是「精準」),右緣對齊之外連選中的
+# 那顆膠囊都對齊。⚠️ **對調的只有顯示順序,預設值沒有變**——預設仍是 `DEVICE_AUTO`,
+# 那是 `default_device_key()` 算出來的,與這個 tuple 的排列無關。
+DEVICE_AUTO, DEVICE_CPU = "auto", "cpu"
+DEVICE_OPTIONS = ((DEVICE_CPU, "", "只用 CPU"), (DEVICE_AUTO, "", "自動"))
+
+# 「運算裝置」底下那句,三種情形各一句(**一行**,理由與量法見 `MODEL_INFO`)。
+# ⚠️ **「自動」那句要講的是「什麼時候該改」**,不是「現在偵測到什麼」——偵測結果就寫在
+# 旁邊那一排上,而使用者站在這裡要決定的是動不動它。
+# ⚠️ **「沒有 GPU」那句要講「不會有差別」**:機器本來就在用 CPU,不講的話使用者會以為
+# 自己剛剛做了一件有用的事,下次轉檔還是一樣慢就會回來問。
+DEVICE_INFO = {
+    (True, DEVICE_AUTO): "舊電腦的 GPU 比 CPU 還慢時,改成「只用 CPU」",
+    (True, DEVICE_CPU): "轉錄與講者分析改成依序跑,下一趟開始生效",
+    (False, DEVICE_AUTO): "本機沒有偵測到 GPU,改它不會有差別",
+    (False, DEVICE_CPU): "本機沒有偵測到 GPU,改它不會有差別",
+}
+
+# 進階參數設定對話框的兩欄(2026-09-07 使用者選案 D,五案實拍見 `docs/dev/native-ui.md`):
+# 左邊是小標＋一行說明,右邊是控制項,右緣對齊成一條線。
+# ⚠️ **兩欄都用 `minsize` 釘死,不可以讓內容決定**:視窗的大小由內容算出來,而說明字會
+# 隨著使用者切換裝置換一句——不釘的話,切一次裝置整扇窗就自己變寬一次,看起來像畫面壞掉
+# (實測 393 → 510 px)。⚠️ **文字欄 270 是量出來的**:最長的那句(「舊電腦的 GPU 比 CPU
+# 還慢時,改成「只用 CPU」」)要 259 實體 px,只剩 11 px 餘裕——要加字先跑那條測試。
+ADV_TEXT_W, ADV_CTL_W = 270, 220
+
+
+def default_device_key() -> str:
+    r"""「運算裝置」那一排該停在哪一格——**唯一的問法**。
+
+    ⚠️ **是算出來的、不是記在視窗上的**:真值住在 `transcribe.cpu_only()`(它自己
+    從 `%LOCALAPPDATA%` 的設定檔讀,見那一支)。介面另存一份的話,兩邊遲早在某條
+    路徑上分岔,而症狀是「畫面上寫著只用 CPU、轉錄還是走 GPU」——使用者看得到的
+    只有速度沒變。"""
+    return DEVICE_CPU if transcribe.cpu_only() else DEVICE_AUTO
+
 # 「CPU 核心數」底下那句(文案重點同網頁版、使用者 2026-07-26 指定的:講清楚「預設
-# 已自動留 1 核」與「太卡就調小」,舊電腦的使用者才知道這裡是逃生口)。⚠️ **縮成半欄
-# 排得進一行**(理由見 `MODEL_INFO`),而且**核心數兩位數的機器也要排得進**(測試用
-# 64 核量過)。⚠️ **2026-09-04 又少掉「電腦」兩個字**:內容區照網頁版從 1240 收成
-# `MAX_CONTENT` 1176,半欄的換行寬度跟著從 311 掉到 291 實體 px,而原句 295——**差
-# 4 px**。留下的正好是使用者當初指定的那兩個重點,一個字都沒少。
+# 已自動留 1 核」與「太卡就調小」,舊電腦的使用者才知道這裡是逃生口)。
+# ⚠️ **一行**(同 `MODEL_INFO`),而且**核心數兩位數的機器也要排得進**(測試用 64 核量)。
 # ⚠️ **是函式不是常數**:核心數是這台機器的事,import 當下不該定死
 # (測試會換掉 `cpu_count`)。
 def cores_info() -> str:
-    return f"預設 {power.default_worker_count()}(自動留 1 核);太卡就調小"
+    return f"預設 {power.default_worker_count()}(自動留 1 核);轉檔時太卡就調小"
 
 
 # 還沒開始錄音時狀態列那一句(同網頁版的 `_REC_IDLE_MD`)。
@@ -290,9 +334,15 @@ REC_IDLE = "尚未開始錄音。"
 # ⚠️ **不寫 Markdown 的粗體記號**:狀態行是普通的 ttk.Label,`**` 會原樣畫出來。
 REC_FINISHING = "收尾中:完成剩餘轉錄與講者分析,進度見下方的預覽區…"
 
-# 「進階參數設定」收合的記號。⚠️ **不帶 VS16**(見檔頭):▶ 正是那七個受害字元之一,
+# 摺疊卡收合的記號(**文件頁**那張「進階參數設定」;轉檔頁那張 2026-09-07 改成對話框
+# 的入口,見 `ADV_ENTRY`)。⚠️ **不帶 VS16**(見檔頭):▶ 正是那七個受害字元之一,
 # 帶了就在後面多出一個 30px 寬的方塊。
 ADV_CLOSED, ADV_OPEN = "▶", "▼"
+
+# 轉檔頁那張入口卡:標題,以及右邊那個「點了會開一扇窗」的記號。
+# ⚠️ **記號要跟摺疊卡的 ▶／▼ 明顯不同**:同一頁上兩張長得一樣的卡,一張就地展開、
+# 一張跳出視窗,而使用者分不出哪張是哪張——刪節號是 Windows 自己的慣例(「設定…」)。
+ADV_TITLE, ADV_ENTRY = "進階參數設定", "…"
 
 # 使用說明裡那張 Claude 隱私設定截圖(全篇唯一一張圖)。
 PRIVACY_IMG = repo_root() / "docs" / "claude-privacy-setting.jpg"
@@ -1063,6 +1113,26 @@ class App(tk.Tk):
         self._fonts: dict[str, tkfont.Font] = {}
         # 每一頁詞表的三個元件:(編輯區, 狀態行, 警告行)
         self._wordlists: dict[str, tuple] = {}
+        # 「進階參數設定」的三個值。⚠️ **值住在視窗上、widget 住在對話框裡**
+        # (2026-09-07 改成對話框之後才分家的):對話框是「點了才建」,而這三個值在
+        # 按下「開始」的那一刻要讀得到——包含**使用者從來沒開過那個對話框**的那一
+        # 趟,以及文件頁轉錄音檔時(`_doc_*` 也讀 `_run_model`)。widget 那一半一律
+        # 可能是 None,碰之前先問(見 `_adv_lock`),同 CLAUDE.md 那條「不准回頭摸
+        # 另一頁的 widget」。
+        self._run_model = tk.StringVar(
+            value=MODEL_KEYS[transcribe.default_model_key()])
+        self._run_cores = tk.StringVar(value=str(power.default_worker_count()))
+        # ⚠️ **「運算裝置」刻意沒有自己的變數**:它的真值是 `transcribe.cpu_only()`
+        # (落地在 `%LOCALAPPDATA%`,使用者 2026-09-07 選定「記住」),畫面只是它的投影
+        # ——存第二份的話,兩邊一定會在某條路徑上分岔,而症狀是「畫面顯示只用 CPU、
+        # 轉錄還是走 GPU」,那查不出來。要問就問 `default_device_key()`。
+        self._adv_win: tk.Toplevel | None = None
+        self._adv_body: ttk.Frame | None = None
+        self._model_cells: dict | None = None
+        self._device_cells: dict | None = None
+        self._cores_spin: ttk.Spinbox | None = None
+        self._model_hint: ttk.Label | None = None
+        self._device_hint: ttk.Label | None = None
 
         self._styles()
         self._build_ui()
@@ -3799,66 +3869,233 @@ class App(tk.Tk):
             fold.body.pack_forget()
 
     def _adv_build(self, parent) -> ttk.Frame:
-        r"""「進階參數設定」:平常收起來的那張卡(同網頁版的 `gr.Accordion`)。
+        r"""「進階參數設定」在左欄的入口:一張只有標題列的矮卡,點了開對話框。
 
-        ⚠️ **模型的快速/精準選擇必須保留**(2026-07-26 曾移除、同日裁定還原),但它
-        **平常不會改**——收起來之後左欄少一整段,而那是 2026-09-01 對齊網頁版時
-        「一張大卡」放得下的原因之一。
-        ⚠️ **摺疊區裡排成「模型｜CPU 核心數」兩欄、說明各一行**(2026-09-02 使用者選案
-        C):直向排的話展開後左欄在 1280×820 差 133 實體 px 放不下——pack 分不到空間就
-        把最後那張卡縮短,卡片的圓角照畫,看起來像那張卡本來就只有這麼長。出過三案實拍
-        (搬到右欄 +71、對話框不受限、留在左欄兩欄式 +36),他選了位置不動的這一案。
-        ⚠️ **代價是餘裕只有 36 實體 px**:任何一段說明多出一行(+22)就只剩 14,所以
-        `MODEL_INFO`、`cores_info` 都是照半欄 ≈ 16 個中文字收的,**這張卡不要再加東西,
-        要加就先量**。放不下時左欄會長出捲軸(`_two_columns`),那是安全網不是版面。"""
-        self._adv = self._fold(parent, "進階參數設定", self._adv_toggle)
-        card = self._adv.card
+        (2026-09-07 使用者選案 C;四案實拍與量到的數字見 `docs/dev/native-ui.md`。)
+        ⚠️ **改成對話框不是為了好看,是那張卡早就裝不下了**:摺疊區展開後,左欄在
+        「轉錄音檔」模式**要捲 102 px**、「現場收音」差 8 px——而那還是**還沒加**
+        運算裝置那一排的數字。使用者要的第三個參數只是把這件事逼到檯面上。
+        ⚠️ 換到的三件事:三種模式幾乎都不必捲(+91／−3／+153)、兩段說明從「壓成半欄
+        一行」還原成完整句(見 `MODEL_INFO`)、以及**下次再加參數不必重排版面**——這
+        一條才是真正的收穫,前兩次(2026-09-02 排兩欄、2026-09-04 再砍兩個字)都是在同
+        一個 36 px 的餘裕上騰挪。
+        ⚠️ **這張入口卡不要再長高**:它只有一列,而「轉錄音檔」那個模式的餘裕是 −3
+        ——多一行說明就又要捲了。有話要講就寫進對話框裡,那裡沒有高度限制。
+        ⚠️ **整張卡都能點**(不只標題與記號):它裡面只有一列,沒有「點到內容」的問題,
+        而摺疊卡那支(`_fold`)只綁標題列是因為它的 body 裡有控制項。"""
+        card = ttk.Frame(parent, style="Card.TFrame",
+                         padding=(self.px(CARD_PAD), self.px(SP_LG)))
+        card.pack(fill="x", pady=(self.px(CARD_GAP), 0))
+        head = ttk.Frame(card, style="CardBody.TFrame")
+        head.pack(fill="x")
+        label = ttk.Label(head, text=ADV_TITLE, style="CardH.TLabel")
+        label.pack(side="left")
+        mark = ttk.Label(head, text=ADV_ENTRY, style="Hint.TLabel")
+        mark.pack(side="right")
+        for w in (card, head, label, mark):
+            w.bind("<Button-1>", lambda _e: self._adv_open())
+            w.configure(cursor="hand2")
+        return card
 
-        # 兩欄等分、中間留 `CARD_GAP`(與卡片之間的距離同一把尺)。⚠️ **`uniform` 少不得**
-        # (同 segmented 那條):沒有它只是平分「剩餘」空間,哪一欄的內容寬就哪一欄大。
-        body = self._adv.body
-        body.columnconfigure(0, weight=1, uniform="adv")
-        body.columnconfigure(1, weight=1, uniform="adv")
-        gap = self.px(CARD_GAP)
-        col_model = ttk.Frame(body, style="CardBody.TFrame")
-        col_model.grid(row=0, column=0, sticky="new", padx=(0, gap // 2))
-        col_cores = ttk.Frame(body, style="CardBody.TFrame")
-        col_cores.grid(row=0, column=1, sticky="new", padx=(gap - gap // 2, 0))
+    def _adv_open(self) -> None:
+        r"""開「進階參數設定」對話框(已經開著就叫到前面來)。
 
-        # ---- 左:模型 ----
-        ttk.Label(col_model, text="模型", style="CardH.TLabel").pack(anchor="w")
-        self._wrap(ttk.Label(
-            col_model, text=MODEL_INFO[transcribe.predicted_device() != "cpu"],
-            style="Hint.TLabel", justify="left"), cols=2).pack(
-                anchor="w", pady=(self.px(SP_XS), 0))
-        self._run_model = tk.StringVar(
-            value=MODEL_KEYS[transcribe.default_model_key()])
-        track, self._model_cells = self._segmented(
-            col_model, MODEL_OPTIONS, self._model_show)
-        track.pack(fill="x", pady=(self.px(SP_SM), 0))
+        ⚠️ **不 `grab_set`**(不做 modal):使用者調 CPU 核心數時常常一邊看主畫面的
+        狀態,而 modal 會把整個主視窗鎖住。跟著主視窗最小化用 `transient` 就夠了
+        (同核對視窗 `_audit_window`)。
+        ⚠️ **每次開都重建內容**:三段的說明字都跟當下的狀態有關(走 GPU 還是 CPU、
+        這台機器有沒有 GPU、核心數的預設值),留著上次那一份只會顯示過期的話。
+        ⚠️ **開起來的當下要立刻套用鎖**(`_adv_lock`):轉檔中才第一次點開它的那一趟,
+        沒有任何 `_params_lock` 會再經過這裡——而那正是最需要鎖的時候(同 `_lockable`
+        那條「新建的那一頁要立刻吃到現在的狀態」)。"""
+        win = self._adv_win
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            win.focus_set()
+            return
+        win = tk.Toplevel(self)
+        win.title(ADV_TITLE)
+        win.configure(background=self.pal["page"])
+        win.transient(self)
+        win.resizable(False, False)
+        win.protocol("WM_DELETE_WINDOW", self._adv_close)
+        win.bind("<Escape>", lambda _e: self._adv_close())
+        self._adv_win = win
+        pad = ttk.Frame(win, style="Page.TFrame", padding=self.px(SP_LG))
+        pad.pack(fill="both", expand=True)
+        card = ttk.Frame(pad, style="Card.TFrame", padding=self.px(CARD_PAD))
+        card.pack(fill="x")
+        # ⚠️ **要留著這張卡的參照**:「工作進行中每一個控制項都要停用」那條測試走遍
+        # 它(不是走遍整扇窗)——「關閉」鈕在卡片外面,而它**不可以**跟著停用。
+        self._adv_body = card
+        body = ttk.Frame(card, style="CardBody.TFrame")
+        body.pack(fill="x")
+        body.columnconfigure(0, minsize=self.px(ADV_TEXT_W), weight=1)
+        body.columnconfigure(1, minsize=self.px(ADV_CTL_W))
+
+        def section(n: int, title: str, hint: str, build):
+            r"""一列:左邊小標＋一行說明,右邊控制項;段與段之間一條細線。
+
+            ⚠️ **控制項欄 `sticky="e"`**:三列的控制項寬度不同(兩排 segmented ＋ 一個
+            數字框),不靠右的話右緣是鋸齒狀的,而那正是使用者說「排版不好看」的那一類。
+            ⚠️ **說明不登記進 `self._wrap`**:那一套跟著**主視窗**寬度重算,而這扇窗的
+            寬度是固定的(`resizable(False, False)`)——登記進去只會在使用者拉主視窗時,
+            把這裡的換行寬度改成別的欄的。"""
+            text = ttk.Frame(body, style="CardBody.TFrame")
+            text.grid(row=n * 2, column=0, sticky="w")
+            ttk.Label(text, text=title, style="CardH.TLabel").pack(anchor="w")
+            note = ttk.Label(text, text=hint, style="Hint.TLabel", justify="left",
+                             wraplength=self.px(ADV_TEXT_W))
+            note.pack(anchor="w", pady=(self.px(SP_XS), 0))
+            holder = ttk.Frame(body, style="CardBody.TFrame")
+            holder.grid(row=n * 2, column=1, sticky="e")
+            build(holder)
+            if n < 2:
+                # ⚠️ 用 `tk.Frame` 不是 `ttk.Separator`:分隔線的顏色要跟著皮膚走
+                # (`card_line`),而 ttk 的 Separator 吃的是主題自己那條灰。
+                tk.Frame(body, height=1, background=self.pal["card_line"]).grid(
+                    row=n * 2 + 1, column=0, columnspan=2, sticky="ew",
+                    pady=self.px(SP_LG))
+            return note
+
+        def sized_segment(parent, options, command, width):
+            r"""一排寬度**釘死**的 segmented(不撐滿整欄)。
+
+            ⚠️ **兩格的 segmented 撐滿整欄會被拉成兩顆巨大的膠囊**——那正是 2026-09-07
+            使用者說「排版不好看」時畫面上的樣子(每格 215 px 寬)。`_segmented` 那一列
+            本來就 `grid_propagate(False)`,所以寬度只能從這裡給。"""
+            track, cells = self._segmented(parent, options, command)
+            track.configure(width=self.px(width))
+            track.pack()
+            return cells
+
+        # ---- 運算裝置 ------------------------------------------------------ #
+        # (2026-09-07 使用者:舊主機的 GPU 效能不好,要能手動切到 CPU。)
+        # ⚠️ **排第一行**(使用者同日指定):它決定「這一趟在哪裡算」,而「模型」那句
+        # 說明的第一個字正是它的結果(「走 GPU…」／「走 CPU…」)——因跟果排反了的話,
+        # 讀到模型那句時還不知道它憑什麼這樣講。
+        self._device_hint = section(
+            0, "運算裝置", "",
+            lambda p: setattr(self, "_device_cells",
+                              sized_segment(p, DEVICE_OPTIONS, self._device_show, 220)))
+        self._segment_show(self._device_cells, default_device_key())
+
+        # ---- 模型 ---------------------------------------------------------- #
+        # ⚠️ **這個選擇必須保留**(2026-07-26 曾移除、同日裁定還原)。
+        self._model_hint = section(
+            1, "模型", "",
+            lambda p: setattr(self, "_model_cells",
+                              sized_segment(p, MODEL_OPTIONS, self._model_show, 190)))
         self._segment_show(self._model_cells, self._run_model.get())
 
-        # ---- 右:CPU 核心數 ----
-        # (2026-09-02 使用者:「進階參數設定 CPU 核心數不見了,是 AP 沒辦法設定嗎?」
-        # ——不是做不到,是先前沒接上。)⚠️ **它管的是三條路徑**:轉錄音檔、現場收音
-        # (開始與收尾各套一次,同網頁版)、重設講者(有同名媒體檔時要抽聲紋,走 CPU)。
-        # 值在按下「開始」那一刻讀、經 `pipeline.apply_worker_count` 套用;引擎的執行緒數
-        # 在建構時就定死,所以是「下一趟才生效」——而那正是網頁版的行為。
-        ttk.Label(col_cores, text="CPU 核心數", style="CardH.TLabel").pack(anchor="w")
-        self._wrap(ttk.Label(
-            col_cores, text=cores_info(), style="Hint.TLabel",
-            justify="left"), cols=2).pack(anchor="w", pady=(self.px(SP_XS), 0))
-        self._run_cores = tk.StringVar(value=str(power.default_worker_count()))
-        # ⚠️ **不設 min/max**(同「講者人數」那條):超限一律在 `power.normalize_worker_count`
-        # 夾,讓控制項自己擋會跳出英文錯誤(spec §8)。
-        # ⚠️ **要留住這個 widget**:錄音／轉檔進行中它得停用(見 `_params_lock`)。模型
-        # 那排點了本來就沒作用,而這一格**是真的會生效的**——收尾時才讀,所以錄音中改
-        # 它會悄悄改掉這一場的收尾行為,那正是網頁版把它鎖起來的理由。
-        self._cores_spin = ttk.Spinbox(
-            col_cores, textvariable=self._run_cores, from_=1,
-            to=power.max_cpu_cores(), style="Tall.TSpinbox")
-        self._cores_spin.pack(fill="x", pady=(self.px(SP_SM), 0))
-        return card
+        # ---- CPU 核心數 ---------------------------------------------------- #
+        # ⚠️ **它管的是三條路徑**:轉錄音檔、現場收音(開始與收尾各套一次)、重設講者
+        # (有同名媒體檔時要抽聲紋,走 CPU)。值在按下「開始」那一刻讀、經
+        # `pipeline.apply_worker_count` 套用;引擎的執行緒數在建構時就定死,所以是
+        # 「下一趟才生效」。
+        # ⚠️ **不設 min/max**(同「講者人數」那條):超限一律在
+        # `power.normalize_worker_count` 夾,讓控制項自己擋會跳出英文錯誤(spec §8)。
+        def cores(parent):
+            self._cores_spin = ttk.Spinbox(
+                parent, textvariable=self._run_cores, from_=1,
+                to=power.max_cpu_cores(), width=6, style="Tall.TSpinbox")
+            self._cores_spin.pack()
+
+        section(2, "CPU 核心數", cores_info(), cores)
+
+        bar = ttk.Frame(pad, style="Page.TFrame")
+        bar.pack(fill="x", pady=(self.px(CARD_GAP), 0))
+        HandButton(bar, text="關閉", style=skin.SKIP_PAGE_STYLE,
+                   command=self._adv_close).pack(side="right")
+        self._adv_hints()
+        self._adv_lock()
+        self._adv_place(win)
+
+    def _adv_place(self, win: tk.Toplevel) -> None:
+        r"""把對話框擺在主視窗中央偏上;主視窗還沒 map(測試)就不擺。
+
+        ⚠️ **要先 `update_idletasks()` 才問得到尺寸**:視窗剛建好時
+        `winfo_reqwidth()` 還是 1,拿它算出來的位置會把對話框推到主視窗右下角。
+        ⚠️ **只給位置、不給大小**(`+x+y` 而不是 `WxH+x+y`):高度由內容決定,寫死的
+        話說明文字多換一行就被裁掉,而 `resizable(False, False)` 讓使用者連拉都拉不
+        開——那正是「無聲地被裁掉」那一族。"""
+        try:
+            win.update_idletasks()
+            if not self.winfo_ismapped():
+                return
+            x = self.winfo_rootx() + max(
+                (self.winfo_width() - win.winfo_reqwidth()) // 2, 0)
+            y = self.winfo_rooty() + max(
+                (self.winfo_height() - win.winfo_reqheight()) // 3, 0)
+            win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        except tk.TclError:             # pragma: no cover - 視窗剛好被關掉
+            pass
+
+    def _adv_close(self) -> None:
+        r"""關掉對話框,並把它裡面那幾個 widget 的參照清乾淨。
+
+        ⚠️ **清參照要在 `destroy()` 之前**:destroy 會走 `<Destroy>` 事件,而那條路
+        上還可能有人問到這幾個名字——留著的話問到的是已經死掉的 widget,`configure`
+        會拋 TclError 被 Tk 吞進紀錄檔,畫面上一個字都沒有。
+        ⚠️ **值不清**(`_run_model` / `_run_cores` / `_run_device`):它們住在視窗上,
+        關掉對話框只是收起介面,不是把使用者的設定丟掉。"""
+        win, self._adv_win = self._adv_win, None
+        self._adv_body = None
+        self._model_cells = self._device_cells = None
+        self._cores_spin = None
+        self._model_hint = self._device_hint = None
+        if win is not None and win.winfo_exists():
+            win.destroy()
+
+    def _adv_hints(self) -> None:
+        r"""把對話框裡兩段會變的說明重寫一次(對話框沒開就什麼都不做)。
+
+        ⚠️ **模型那句問的是 `predicted_device()`**(這一趟走哪裡),而運算裝置那句問的
+        是 `gpu_present()`(這台機器有沒有)——兩者在「有 GPU 但使用者關掉了」的時候
+        不同,混用的症狀是關掉之後那一排自己變成「本機沒有 GPU」,再也切不回來。"""
+        if self._model_hint is not None:
+            self._model_hint.configure(
+                text=MODEL_INFO[transcribe.predicted_device() != "cpu"])
+        if self._device_hint is not None:
+            self._device_hint.configure(
+                text=DEVICE_INFO[(transcribe.gpu_present(),
+                                  default_device_key())])
+
+    def _adv_lock(self) -> None:
+        r"""依 `_busy` 鎖住/放開對話框裡的控制項;對話框沒開就什麼都不做。
+
+        ⚠️ **一定要先問對話框在不在**:它是「點了才建」的,而 `_params_lock` 在每一趟
+        工作的開始與結束都會走到這裡——沒開的那些趟,這幾個名字全是 None。這與
+        CLAUDE.md 那條「分頁用到才建、不准回頭摸另一頁的 widget」是同一件事,只是換成
+        了對話框。
+        ⚠️ **運算裝置那一排多一個條件**:沒有 GPU 的機器上它一直是停用的,不能在工作
+        結束時被 `not busy` 一起放開——那樣按下去會切到一個沒有任何作用的選項。"""
+        if self._adv_win is None or not self._adv_win.winfo_exists():
+            return
+        busy = self._busy["rec"] or self._busy["run"]
+        self._segment_enable(self._model_cells, not busy)
+        self._segment_enable(self._device_cells,
+                             not busy and transcribe.gpu_present())
+        self._cores_spin.configure(state="disabled" if busy else "normal")
+
+    def _device_show(self, key: str) -> None:
+        r"""切運算裝置(自動／只用 CPU)。⚠️ **轉檔中不准切**,同「模型」那排。
+
+        ⚠️ **立刻落地、也立刻套用**:`transcribe.set_cpu_only` 會把設定寫進
+        `%LOCALAPPDATA%`(使用者 2026-09-07 選定「記住」)並清掉引擎快取,而下一趟
+        轉錄的子行程指令會把當下的值帶過去(`transproc.transcribe`)——所以生效的
+        時機是「下一趟開始」,不是「下次重開程式」。
+        ⚠️ **正在跑的那一趟不受影響**:引擎在那一趟開始時就建好了,而中途換裝置等於
+        把跑到一半的轉錄丟掉重來。說明文字寫的正是這件事。"""
+        if self._busy["rec"] or self._busy["run"]:
+            return
+        transcribe.set_cpu_only(key == DEVICE_CPU)
+        if self._device_cells is not None:
+            # ⚠️ 重畫時問的是 `default_device_key()` 而不是傳進來的 `key`:那一步同時
+            # 驗了「設定真的落地了」——寫失敗時畫面不會自己往前跑。
+            self._segment_show(self._device_cells, default_device_key())
+        self._adv_hints()
 
     def _lockable(self, widget):
         r"""登記一個「工作進行中不該能動」的元件,回傳它自己(方便接著 `.pack()`)。
@@ -3913,29 +4150,28 @@ class App(tk.Tk):
         ⚠️ **一律從 `_busy` 算,不要在各個呼叫端各記一次**:錄音與收尾是**兩個**旗標
         接力(`rec` 放掉的同一刻 `run` 才亮),各記一次就會在交棒的瞬間放開一拍。
         ⚠️ **「包含子資料夾」不在這裡**:它住在 `_file_box`,切到收音模式時整段收起來
-        ——網頁版要鎖它是因為那邊一直看得到。"""
+        ——網頁版要鎖它是因為那邊一直看得到。
+        ⚠️ **進階參數那三個在對話框裡、可能根本不存在**(2026-09-07 選案 C 之後):
+        那一半交給 `_adv_lock` 自己判斷,這裡不准直接摸——摸了就是「工作跑到一半、
+        使用者從來沒開過那個對話框」的那一趟出 AttributeError。"""
         busy = self._busy["rec"] or self._busy["run"]
-        self._segment_enable(self._model_cells, not busy)
         # 「要做什麼」與「收音情境」:`_mode_show` / `_scene_show` 開頭本來就擋著
         # `_busy`,這裡補的是**看得出來**那一半(同 `_segment_enable` 的 docstring)。
         # ⚠️ 兩組都在轉檔頁裡建,而這一支只從 `_run_lock` 走得到——那時頁一定在。
         self._segment_enable(self._mode_cells, not busy)
         self._segment_enable(self._scene_cells, not busy)
-        self._cores_spin.configure(state="disabled" if busy else "normal")
+        self._adv_lock()
         # 講者人數:只有「錄音中」放行,收尾(`run`)與檔案轉檔一起鎖
         self._speakers_spin.configure(
             state="disabled" if self._busy["run"] else "normal")
-
-    def _adv_toggle(self) -> None:
-        """把轉檔頁的「進階參數設定」展開或收起來(見 `_fold_toggle`)。"""
-        self._fold_toggle(self._adv, self._cols["run"])
 
     def _model_show(self, key: str) -> None:
         """切模型。⚠️ **轉檔中不准切**:引擎的參數在開始那一刻就定死了。"""
         if self._busy["rec"] or self._busy["run"]:
             return
         self._run_model.set(key)
-        self._segment_show(self._model_cells, key)
+        if self._model_cells is not None:
+            self._segment_show(self._model_cells, key)
 
     def _rec_tick(self) -> None:
         """錄音中每秒更新一次:計時、背景轉錄進度,以及即時逐字稿。
@@ -5491,7 +5727,7 @@ class App(tk.Tk):
 
         # ---- 進階參數設定:三個選項(網頁版的 Accordion,預設收著)----
         self._doc_adv = self._fold(
-            inner, "進階參數設定", lambda: self._fold_toggle(self._doc_adv, cols))
+            inner, ADV_TITLE, lambda: self._fold_toggle(self._doc_adv, cols))
         self._doc_opts = {}
         # ⚠️ **三個預設都是開的**,而且每一個都要有說明:關掉的後果不對稱(OCR 關掉
         # 圖裡的字就整片不見),而使用者看不到那件事發生。
