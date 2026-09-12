@@ -1142,6 +1142,10 @@ class App(tk.Tk):
         self.bind("<Configure>", self._refit_wraps)
         # 左欄長過視窗時的滾輪(見 `_wheel`;綁在視窗上的理由也在那裡)
         self.bind("<MouseWheel>", self._wheel)
+        # ⚠️ **下拉與數字框的類別綁定要整個換掉**:Tk 拿滾輪**改值**,而那正是命名區
+        # 「捲一下就把講者換成別人」的成因(2026-09-12 使用者回報,見 `_wheel_over_value`)。
+        for cls in ("TCombobox", "TSpinbox"):
+            self.bind_class(cls, "<MouseWheel>", self._wheel_over_value)
         # ⚠️ **標題列的 X 要自己接**:預設行為是直接 destroy,錄音中按下去就是一場
         # 會議無聲無息地中斷(見 `_on_close`)。
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -1149,9 +1153,19 @@ class App(tk.Tk):
         # 裡」——Tk 把位置交還給 Windows,而 Windows 走 `CW_USEDEFAULT` 的層疊規則
         # (每開一次往右下推一格)。⚠️ 擺法在共用包裡、**不開參數**:兩支 app 在同
         # 一台電腦上輪流開,落點的規矩不一樣就是「這台電腦的程式各有各的脾氣」。
+        # ⚠️ **裝不下時 `place_window` 會把視窗縮進工作區**(2026-09-12 加在 winkit
+        # 裡):`px(WIN_H)` 在 200% 縮放下是 1640、外高 1704,而 2560×1440 的螢幕工作
+        # 區只有 1368——使用者當天回報的正是這個,而症狀不是「視窗有點大」:下緣 336px
+        # 落在工作列底下,那一頁的左欄雖然可捲,捲到底時內容底部對齊的是**看不見的
+        # 視窗底**,所以最後那張「進階參數設定」怎麼捲都出不來(最大化才正常——那是
+        # Windows 自己把視窗壓回工作區)。
         winui.place_window(self, self.px(WIN_W), self.px(WIN_H))
         # ⚠️ 最小尺寸擋的是「拉到看不見內容」,不是版面的目標尺寸。
-        self.minsize(self.px(760), self.px(520))
+        # ⚠️ **這一行也要鉗**:`minsize` 會**蓋過**上一行的鉗位(Tk 讓最小尺寸贏),
+        # 所以工作區比它還小的機器上視窗又被推回螢幕外,而且這次連手動拉小都辦不到。
+        # 門檻就在手邊:px(520) 在 200% 下是 1040,而 1920×1080 的螢幕開 200% 時工作區
+        # 只剩約 984 高。⚠️ 傳的是**內容區**尺寸,標題列由 `fit_to_work_area` 自己扣。
+        self.minsize(*winui.fit_to_work_area(self, self.px(760), self.px(520)))
         # ⚠️ **最後一行才現身**(見 `__init__` 開頭那段):尺寸、最小尺寸、停在哪一頁
         # 全部定了才 map,使用者看到的就只有最終那一幀。
         self.deiconify()
@@ -1505,15 +1519,15 @@ class App(tk.Tk):
         ⚠️ **綁在視窗上,不是綁在 Canvas 上**:Tk 把滾輪送給**指標底下**的 widget,而那是
         卡片裡的某個 Label、不是 Canvas;每個 widget 的 bindtags 都含所在 toplevel,所以
         綁在視窗上一次就接得到整個左欄(class binding 先跑、這一支後跑)。
-        ⚠️ **自己會捲(或會吃滾輪)的東西讓路**:預覽框、名單表、下拉、Spinbox 的 class
-        binding 已經處理過這一下(Spinbox 是拿滾輪**改數字**),再捲一次欄位就是「滾一格
-        動兩個東西」。⚠️ 判斷用 `grid_info()` 不用 `winfo_ismapped()`:測試那個藏起來的
-        視窗什麼都沒 map。"""
+        ⚠️ **自己會捲的東西讓路**:預覽框、名單表、捲軸的 class binding 已經把這一下用掉
+        了,再捲一次欄位就是「滾一格動兩個東西」。⚠️ **下拉與數字框不在讓路名單裡**——
+        它們吃滾輪不是拿去捲、是拿去**改值**,那一下要擋掉而不是讓開,見
+        `_wheel_over_value`。⚠️ 判斷用 `grid_info()` 不用 `winfo_ismapped()`:測試那個藏
+        起來的視窗什麼都沒 map。"""
         canvases = {box.canvas: box for box in self._scrolls.values()}
         node = self.winfo_containing(event.x_root, event.y_root)
         while node is not None and node not in canvases:
-            if isinstance(node, (tk.Text, tk.Listbox, ttk.Treeview, ttk.Spinbox,
-                                 ttk.Combobox, ttk.Scrollbar)):
+            if isinstance(node, (tk.Text, tk.Listbox, ttk.Treeview, ttk.Scrollbar)):
                 return
             node = node.master
         if node is None:
@@ -1531,6 +1545,24 @@ class App(tk.Tk):
         step = 3 * self.px(SP_LG) / total
         top = cols.canvas.yview()[0]
         cols.canvas.yview_moveto(max(0.0, top - step if event.delta > 0 else top + step))
+
+    def _wheel_over_value(self, event) -> str:
+        r"""指標停在下拉或數字框上時的滾輪:**不改值,改捲左欄**(2026-09-12 使用者回報)。
+
+        ⚠️ **Tk 內建的行為是拿滾輪換值**——實測拿到的類別綁定是
+        `ttk::combobox::Scroll %W [expr {-%D / 120}]` 與 `ttk::spinbox::MouseWheel`,
+        而命名區正好是「一整排下拉、長到非捲不可」的畫面:指標不小心落在某一格上、想捲
+        畫面滾一下,**系統辨識出來的講者就被換成名單上的下一個人**,而畫面又完全不動。
+        使用者的原話是「必須將滑鼠指標移動到格子之外(例如其他位置),才可以捲動滑鼠卷
+        軸」。⚠️ **「改成幾位講者」那個數字框比下拉更兇**:被滾掉之後按「重新分群」是拿
+        錯的人數重跑一次,那是幾十分鐘;而它就坐在命名卡最上面,從卡頂往下捲一定會經過。
+        ⚠️ **綁在 class 上,不是逐個 widget 綁**:命名區的下拉是每一場會議跑完才長出來的
+        (`_naming_block`),逐個綁必然有漏——而漏掉的那一格,症狀就是這次回報的這個。
+        ⚠️ **一定要回 `break`**:不回的話 toplevel 那份 `_wheel` 會再跑一次,滾一格捲兩格。
+        ⚠️ 下拉**展開之後**不走這裡:那張清單是自畫的 Treeview(`_pick_open`),滾輪捲清單
+        本來就是對的。"""
+        self._wheel(event)
+        return "break"
 
     def _dark(self) -> bool:
         """現在是不是深色佈景(拿欄位底色的亮度判斷——palette 沒有給旗標)。"""
@@ -1569,6 +1601,11 @@ class App(tk.Tk):
         combo.bind("<ButtonPress-1>", lambda e, c=combo: self._pick_press(c, e))
         combo.bind("<Down>", lambda _e, c=combo: self._pick_toggle(c))
         combo.bind("<Destroy>", lambda _e, c=combo: self._pick_close_for(c))
+        # ⚠️ **版面把這一格推走時,輸入法要跟著搬**(2026-09-12 使用者回報):清掉名字之後
+        # `_naming_changed` 會把線索那一行 `grid()` 回來,下拉整個往下移一列——而 Tk 只在
+        # 插入點變動時告訴 IME 座標,於是注音打的字畫在**上面那一行**(就是線索的位置)。
+        # 內距給 `SP_SM`:那是 `Tall.TCombobox` 文字左緣的 padding(見 `_styles`)。
+        winui.follow_ime_caret(combo, self.px(SP_SM))
 
     def _pick_press(self, combo: ttk.Combobox, event) -> str:
         """按在輸入格的任何地方 → 展開清單;已經開著 → 收起來(同 Tk 內建的切換)。"""

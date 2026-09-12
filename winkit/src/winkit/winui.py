@@ -1,5 +1,5 @@
 r"""Windows 平台整合:DPI、工作列身分、單一實例、視窗落點、工作列進度、深色標題列、
-還原那一幀的底色。
+輸入法組字的字型、還原那一幀的底色。
 
 **原始出處是 `C:\SOURCE5\Python\NotebookLM_OCR\pdf2ppt_gui_2.py`**(2026-08-26
 抄進 MP4-2-SRT,使用者指定「工作列圖示與工作列進度也一起做出來」),2026-08-28 搬進
@@ -132,6 +132,158 @@ def use_dark_titlebar(root) -> None:
         ctypes.windll.dwmapi.DwmSetWindowAttribute(
             ctypes.c_void_p(window_handle(root)), 20,
             ctypes.byref(ctypes.c_int(1)), ctypes.sizeof(ctypes.c_int))
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- #
+#  輸入法組字中的那幾個字,也要用介面的字型
+# --------------------------------------------------------------------------- #
+# ⚠️ **「還沒選字」的那幾個字不歸 Tk 畫,歸輸入法畫。** Tk 只做了一半:游標一動它就
+# 呼叫 `ImmSetCompositionWindow` 告訴 IME「組字請畫在這個座標」(所以位置是對的,字就
+# 在格子裡),但它**從來沒有呼叫 `ImmSetCompositionFont`**——於是 IME 用它自己的預設值
+# 畫。2026-09-12 在 meeting-scribe-native 量到的預設值是:
+#
+#     lfFaceName='System'  lfHeight=20  lfWeight=700
+#
+# 而介面字型是 Microsoft JhengHei UI 10pt(150% 縮放下字身 20px、行高 23)。`System` 是
+# Windows 的舊點陣字型、還是粗體,畫中文得再 fallback 一次——症狀就是使用者回報的
+# 「輸入姓名時中文輸入,輸入格的輸入文字變較小,怪怪的」:**選完字就恢復正常**,因為
+# 那一刻起改由 Tk 自己畫。⚠️ 所以這不是字型設定漏了哪裡,三支 AP 的具名字型全都設對了。
+#
+# ⚠️ **IME context 是整條執行緒共用的一顆**(實測 entry 與 toplevel 拿到的 `himc` 是
+# 同一個值),所以設一次整個視窗都算數,不必逐個輸入框綁。
+# ⚠️ **視窗還藏著的時候拿不到那顆 context**(`ImmGetContext` 回 NULL,2026-09-12 實測),
+# 而字型是在 `App.__init__` 最早期設的、那時視窗還沒 `deiconify`——所以真正生效的是
+# `follow_ime_composition_font` 掛的那條 `<FocusIn>`,不是當場那一次。
+_IME_DEFAULT_CHARSET = 1
+
+
+class _LOGFONTW(ctypes.Structure):
+    """`ImmSetCompositionFontW` 吃的那張表(Win32 `LOGFONTW`)。
+
+    ⚠️ **欄位順序與型別都不能動**:它是按位元組佈局交給 Win32 的,錯一個欄位不會有
+    錯誤訊息,只會把後面每一個值都讀偏。"""
+
+    _fields_ = [("lfHeight", ctypes.c_long), ("lfWidth", ctypes.c_long),
+                ("lfEscapement", ctypes.c_long), ("lfOrientation", ctypes.c_long),
+                ("lfWeight", ctypes.c_long), ("lfItalic", ctypes.c_byte),
+                ("lfUnderline", ctypes.c_byte), ("lfStrikeOut", ctypes.c_byte),
+                ("lfCharSet", ctypes.c_byte), ("lfOutPrecision", ctypes.c_byte),
+                ("lfClipPrecision", ctypes.c_byte), ("lfQuality", ctypes.c_byte),
+                ("lfPitchAndFamily", ctypes.c_byte), ("lfFaceName", ctypes.c_wchar * 32)]
+
+
+def _ime_logfont(root, family: str, size_pt: int) -> _LOGFONTW:
+    r"""要交給輸入法的那張字型表。
+
+    ⚠️ **高度要問 Tk、不要自己拿 DPI 算**:`winfo_fpixels("10p")` 給的正是 Tk 畫那個
+    點數字型時用的像素數(實測 150% 下 19.98),跟 `GetDpiForWindow` 自己換算有兩個
+    差別——視窗還藏著時那支回 **0**,而且 Tk 的 scaling 使用者改得動,改了就對不上。
+    ⚠️ **`lfHeight` 要填負值**:正值是「連行距在內的一格有多高」,負值才是「字身多高」
+    ——填正值畫出來會比介面的字**小一號**,而那正是這支函式要修的症狀,等於沒修。
+    ⚠️ **`lfWeight` 要自己填 400**:IME 的預設是 **700**(實測),不填就是組字中的字比
+    選完之後粗一截。"""
+    lf = _LOGFONTW()
+    lf.lfHeight = -round(root.winfo_fpixels(f"{size_pt}p"))
+    lf.lfWeight = 400                             # FW_NORMAL
+    lf.lfCharSet = _IME_DEFAULT_CHARSET
+    lf.lfFaceName = family[:31]                   # 欄位是 32 個字元(含結尾的 NUL)
+    return lf
+
+
+def set_ime_composition_font(root, family: str, size_pt: int) -> bool:
+    """告訴輸入法:組字中的那幾個字請用這個字型畫。拿不到 IME context 就回 `False`。"""
+    if not sys.platform.startswith("win"):
+        return False
+    try:
+        hwnd = window_handle(root)
+        if not hwnd:
+            return False
+        imm = ctypes.windll.imm32
+        imm.ImmGetContext.restype = ctypes.c_void_p
+        imm.ImmGetContext.argtypes = [ctypes.c_void_p]
+        imm.ImmSetCompositionFontW.argtypes = [ctypes.c_void_p,
+                                               ctypes.POINTER(_LOGFONTW)]
+        imm.ImmReleaseContext.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        himc = imm.ImmGetContext(ctypes.c_void_p(hwnd))
+        if not himc:
+            return False
+        try:
+            lf = _ime_logfont(root, family, size_pt)
+            imm.ImmSetCompositionFontW(ctypes.c_void_p(himc), ctypes.byref(lf))
+        finally:
+            imm.ImmReleaseContext(ctypes.c_void_p(hwnd), ctypes.c_void_p(himc))
+        return True
+    except Exception:
+        return False
+
+
+def set_ime_caret(entry, text_left: int = 0) -> None:
+    r"""把輸入法「組字要畫在哪」對回這一格目前的插入點。
+
+    ⚠️ **Tk 只在插入點變動時告訴 IME 座標,widget 被版面推走時它不管**(2026-09-12
+    實測:把一個 Label `grid()` 回來、下拉整個下移 29px 之後,IME 的組字座標一動也
+    不動,而 `icursor()`、`focus_set()`、`selection_clear()` 一個都喚不醒它——**只有
+    `tk caret` 有效**)。症狀是組字中的那幾個字畫在**格子外面**(meeting-scribe-native
+    的使用者 2026-09-12 回報:清掉名字之後線索那一行長回來,注音打的字就落在格子上方
+    那一行上)。
+    ⚠️ **座標傳「相對這一格」的,Tk 會自己換算成相對 toplevel 的**(實測:傳 `-x 4
+    -y 4` 給一個位在 (20,66) 的下拉,IME 那邊讀回來的是 (24,90))。
+    ⚠️ **只對有焦點的那一格做**:視窗一縮放,畫面上每一格都會收到 `<Configure>`,而
+    沒有焦點的格子根本不會組字——命名區二十幾位時那是二十幾次白算的 `measure()`。"""
+    try:
+        import tkinter.font as tkfont
+        from tkinter import ttk
+
+        if str(entry.focus_get()) != str(entry):
+            return
+        style = str(entry.cget("style")) or entry.winfo_class()
+        spec = ttk.Style(entry).lookup(style, "font") or "TkDefaultFont"
+        font = tkfont.Font(root=entry, font=spec)
+        before = str(entry.get())[:entry.index("insert")]
+        height = font.metrics("linespace")
+        # ⚠️ 垂直**置中**、不問樣式的上內距:那是下游各自的皮膚規格(A 類),而算得出來
+        # 的東西不該靠呼叫端傳對。
+        top = max(0, (entry.winfo_height() - height) // 2)
+        entry.tk.call("tk", "caret", str(entry),
+                      "-x", text_left + font.measure(before), "-y", top,
+                      "-height", height)
+    except Exception:
+        pass
+
+
+def follow_ime_caret(entry, text_left: int = 0) -> None:
+    r"""讓組字位置一路跟著這一格走:版面把它推到哪,IME 就跟到哪。
+
+    ⚠️ **綁 `<Configure>` 綁在這一格自己身上**,不是綁在視窗上(CLAUDE.md 那條自我
+    餵養的陷阱講的是後者):這支處理常式只下 `tk caret`、**不動任何元件的幾何**,所以
+    不會回授。
+    ⚠️ **`add="+"`**:下游自己也可能綁 `<Configure>`。"""
+    if not sys.platform.startswith("win"):
+        return
+    try:
+        entry.bind("<Configure>", lambda _e: set_ime_caret(entry, text_left), add="+")
+    except Exception:
+        pass
+
+
+def follow_ime_composition_font(root, family: str, size_pt: int) -> None:
+    r"""讓組字字型一路跟著介面字型:現在設一次,之後每次焦點落進視窗再設一次。
+
+    ⚠️ **不能只設一次**:字型是在視窗還藏著的時候設的,而那時 `ImmGetContext` 回 NULL
+    (2026-09-12 實測)——只做當場那一次等於什麼都沒做。
+    ⚠️ **綁 `<FocusIn>` 而不是 `<Map>`**:`<Map>` 只來一次,而換輸入法、切出去再切回來
+    都可能讓 IME 回到它自己的預設值;焦點事件走 bindtags 冒泡到 toplevel,所以**任何一
+    個輸入框拿到焦點**都會補一次,一行綁定就蓋住整個視窗、連之後才長出來的輸入框都算。
+    ⚠️ **`add="+"`**:下游自己也可能綁 `<FocusIn>`,不加就是把人家那條換掉。
+    """
+    if not sys.platform.startswith("win"):
+        return
+    try:
+        root.bind("<FocusIn>",
+                  lambda _e: set_ime_composition_font(root, family, size_pt), add="+")
+        set_ime_composition_font(root, family, size_pt)
     except Exception:
         pass
 
@@ -288,6 +440,45 @@ def work_area(root) -> tuple[int, int, int, int] | None:
         return None
 
 
+def _work_and_chrome(root) -> tuple[tuple[int, int, int, int], int]:
+    """`root` 那個螢幕的工作區,以及這台機器上標題列 + 上外框的實體高度。
+
+    ⚠️ 拿不到工作區時退回 **Tk 問到的螢幕矩形**,那是**主螢幕、而且沒扣工作列**——
+    降級是刻意的(純外觀,不值得讓程式開不起來)。⚠️ **這個降級會讓鉗位失準**(多算
+    了工作列那一條),所以它只是退路,不是可以拿來省事的等價寫法。
+    """
+    chrome = max(1, int(round(_CHROME_96 * root.winfo_fpixels("1i") / 96.0)))
+    work = work_area(root) or (0, 0, root.winfo_screenwidth(),
+                               root.winfo_screenheight())
+    return work, chrome
+
+
+def _fit(work, w: int, h: int, chrome: int) -> tuple[int, int]:
+    r"""把想要的 `w`×`h` 縮到工作區裝得下的大小——**只縮、不放大**。
+
+    ⚠️ **這件事非做不可,「擺得好」救不了它**(2026-09-12 meeting-scribe-native 的
+    使用者回報):他把顯示縮放調到 200%,而那支 app 的標稱尺寸 1216×820 於是變成實體
+    2432×1640、外高 1704,工作區只有 1368——**下緣 336 px 整片落在工作列底下**。
+    症狀不是「視窗有點大」而是「**最下面那一排功能再也按不到**」:那一頁的左欄本身
+    是可捲的,捲到底時內容底部對齊的是**看不見的那個視窗底**,所以最後一張卡
+    (「進階參數設定」)怎麼捲都在螢幕外;把視窗最大化(Windows 自己把它壓回工作區)
+    才正常,而那正是使用者找到的繞法。
+    ⚠️ **`_placement` 的鉗位擋不住這一類**:它保的是左上角,被犧牲的正是右下角那一
+    塊——在「視窗比工作區大」這件事已經發生之後,擺在哪裡都有一塊到不了。所以順序
+    是**先縮尺寸、再算落點**,`_placement` 那道鉗位從此只是退化路徑的安全網
+    (拿不到工作區、或 `chrome` 估太小)。
+    ⚠️ **只縮不放大**:呼叫端給的是它自己版面的目標尺寸,工作區比它大時撐開只會把
+    版面拉稀(內容有 `MAX_CONTENT` 之類的上限,撐開的是空白)。
+    ⚠️ **`chrome` 只扣高度**:它是標題列 + 上外框,左右那兩條外框在 Win11 上只有 1px
+    可見。寬度扣一個高估的 32(@96dpi)反而會讓視窗莫名其妙地窄一截。
+    """
+    left, top, right, bottom = work
+    # ⚠️ `max(1, …)` 不是防禦性程式碼:工作區在 `work_area()` 失敗時退回 Tk 問到的
+    # 螢幕矩形,而**那一條在測試的無頭環境裡會是很小的值**;鉗成 0 的視窗 Tk 不會
+    # map,症狀是「程式跑起來了但看不到視窗」,沒有任何錯誤訊息。
+    return max(1, min(w, right - left)), max(1, min(h, bottom - top - chrome))
+
+
 def _placement(work, w: int, h: int, chrome: int) -> tuple[int, int]:
     """工作區 `work` 裡,內容 `w`×`h`、頂上再加 `chrome` 的視窗該擺在哪。"""
     left, top, right, bottom = work
@@ -297,6 +488,10 @@ def _placement(work, w: int, h: int, chrome: int) -> tuple[int, int]:
     # ⚠️ 鉗的方向是**保住左上角**:視窗比工作區大時,被切掉的是右下角。反過來(貼齊
     # 右下)會把標題列推出工作區上緣,而**標題列一旦看不見,這個視窗就再也搬不動了**
     # ——那比看不到最下面一列嚴重得多。
+    # ⚠️ **這一段現在是退化路徑的安全網,不是主要防線**(2026-09-12 加了 `_fit`):
+    # 正常路徑上視窗已經先被縮進工作區了,走到這裡還裝不下的只剩「`work_area()` 問
+    # 不到、退回沒扣工作列的螢幕矩形」與「`chrome` 估少了」兩種。⚠️ 別因此把它刪掉
+    # ——降級路徑同樣要保住標題列。
     # ⚠️ **右下不必再鉗**:`_TOP_BIAS` 在 0~1 之間,所以裝得下的時候 `y` 本來就
     # ≤ `bottom - outer`(水平置中同理),裝不下的時候下面這個 `max()` 又會蓋過去。
     # 補一道 `min(y, bottom - outer)` 在這條算式底下**永遠不會觸發**,只會讓讀的人
@@ -308,6 +503,12 @@ def place_window(root, w: int, h: int) -> None:
     """把視窗設成 `w`×`h`(**實體像素**)並擺到工作區的水平正中、垂直偏上。
 
     取代下游那句只給尺寸的 `geometry(f"{w}x{h}")`(位置沒給就是層疊,見本段開頭)。
+
+    ⚠️ **`w`×`h` 是「想要多大」不是保證**:裝不進工作區時會先被縮(見 `_fit`,
+    2026-09-12 加)。呼叫端因此**不可以拿它當成視窗的實際尺寸**去算版面——要問就
+    在 `deiconify()` 之後問 `winfo_width()`/`winfo_height()`。高 DPI 的機器上這不是
+    邊角情況:標稱 1216×820 在 200% 縮放下就是實體 2432×1640,已經比多數筆電的整個
+    螢幕還高。
 
     ⚠️ **呼叫時機是 `deiconify()` 之前、而且視窗高度已經定案。** 兩個都會錯:
 
@@ -324,13 +525,35 @@ def place_window(root, w: int, h: int) -> None:
     到整個視窗。真的連這條都炸掉就只設尺寸,位置交還給 Windows。
     """
     try:
-        chrome = max(1, int(round(_CHROME_96 * root.winfo_fpixels("1i") / 96.0)))
-        work = work_area(root) or (0, 0, root.winfo_screenwidth(),
-                                   root.winfo_screenheight())
+        work, chrome = _work_and_chrome(root)
+        # ⚠️ **順序是「先縮、再擺」**:擺得再好也救不了一個比工作區大的視窗,理由與
+        # 實跡見 `_fit`。
+        w, h = _fit(work, w, h, chrome)
         x, y = _placement(work, w, h, chrome)
         root.geometry(f"{w}x{h}+{x}+{y}")
     except Exception:
         root.geometry(f"{w}x{h}")
+
+
+def fit_to_work_area(root, w: int, h: int) -> tuple[int, int]:
+    r"""把 `w`×`h`(**實體像素**)縮到 `root` 那個螢幕的工作區裝得下,回傳鉗過的尺寸。
+
+    `place_window` 內部走的就是這一條;⚠️ **另外開一個公開的口子是為了 `minsize()`**
+    ——三支 app 都在 `place_window` 的下一行設最小尺寸,而**最小尺寸會蓋過擺放時的
+    鉗位**(Tk 讓 `minsize` 贏)。在工作區比它還小的機器上,視窗於是又被推回螢幕外,
+    而且這一次連手動拉小都辦不到。實際的門檻:meeting-scribe-native 的
+    `minsize(px(760), px(520))` 在 200% 縮放下是 1520×1040,而 1920×1080 的螢幕開
+    200% 時工作區只剩約 984 高——差得不多,但差的方向是「最下面那排按鈕按不到」。
+
+    ⚠️ **`w`、`h` 傳的是「內容區」尺寸**(`geometry()` 與 `minsize()` 都是),所以
+    標題列由這一支自己扣,呼叫端不要先扣一次。
+    ⚠️ 問不到工作區就**原樣回傳**:降級的方向是「照呼叫端說的做」,不是猜一個數字。
+    """
+    try:
+        work, chrome = _work_and_chrome(root)
+        return _fit(work, w, h, chrome)
+    except Exception:
+        return w, h
 
 
 # --------------------------------------------------------------------------- #

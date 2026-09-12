@@ -562,6 +562,10 @@ def apply(root: tk.Misc, scale: float,
             tkfont.nametofont(name, root).configure(family=fam, size=size)
         except tk.TclError:
             pass
+    # ⚠️ **具名字型管不到「還沒選字」的那幾個字**:那一段是輸入法自己畫的,而 Tk 只告訴
+    # 過它座標、沒告訴過它字型(2026-09-12 量到 IME 用的是 `System` 20px **粗體**)——症狀
+    # 是打中文時格子裡的字小一號,選完字才恢復。見 `winui.follow_ime_composition_font`。
+    winui.follow_ime_composition_font(root, fam, 10)
 
     mode = winui.preferred_theme_mode(PALETTES)
     pal = dict(PALETTES[mode])
