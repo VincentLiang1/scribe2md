@@ -626,7 +626,6 @@ WORDLIST_PAGES = {
               "**加詞前先讀檔頭的收詞原則**:台灣也在用的詞"
               "(如「優化、用戶」)收了反而會改壞原文。"),
         save="儲存替換表",
-        lines=24,                    # 編輯框幾行(tk.Text 的預設值)
         read=wordlists.replace_file,
         status=wordlists.replace_status,
         write=wordlists.save_replace,
@@ -639,12 +638,6 @@ WORDLIST_PAGES = {
               "**順序即優先序**:詞表有長度預算,超出的尾端會被靜默"
               "忽略——重要的詞放前面。"),
         save="儲存詞表",
-        # ⚠️ 比用詞替換表少兩行(2026-09-03 使用者:「領域詞表,維護內容的格子請減少兩行,
-        # 因為剛剛調整說明的行距,導致下面的訊息會看不到」):這一頁在「聲音→MD」的子分頁
-        # 底下,比頂層那頁少一排分頁列的高度;說明段照網頁版拉開行距之後,預設 1280×820 的
-        # 視窗裡卡片只到底邊上 18px,按鈕列底下那行狀態(「目前 N 條…」與超出預算的警告)
-        # 被 pack 判定放不下、直接不畫(量到 `winfo_ismapped()` = 0,畫面上就是少一行)。
-        lines=22,
         read=wordlists.hotwords_file,
         status=wordlists.hotwords_status,
         write=wordlists.save_hotwords,
@@ -2555,10 +2548,23 @@ class App(tk.Tk):
                         line_gap=INTRO_LINE_GAP).pack(
             anchor="w", fill="x", pady=(0, self.px(SP_LG)))
 
+        # ⚠️ **按鈕列與狀態列先排、貼底邊,編輯框最後排**(2026-09-13 使用者:「螢幕比率
+        # 設定 200% 時,會看不到下面的按鈕,中間的文字框應該調整小一點,讓按鈕能露出來,
+        # 不要產生卷軸」):pack 照**呼叫順序**分空間——先排的拿足它要的,後排的拿剩下的,
+        # 剩下不夠就**整個不畫**(不是裁掉,`winfo_ismapped()` = 0)。先前的順序是說明 →
+        # 編輯框 → 按鈕 → 狀態,200% 下視窗被鉗到工作區高度(2430×1304),編輯框先拿走
+        # 它的行數,兩頁的按鈕與狀態列一個都沒畫。反過來排之後,不夠高時縮的是編輯框;
+        # 夠高時 `expand` 照樣撐滿,畫面與先前一模一樣(150% 實拍兩頁都是同樣行數)。
+        # ⚠️ 同一個病 2026-09-03 在領域詞表撞過一次,當時的解法是「編輯框少兩行」——那只
+        # 對一種視窗高度成立,換個縮放就又被擠掉;那個行數設定隨這次一起拿掉。
+        foot = ttk.Frame(card, style="CardBody.TFrame")
+        foot.pack(side="bottom", fill="x")
         wrap = ttk.Frame(card, style="Sunken.TFrame", padding=self.px(SP_XS))
         wrap.pack(fill="both", expand=True)
+        # ⚠️ `height=1` 是「請求值刻意壓到最小」:實際高度由 pack 分剩下的空間決定(見上),
+        # 不給的話 tk.Text 預設要 24 行,讀程式的人會以為那個數字有意義。
         box = tk.Text(wrap, font=(self.fam, 10), relief="flat", bd=0, undo=True,
-                      highlightthickness=0, wrap="none", height=spec["lines"],
+                      highlightthickness=0, wrap="none", height=1,
                       bg=self.pal["field"], fg=self.pal["ink"],
                       insertbackground=self.pal["ink"],
                       selectbackground=self.pal["row_sel"],
@@ -2578,7 +2584,7 @@ class App(tk.Tk):
         # 為此再產一張新的膠囊(每加一張皮都要跳 `SKIN_SCHEMA` 並重跑 `make_skin`)。
         # ⚠️ **兩頁詞表共用這一支**,所以「用詞替換表」跟著一起換——網頁版那兩頁本來
         # 就是同一對樣式。
-        row = ttk.Frame(card, style="CardBody.TFrame")
+        row = ttk.Frame(foot, style="CardBody.TFrame")
         row.pack(fill="x", pady=(self.px(SP_MD), 0))
         self._lockable(HandButton(row, text=spec["save"], style=skin.RUN_SMALL_STYLE,
                                   command=lambda: self._wordlist_save(key))).pack(
@@ -2589,10 +2595,11 @@ class App(tk.Tk):
 
         # 狀態那兩行:平常只有第一行,出問題才多一行警告色的。⚠️ **兩個 Label 而
         # 不是一個**——一個的話,警告只能靠字面(「已超出…」)與正常訊息區分,而
-        # 那正是網頁版用粗體在解的問題。
-        st = self._wrap(ttk.Label(card, style="Status.TLabel", justify="left"))
+        # 那正是網頁版用粗體在解的問題。⚠️ **兩個都住在 `foot` 裡**:警告那行是之後才
+        # pack 的(`_wordlist_show`),住在卡片上的話它會排在編輯框後面、又回到被擠掉的那一側。
+        st = self._wrap(ttk.Label(foot, style="Status.TLabel", justify="left"))
         st.pack(anchor="w", pady=(self.px(SP_SM), 0))
-        warn = self._wrap(ttk.Label(card, style="Warn.TLabel", justify="left"))
+        warn = self._wrap(ttk.Label(foot, style="Warn.TLabel", justify="left"))
         self._wordlists[key] = (box, st, warn)
         self._wordlist_load(key)
         return page
