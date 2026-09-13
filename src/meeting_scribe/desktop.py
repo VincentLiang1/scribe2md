@@ -334,15 +334,19 @@ REC_IDLE = "尚未開始錄音。"
 # ⚠️ **不寫 Markdown 的粗體記號**:狀態行是普通的 ttk.Label,`**` 會原樣畫出來。
 REC_FINISHING = "收尾中:完成剩餘轉錄與講者分析,進度見下方的預覽區…"
 
-# 摺疊卡收合的記號(**文件頁**那張「進階參數設定」;轉檔頁那張 2026-09-07 改成對話框
-# 的入口,見 `ADV_ENTRY`)。⚠️ **不帶 VS16**(見檔頭):▶ 正是那七個受害字元之一,
+# 摺疊卡收合的記號(**文件頁**那張「進階參數設定」;轉檔頁那張 2026-09-07 改成對話框,
+# 入口見 `ADV_BUTTON`)。⚠️ **不帶 VS16**(見檔頭):▶ 正是那七個受害字元之一,
 # 帶了就在後面多出一個 30px 寬的方塊。
 ADV_CLOSED, ADV_OPEN = "▶", "▼"
 
-# 轉檔頁那張入口卡:標題,以及右邊那個「點了會開一扇窗」的記號。
-# ⚠️ **記號要跟摺疊卡的 ▶／▼ 明顯不同**:同一頁上兩張長得一樣的卡,一張就地展開、
-# 一張跳出視窗,而使用者分不出哪張是哪張——刪節號是 Windows 自己的慣例(「設定…」)。
-ADV_TITLE, ADV_ENTRY = "進階參數設定", "…"
+# 「進階參數設定」:對話框的標題,與文件頁那張摺疊卡的標題。
+ADV_TITLE = "進階參數設定"
+# 轉檔頁的入口鈕(2026-09-13 使用者選案 B,坐在主要動作鈕右邊)。⚠️ **刪節號不可以拿掉**:
+# 那是 Windows 自己的「點了會開一扇窗」慣例,而同一頁的「輸出資料夾…」也這樣寫。
+# ⚠️ **齒輪不帶 VS16**(見檔頭;⚙ 不在受害名單裡,但帶了就是跟別的圖示不同一套寫法)。
+# ⚠️ **它跟主要動作鈕一樣受 `ACTION_BTN_W` 限制**:開發機 150% 下要 254 / 270 px,
+# 放不下時 Tk 直接裁字、不給省略號——要改字先跑 `test_the_advanced_button_sits_beside_every_action_button`。
+ADV_BUTTON = "⚙ 進階參數設定…"
 
 # 使用說明裡那張 Claude 隱私設定截圖(全篇唯一一張圖)。
 PRIVACY_IMG = repo_root() / "docs" / "claude-privacy-setting.jpg"
@@ -777,10 +781,75 @@ def configure_styles(root: tk.Misc, fam: str, pal: dict) -> None:
     st.configure("TocItem.TFrame", background=pal["btn"])
 
 
-# 按鈕字樣開頭、**照文字畫**的兩個記號:網頁版的「● 開始錄音」「■ 停止錄音並完成逐字稿」
-# 是瀏覽器拿文字字型畫的單色符號(這兩個在 Segoe UI Emoji 裡沒有彩色字形),照抄。
-# 其餘開頭的符號(▶ ⏹ 🔍 🔀)在網頁版都是彩色 emoji,`HandButton` 會畫成彩色圖片。
+# 按鈕字樣開頭、**照文字畫**的兩個記號:● 與 ■ 是文字字型畫的單色符號(這兩個在
+# Segoe UI Emoji 裡沒有彩色字形)。其餘開頭的符號(▶ ⏹ 🔍 🔀)是彩色 emoji,
+# `HandButton` 會畫成彩色圖片。⚠️ **四組主要動作鈕的記號一律走這兩個**(2026-09-12
+# 使用者指定:開始一律 ●、停止一律 ■),不可以改用 ⏹——那顆會被畫成藍色方塊。
 BUTTON_TEXT_MARKS = "●■"
+
+
+@dataclass(frozen=True)
+class ActionText:
+    """一組主要動作鈕的字樣。`finish` 只有現場收音用得到(停止收音之後的收尾)。"""
+
+    idle: str
+    busy: str
+    finish: str | None = None
+
+
+# 主要動作鈕:**同一顆兼任停止**,不是兩顆並排(2026-09-12 使用者指定,比照姊妹專案
+# MP4-2-SRT 與 NotebookLM_OCR)。合成之前的三個壞處,每一個都只有在畫面上才看得見:
+# ① 閒著的時候那顆「停止」是**永遠灰著的死按鈕**,而按不下去的按鈕與壞掉的按鈕長得
+# 一模一樣;② 錄音收尾期間**兩顆都灰**——那一段要跑幾十分鐘,而使用者連中止都沒得按
+# (收尾其實中止得了,`_run_lock` 亮的是**轉檔**那一列的停止鈕,而收音模式下那一列
+# 根本沒 `pack`,實測 `winfo_ismapped()` 是 False);③ 兩顆各自 `configure(state=)`
+# 散在五個地方,同時可按或同時灰著都不會有人發現。
+# ⚠️ **四組的動詞各自不同**(2026-09-12 使用者:「其他的檔案轉換,注意文字不同」):
+# 統一的只有記號。⚠️ **不要縮成「開始／停止」兩個字**——MP4-2-SRT 那顆可以,是因為
+# 它整支程式只做轉檔一件事;這裡同一列在三個模式之間切換,鈕上不寫受詞就看不出現在
+# 是哪一個模式。⚠️ **「停止錄音」後面原本還有「並完成逐字稿」**,拿掉是因為視窗拉到
+# 最小寬時那 12 個字**會被裁成「■ 停止錄音並」而且沒有省略號**(實測:那一顆實得
+# 135px、文字要 211px)。那件事改由收尾期間的狀態列講。
+ACTION_STOPPING = "停止中…"
+# 開錄之後隔多久才讓那顆鈕按得下去(防誤按,見 `App._rec_arm`)。⚠️ **不要再拉長**:
+# 真的按錯情境(開會前試按)兩秒就夠了,而超過這個長度會變成「按了停止沒反應」。
+REC_ARM_DELAY_MS = 2000
+# 主要動作鈕的寬度(邏輯 px,靠左固定;文件頁的「輸出資料夾…」同寬並排)。
+# 2026-09-13 使用者第二輪收窄:先前是「整列的一半」(這台量到 230),實拍之後他說
+# 還是太長,四案(210/195/180/172)裡選了 180。
+# ⚠️ **餘裕只剩 8 px**:最長的字樣是「● 讀取並開始命名」,在這台要 172 px。改任何
+# 一個字樣之前先跑 `test_every_action_face_fits_the_button_width`——放不下時 Tk
+# **直接裁字、不給省略號**,而畫面上看不出來它被裁過(同「■ 停止錄音並完成逐字稿」
+# 在窄視窗下變成「■ 停止錄音並」那次)。要加字就先把這個數字調大。
+ACTION_BTN_W = 180
+REC_ACTION = ActionText("● 開始錄音", "■ 停止錄音", "■ 中止收尾")
+FILE_ACTION = ActionText("● 開始轉檔", "■ 停止轉檔")
+RELABEL_ACTION = ActionText("● 讀取並開始命名", "■ 停止分析")
+DOC_ACTION = ActionText("● 開始轉檔", "■ 停止轉檔")
+
+
+def action_button(texts: ActionText, phase: str,
+                  ready: bool = True) -> tuple[str, str, bool]:
+    r"""那顆鈕**現在**的長相:(文字, 樣式, 能不能按)。
+
+    | `phase` | 文字 | 樣式 | 能不能按 |
+    | --- | --- | --- | --- |
+    | `idle` | 開始那句 | 藍 | 看 `ready` |
+    | `busy` | 停止那句 | 深紅 | 看 `ready`(錄音開頭兩秒是 `False`,見 `_rec_arm`) |
+    | `finish` | 中止收尾 | 深紅 | 看 `ready` |
+    | `stopping` | 停止中… | 深紅 | **一律鎖** |
+
+    ⚠️ **這一支是那顆鈕唯一的真值來源**,而且是純函式——它測得動,`configure` 散在
+    五個地方的舊寫法測不動(那種錯要在畫面上才看得見)。
+    ⚠️ **停止中要鎖,而且要換字**:引擎的檢查點在段落邊界上,再按一次不會更快,而讓它
+    按得下去等於邀請使用者去按第二次。⚠️ **停止中不換回藍的**:那一段引擎還在跑,顏色
+    一變就像已經收工了。"""
+    if phase == "idle":
+        return texts.idle, skin.RUN_PAGE_STYLE, ready
+    if phase == "stopping":
+        return ACTION_STOPPING, skin.STOP_PAGE_STYLE, False
+    text = texts.finish if phase == "finish" and texts.finish else texts.busy
+    return text, skin.STOP_PAGE_STYLE, ready
 
 # `configured()` 的「這一次沒動到」哨兵。⚠️ 不能用 `None`:`configure(text=None)` 與
 # 「沒有給 text」是兩件事,而前者在 Tk 裡是合法的(等於清空)。
@@ -1073,6 +1142,20 @@ class App(tk.Tk):
         # 三條工作路徑「正在跑」的旗標(見 `_busy_reason`)。⚠️ **記在視窗上、不是
         # 回頭去問按鈕**:分頁是「用到才建」的,那一頁沒被點過時按鈕根本不存在。
         self._busy = dict.fromkeys(WORK_BUSY_TEXT, False)
+        # 四組**兼任停止**的主要動作鈕(見 `action_button`):鍵 → (鈕, 它的四種字樣)。
+        # ⚠️ **文件頁那一顆要等那一頁被點過才存在**(分頁是「用到才建」),所以
+        # `_action_refresh` 一律問這本字典、不准直接摸 `self._doc_run`。
+        self._actions: dict[str, tuple[HandButton, ActionText]] = {}
+        # 按過停止、引擎還沒收手(那顆鈕換成灰的「停止中…」)。⚠️ **三條路徑共用一個**:
+        # `cancel` 的旗標本來就是全域單例,而三條路徑互斥。
+        self._stopping = False
+        # 錄音收尾中(收音已停、還在算)。⚠️ **不能用 `_busy` 推**:收尾期間 `rec` 與
+        # `run` 兩個旗標同時舉著,而 `_rec_t1` 上一場的值還留著。
+        self._rec_finishing = False
+        # 那顆停止鈕解鎖了沒。⚠️ **合成一顆之後「停止」就落在剛按過「開始」的同一個
+        # 位置**,手滑按兩下就是一場會議沒了(而錄音不能重來),所以開錄後兩秒才解鎖
+        # (2026-09-12 使用者指定,見 `_rec_arm`)。
+        self._rec_armed = True
         # 「工作進行中不該能動」的元件,以及它們**閒著時**該是什麼狀態(見
         # `_lockable` / `_data_lock`)。⚠️ **要記原本的狀態**:`ttk.Combobox` 閒著時
         # 是 `readonly`,一律放回 `normal` 會把它變成可以自由打字的欄位。
@@ -2627,6 +2710,88 @@ class App(tk.Tk):
                 return text
         return None
 
+    # ---- 主要動作鈕(四組共用一套狀態機,見 `action_button`)------------------ #
+    def _action_phase(self, key: str) -> str:
+        r"""那一組現在該是哪一種長相。
+
+        ⚠️ **收尾要排在錄音中前面**:按下「停止錄音」之後 `rec` 與 `run` **兩個旗標
+        同時舉著**(`_busy["rec"]` 要到 `_rec_done` 才清),先問 `rec` 的話整個收尾期間
+        那顆鈕都還寫著「停止錄音」——而收音早就停了。
+        ⚠️ **收尾用自己的旗標,不要拿 `_rec_t1` 當判準**:那個時刻上一場錄完就留在那裡
+        了,下一趟純檔案轉檔會被它認成「錄音收尾中」。"""
+        if key == "rec":
+            if self._rec_finishing:
+                return "stopping" if self._stopping else "finish"
+            if self._busy["rec"]:
+                return "busy"
+            return "idle"
+        if not self._busy["doc" if key == "doc" else "run"]:
+            return "idle"
+        return "stopping" if self._stopping else "busy"
+
+    def _action_refresh(self, *keys: str) -> None:
+        r"""把那幾組(不給就是全部)的主要動作鈕更新成現在該有的長相。
+
+        ⚠️ **一律問 `self._actions`**:文件頁那一顆要等那一頁被點過才存在,直接摸
+        `self._doc_run` 會丟 `AttributeError`,而 Tk 把它吞進紀錄檔——畫面上只會看到
+        「按了開始錄音沒反應」(同 `_busy_reason` 記著的那一顆)。"""
+        for key in (keys or tuple(self._actions)):
+            entry = self._actions.get(key)
+            if entry is None:
+                continue
+            btn, texts = entry
+            phase = self._action_phase(key)
+            # ⚠️ **兩秒的防誤按只鎖「錄音中的那顆停止」**:套到 `idle` 上就是「錄完一場
+            # 之後開始錄音是灰的」——而解鎖它的 `after` 早就跑完了,再也不會有人來開。
+            ready = self._rec_armed if (key == "rec" and phase == "busy") else True
+            text, style, on = action_button(texts, phase, ready)
+            btn.configure(text=text, style=style,
+                          state="normal" if on else "disabled")
+
+    def _action_click(self, key: str) -> None:
+        r"""那顆鈕被按下:做什麼由**現在的長相**決定,不是由它是哪一顆決定。
+
+        ⚠️ **錄音中按下去是 `_rec_stop`(停止收音、進收尾),那不是「取消」**:那一趟的
+        逐字稿還要做完。真正的取消是收尾期間再按一次(`finish` → `_work_abort`)。"""
+        phase = self._action_phase(key)
+        if phase == "idle":
+            {"rec": self._rec_start, "run": self._run_start,
+             "relabel": self._relabel_start, "doc": self._doc_start}[key]()
+        elif phase == "busy" and key == "rec":
+            self._rec_stop()
+        elif phase in ("busy", "finish"):
+            self._work_abort(key)
+
+    def _work_abort(self, key: str) -> None:
+        r"""按下停止:請引擎收手,那顆鈕當場換成灰的「停止中…」。
+
+        ⚠️ **措辭要講清楚「為什麼還沒停」**:引擎的檢查點在段落邊界上,抽音軌與 VAD
+        是單一長呼叫、插不進去,最久要等幾十秒。⚠️ **三條路徑的代價不一樣,不可以共用
+        一句話**:文件轉檔會先把手上那一份做完;錄音收尾放棄的是**一整場會議的逐字
+        稿**,所以那句一定要講「錄音檔還在」——不講的話使用者不敢按,而那顆鈕就等於
+        不存在。"""
+        cancel.request()
+        self._stopping = True
+        self._action_refresh(key)
+        if key == "doc":
+            self._doc_say("正在停止…(會先把手上這一份做完)")
+        elif key == "rec":
+            self._rec_status.configure(
+                text="正在停止…(算完手上這一段就停)。這一趟的逐字稿會放棄,"
+                     "錄音檔留在 recordings 資料夾,之後可以用「轉錄音檔」重轉。")
+        else:
+            self._stage("正在停止…(引擎會在下一個段落邊界停下)")
+
+    def _rec_arm(self) -> None:
+        r"""開錄兩秒後解鎖那顆停止鈕(2026-09-12 使用者指定的防誤按)。
+
+        ⚠️ **這是合成一顆才長出來的風險**:雙鈕時「停止」在右邊,合成之後它落在剛剛
+        按過「開始」的**同一個位置**,手滑連按兩下就是一場會議沒了——而錄音不能重來。
+        ⚠️ **只鎖畫面上那顆,不動 `_rec` 那條路**:收音本身早就開始了,這兩秒鎖的是
+        「停」不是「錄」。"""
+        self._rec_armed = True
+        self._action_refresh("rec")
+
     def _run_job(self, work, done) -> None:
         r"""把 `work(say)` 丟到工作執行緒,`say(...)` 的東西回到主執行緒。
 
@@ -3429,11 +3594,12 @@ class App(tk.Tk):
             style="Tall.TSpinbox")
         self._speakers_spin.pack(fill="x", pady=(self.px(SP_SM), 0))
 
-        # ---- 卡外:狀態一行,與兩顆等寬的主要動作鈕(照網頁版)-------------- #
+        # ---- 卡外:狀態一行,主要動作鈕與「進階參數設定」並排 ------------------ #
+        # 三個模式各一顆入口鈕(`_adv_button`),跟著自己那一列一起換上換下。
+        self._adv_btns: list[HandButton] = []
         self._rec_bar = self._rec_actions(inner)
         self._file_bar = self._file_actions(inner)
         self._relabel_bar = self._relabel_actions(inner)
-        self._adv_card = self._adv_build(inner)
 
         # ---- 右欄:結果 --------------------------------------------------- #
         run = ttk.Frame(right, style="Card.TFrame", padding=self.px(CARD_PAD))
@@ -3511,19 +3677,19 @@ class App(tk.Tk):
         self._segment_show(self._mode_cells, key)
         self._mode_info.configure(
             text=dict((m[0], m[3]) for m in RUN_MODES)[key])
-        # ⚠️ 命名中(`_naming_focus(True)`)動作列與摺疊卡都收著,對沒 pack 的摺疊卡說
-        # `before=` 是 TclError(2026-09-02 開頁還原一份命名進度之後接著切模式就撞到;
-        # 使用者按不到——那時整張大卡都收著——但程式自己會)。那時只記模式,動作列由
-        # `_naming_focus(False)` 收工時照 `_mode` 放回來。
-        adv_packed = bool(self._adv_card.winfo_manager())
+        # ⚠️ 命名中(`_naming_focus(True)`)大卡與動作列都收著,這時**只記模式、不放動作列**:
+        # 放出來就是命名卡底下冒出一顆「● 開始轉檔」,工作沒收工就開得了下一份。動作列由
+        # `_naming_focus(False)` 收工時照 `_mode` 放回來。「在不在命名中」問的是大卡有沒有
+        # pack——它與動作列在命名中一起收、一起放。(2026-09-02 開頁還原一份命名進度之後接著
+        # 切模式撞到過;那時問的是左欄最底下那張入口卡,2026-09-13 那張卡拿掉之後改問大卡。)
+        card_packed = bool(self._run_card.winfo_manager())
         for k, box, bar in (("rec", self._rec_box, self._rec_bar),
                             ("file", self._file_box, self._file_bar),
                             ("relabel", self._relabel_box, self._relabel_bar)):
             if k == key:
                 box.pack(fill="x", pady=(self.px(SP_XL), 0))
-                if adv_packed:
-                    bar.pack(fill="x", pady=(self.px(CARD_GAP), 0),
-                             before=self._adv_card)
+                if card_packed:
+                    bar.pack(fill="x", pady=(self.px(CARD_GAP), 0))
             else:
                 box.pack_forget()
                 bar.pack_forget()
@@ -3571,7 +3737,7 @@ class App(tk.Tk):
                                 padx=self.px(SP_SM), pady=self.px(SP_XS))
         self._lockable(self._run_src).pack(fill="x")
         # 「包含子資料夾」:網頁版放在「進階參數設定」裡;原生版的摺疊卡 2026-09-02 選案 C
-        # 之後餘裕只剩 36 實體 px(`_adv_build`),所以另外出過三案(這裡／摺疊卡先量／
+        # 之後餘裕只剩 36 實體 px(見 `docs/dev/native-ui.md`),所以另外出過三案(這裡／摺疊卡先量／
         # 這一版不做),使用者同日選定放在路徑欄下方。⚠️ **預設不勾**(同網頁版;與文件
         # 分頁那顆刻意相反):錄音檔轉一份要數十分鐘,不小心掃到整顆磁碟會跑上好幾天。
         # ⚠️ 它住在 `_file_box` 裡,所以切到收音/重設講者時跟著整段收起來——那兩個模式
@@ -3591,28 +3757,47 @@ class App(tk.Tk):
         return box
 
     def _file_actions(self, parent) -> ttk.Frame:
-        """「轉錄音檔」的動作列(卡片**外面**,同網頁版)。"""
+        """「轉錄音檔」的動作列(卡片**外面**,同另外三組)。"""
         bar = ttk.Frame(parent, style="Page.TFrame")
-        self._run_btn = HandButton(bar, text="開始轉檔", style=skin.RUN_PAGE_STYLE,
-                                   command=self._run_start)
-        self._run_stop = HandButton(bar, text="停止", style=skin.STOP_PAGE_STYLE,
-                                    state="disabled", command=self._run_stop_click)
-        self._pair(bar, self._run_btn, self._run_stop)
+        self._run_btn = self._action_btn(bar, "run", FILE_ACTION)
+        self._action_slot(bar, self._run_btn, self._adv_button(bar))
         return bar
 
-    def _pair(self, bar: ttk.Frame, left: ttk.Button, right: ttk.Button) -> None:
-        r"""把兩顆主要動作鈕排成**等寬、平分整欄**(照網頁版)。
+    def _action_btn(self, bar: ttk.Frame, key: str, texts: ActionText) -> "HandButton":
+        r"""建一顆**兼任停止**的主要動作鈕,並登記給 `_action_refresh` 認領。
 
-        ⚠️ **不是靠 `side="left"` 加固定內距**:那樣兩顆鈕只有「文字那麼寬」,在一張
-        被螢幕撐寬的卡片旁邊就是一片空白——使用者 2026-09-01 圈的正是這個。
-        ⚠️ **`uniform` 少不得**:沒有它 `weight=1` 只平分**剩餘**空間,而「停止錄音
-        並完成逐字稿」比「開始錄音」長得多,兩顆就不等寬。
-        ⚠️ 膠囊底板在水平方向是九宮格(中段可以拉伸),所以拉寬不會把圓角拉變形;
-        **高度**則由圖高釘死,不受 `sticky` 影響。"""
-        bar.columnconfigure(0, weight=1, uniform="run")
-        bar.columnconfigure(1, weight=1, uniform="run")
-        left.grid(row=0, column=0, sticky="ew", padx=(0, self.px(CARD_GAP) // 2))
-        right.grid(row=0, column=1, sticky="ew", padx=(self.px(CARD_GAP) // 2, 0))
+        ⚠️ **command 一律走 `_action_click`**:那顆鈕現在做什麼由 `_action_phase`
+        決定(開始／停止／中止收尾),寫死 `command=self._X_start` 的話按下去永遠是
+        開始——而它在畫面上寫著「停止」。"""
+        btn = HandButton(bar, text=texts.idle, style=skin.RUN_PAGE_STYLE,
+                         command=lambda k=key: self._action_click(k))
+        self._actions[key] = (btn, texts)
+        return btn
+
+    def _action_slot(self, bar: ttk.Frame, btn: ttk.Button, second: ttk.Button,
+                     row: int = 0) -> None:
+        r"""把主要動作鈕與它右邊那顆擺成**兩顆同寬、靠左**(`ACTION_BTN_W`)。
+
+        ⚠️ **寬度是固定值,不是「整列的一半」**(2026-09-13 使用者又收窄一次):先前
+        那版用兩欄 `uniform` 平分,在這台是 230 px,而他看過實拍之後說還是太長。
+        ⚠️ **右邊那欄要 `weight=1` 把剩餘空間吃掉**,否則欄寬會被內容撐開、那顆鈕
+        跟著變寬——固定寬就白設了。
+        ⚠️ 膠囊底板在水平方向是九宮格(中段可以拉伸),所以設寬不會把圓角拉變形;
+        **高度**則由圖高釘死,不受 `sticky` 影響。
+        `second` 在文件頁是「輸出資料夾…」,在轉檔頁的三組是「⚙ 進階參數設定…」
+        (2026-09-13 使用者選案 B,見 `_adv_button`)——四組因此是同一種排法。
+        ⚠️ **視窗窄於約 974 邏輯 px 時第二顆會被左欄裁掉**(兩顆加一道縫要 570 實體 px,
+        最窄時左欄只剩 437):文件頁在這之前就是這樣,選案時已知,要處理得另外出案。"""
+        w, gap = self.px(ACTION_BTN_W), self.px(CARD_GAP)
+        bar.columnconfigure(0, weight=0, minsize=w, uniform="")
+        btn.grid(row=row, column=0, sticky="ew", padx=0)
+        # ⚠️ **兩顆之間的縫要自己一欄,不可以用第二顆的 `padx`**:`padx` 吃在**欄寬
+        # 裡**,那顆鈕於是只剩 `minsize` 減掉那道縫(實拍量到 180 對 160,而兩顆
+        # 一大一小在畫面上很明顯)。
+        bar.columnconfigure(1, weight=0, minsize=gap, uniform="")
+        bar.columnconfigure(2, weight=0, minsize=w, uniform="")
+        bar.columnconfigure(3, weight=1, uniform="")
+        second.grid(row=row, column=2, sticky="ew", padx=0)
 
     # ---- 重設講者 -------------------------------------------------------- #
     def _relabel_build(self, parent) -> ttk.Frame:
@@ -3651,13 +3836,10 @@ class App(tk.Tk):
     def _relabel_actions(self, parent) -> ttk.Frame:
         """「重設講者」的動作列(卡片外面,同另外兩個模式)。"""
         bar = ttk.Frame(parent, style="Page.TFrame")
-        self._relabel_btn = HandButton(bar, text="讀取並開始命名",
-                                       style=skin.RUN_PAGE_STYLE,
-                                       command=self._relabel_start)
-        self._relabel_stop = HandButton(bar, text="停止", style=skin.STOP_PAGE_STYLE,
-                                        state="disabled",
-                                        command=self._run_stop_click)
-        self._pair(bar, self._relabel_btn, self._relabel_stop)
+        self._relabel_btn = self._action_btn(bar, "relabel", RELABEL_ACTION)
+        # ⚠️ **這一組也要有**:重設講者雖然不重轉,聲紋分析仍吃「CPU 核心數」(使用說明
+        # 「⚙️ 調準確度與速度」那篇寫著)——少了這顆,那個模式就改不到它。
+        self._action_slot(bar, self._relabel_btn, self._adv_button(bar))
         return bar
 
     def _relabel_pick(self) -> None:
@@ -3850,22 +4032,14 @@ class App(tk.Tk):
         self._rec_status = self._wrap(
             ttk.Label(bar, text=REC_IDLE, style="PageStatus.TLabel",
                       justify="left"))
-        # ⚠️ 狀態列自己一列、跨滿兩欄:它是這兩顆鈕的說明,不是第三顆鈕。
-        self._rec_status.grid(row=0, column=0, columnspan=2, sticky="w",
+        # ⚠️ 狀態列自己一列、**跨滿四欄**(`_action_slot` 排出來的:鈕｜縫｜鈕｜剩餘):
+        # 它是那顆鈕的說明,不是第三顆鈕。⚠️ **少跨一欄就會把縫撐開**:錄音中那行字很長
+        # (情境、已錄時間、背景轉錄進度),而跨的欄裡若沒有 `weight=1` 那一欄,grid 會把
+        # 多出來的寬度塞給縫——「⚙ 進階參數設定…」於是被推往右邊,錄得越久推得越遠。
+        self._rec_status.grid(row=0, column=0, columnspan=4, sticky="w",
                               pady=(0, self.px(SP_SM)))
-        self._rec_go = HandButton(bar, text="● 開始錄音", style=skin.RUN_PAGE_STYLE,
-                                  command=self._rec_start)
-        # ⚠️ 記號照網頁版用 `■`(文字符號、單色),不是 `⏹`:`⏹` 會被 `HandButton` 當
-        # 圖示畫成彩色 emoji,而網頁版這兩顆主要動作鈕上的 ●／■ 是白色的文字符號。
-        self._rec_end = HandButton(bar, text="■ 停止錄音並完成逐字稿",
-                                   style=skin.STOP_PAGE_STYLE,
-                                   state="disabled", command=self._rec_stop)
-        self._rec_go.grid(row=1, column=0, sticky="ew",
-                          padx=(0, self.px(CARD_GAP) // 2))
-        self._rec_end.grid(row=1, column=1, sticky="ew",
-                           padx=(self.px(CARD_GAP) // 2, 0))
-        bar.columnconfigure(0, weight=1, uniform="run")
-        bar.columnconfigure(1, weight=1, uniform="run")
+        self._rec_go = self._action_btn(bar, "rec", REC_ACTION)
+        self._action_slot(bar, self._rec_go, self._adv_button(bar), row=1)
         return bar
 
     def _fold(self, parent, title: str, on_toggle) -> "Fold":
@@ -3905,34 +4079,24 @@ class App(tk.Tk):
         else:
             fold.body.pack_forget()
 
-    def _adv_build(self, parent) -> ttk.Frame:
-        r"""「進階參數設定」在左欄的入口:一張只有標題列的矮卡,點了開對話框。
+    def _adv_button(self, bar: ttk.Frame) -> "HandButton":
+        r"""「進階參數設定」的入口:主要動作鈕**右邊那顆**(`_action_slot` 的 `second`)。
 
-        (2026-09-07 使用者選案 C;四案實拍與量到的數字見 `docs/dev/native-ui.md`。)
-        ⚠️ **改成對話框不是為了好看,是那張卡早就裝不下了**:摺疊區展開後,左欄在
-        「轉錄音檔」模式**要捲 102 px**、「現場收音」差 8 px——而那還是**還沒加**
-        運算裝置那一排的數字。使用者要的第三個參數只是把這件事逼到檯面上。
-        ⚠️ 換到的三件事:三種模式幾乎都不必捲(+91／−3／+153)、兩段說明從「壓成半欄
-        一行」還原成完整句(見 `MODEL_INFO`)、以及**下次再加參數不必重排版面**——這
-        一條才是真正的收穫,前兩次(2026-09-02 排兩欄、2026-09-04 再砍兩個字)都是在同
-        一個 36 px 的餘裕上騰挪。
-        ⚠️ **這張入口卡不要再長高**:它只有一列,而「轉錄音檔」那個模式的餘裕是 −3
-        ——多一行說明就又要捲了。有話要講就寫進對話框裡,那裡沒有高度限制。
-        ⚠️ **整張卡都能點**(不只標題與記號):它裡面只有一列,沒有「點到內容」的問題,
-        而摺疊卡那支(`_fold`)只綁標題列是因為它的 body 裡有控制項。"""
-        card = ttk.Frame(parent, style="Card.TFrame",
-                         padding=(self.px(CARD_PAD), self.px(SP_LG)))
-        card.pack(fill="x", pady=(self.px(CARD_GAP), 0))
-        head = ttk.Frame(card, style="CardBody.TFrame")
-        head.pack(fill="x")
-        label = ttk.Label(head, text=ADV_TITLE, style="CardH.TLabel")
-        label.pack(side="left")
-        mark = ttk.Label(head, text=ADV_ENTRY, style="Hint.TLabel")
-        mark.pack(side="right")
-        for w in (card, head, label, mark):
-            w.bind("<Button-1>", lambda _e: self._adv_open())
-            w.configure(cursor="hand2")
-        return card
+        (對話框本身是 2026-09-07 選案 C;入口 2026-09-13 從「左欄最底下一張矮卡」搬到這裡,
+        使用者從四案實拍裡選 B。數字與落選案見 `docs/dev/native-ui.md` §11。)
+        ⚠️ **搬家的理由是量出來的,不只是好看**:那張矮卡在「轉錄音檔」只剩 6 px 餘裕,
+        **選了檔案、摘要多出一行就是 −29**——入口被推出畫面,要往下捲才找得到。搬進動作列
+        之後同一個狀態是 +77。
+        ⚠️ **三個模式各一顆**,跟著自己那一列換上換下(命名中也跟著收,見 `_naming_focus`)。
+        選 B 而不是「講者人數旁」,理由之一就是位置不跳:「重設講者」沒有講者人數欄。
+        ⚠️ **工作進行中不鎖**:按下去開的是對話框,裡面的控制項才由 `_adv_lock` 鎖——使用者
+        轉檔中常常只是想看一眼核心數設多少,連入口都鎖就是看都不給看。
+        ⚠️ **灰底 `SKIP_PAGE_STYLE`,不是藍框**:同一列的主角是那顆藍色的「● 開始…」,
+        而文件頁同一個位置的「輸出資料夾…」也是這一款——四組長得一樣。"""
+        btn = HandButton(bar, text=ADV_BUTTON, style=skin.SKIP_PAGE_STYLE,
+                         command=self._adv_open)
+        self._adv_btns.append(btn)
+        return btn
 
     def _adv_open(self) -> None:
         r"""開「進階參數設定」對話框(已經開著就叫到前面來)。
@@ -4327,8 +4491,10 @@ class App(tk.Tk):
         self._run_set_preview("")
         self._rec_t0 = time.monotonic()
         self._rec_t1 = 0.0           # ⚠️ 不歸零的話這一場的計時器一開始就是停的
-        self._rec_go.configure(state="disabled")
-        self._rec_end.configure(state="normal")
+        # 那顆鈕當場翻成「■ 停止錄音」,但**先鎖兩秒**(防誤按,見 `_rec_arm`)
+        self._rec_armed = False
+        self._action_refresh("rec")
+        self.after(REC_ARM_DELAY_MS, self._rec_arm)
         self._naming_hide()
         self._rec_tick()
 
@@ -4340,7 +4506,10 @@ class App(tk.Tk):
         64 分鐘的錄音停止後 40 幾分鐘一片空白,就是這個。"""
         if not self._rec.get("recorder"):
             return
-        self._rec_end.configure(state="disabled")
+        # ⚠️ **旗標要在這裡舉**:那顆鈕從「■ 停止錄音」翻成「■ 中止收尾」靠它
+        # (`_action_phase`),而收尾期間 `rec` 與 `run` 兩個 `_busy` 同時舉著、分不出來。
+        self._rec_finishing = True
+        self._action_refresh("rec")
         self._rec_status.configure(text="正在停止收音…")
         self.update_idletasks()      # `stop()` 會擋住主執行緒(補零/修剪),先把這句畫出來
         tracks = self._rec["recorder"].stop()
@@ -4420,9 +4589,9 @@ class App(tk.Tk):
         flag = self._work_outcome(error, naming=True)
         self._rec.clear()
         self._busy["rec"] = False
-        self._rec_go.configure(state="normal")
-        self._rec_end.configure(state="disabled")
-        self._run_lock(False, flag)
+        self._rec_finishing = False
+        self._rec_armed = True          # 下一場的防誤按由 `_rec_start` 自己再放下
+        self._run_lock(False, flag)     # 這一支順手清 `_stopping` 並更新四顆鈕
         self._run_bar.configure(value=0)
         if error is None:
             self._rec_status.configure(text="收尾完成,逐字稿在下面。")
@@ -4635,7 +4804,7 @@ class App(tk.Tk):
                     prefill.get(UNKNOWN_SPEAKER, ""), known, 0,
                     play=(clips is None or UNKNOWN_SPEAKER in clips), audit_btn=False)
         self._naming_say("")
-        # 命名中左欄**只剩這張卡**(`_naming_focus` 把大卡、動作列、摺疊卡全收了),所以
+        # 命名中左欄**只剩這張卡**(`_naming_focus` 把大卡與動作列全收了),所以
         # 直接 pack 就是最上面,不必 `before=`——而且不能用:重新分群那條路會在命名中再進
         # 來一次,那時其他卡都沒有 pack,對它們說 `before=` 是 TclError。
         self._naming_box.pack(fill="x", pady=(0, self.px(CARD_GAP)))
@@ -4792,9 +4961,10 @@ class App(tk.Tk):
         「進階參數設定」也收**——網頁版也是這樣(`SOURCE_SWITCH_SPEC` 裡有 `model`、
         `recursive`),第一版漏收,使用者 2026-09-02 看截圖指出:「設定講者時已經錄音完成,
         進階參數本來也沒有設定的意義」。理由與「轉檔中鎖住那整組」同一個:工作沒收工就
-        不開新的——套用或跳過就是收工,那時整組放回來。
-        ⚠️ **放回來時要照原本的順序擺**:大卡 → 動作列 → 摺疊卡。這時命名卡已經收掉、
-        左欄是空的,所以直接依序 pack 到尾端就是對的順序,不必 `before=`。
+        不開新的——套用或跳過就是收工,那時整組放回來。(2026-09-13 起那顆入口鈕住在動作列
+        裡,收動作列就一起收了,不必再另外處理。)
+        ⚠️ **放回來時要照原本的順序擺**:大卡 → 動作列。這時命名卡已經收掉、左欄是空的,
+        所以直接依序 pack 到尾端就是對的順序,不必 `before=`。
         ⚠️ **兩個方向都要 `_scroll_top`**:左欄是可捲的,而這一支換掉的是它的**全部**
         內容——不重算 scrollregion、不捲回頂端的話,視野會停在上一批內容的偏移上。
         使用者 2026-09-04 回報的「設定完講者,左邊的功能選單不見了」就是這個(病因與
@@ -4805,12 +4975,10 @@ class App(tk.Tk):
             self._run_card.pack_forget()
             for bar in bars.values():
                 bar.pack_forget()
-            self._adv_card.pack_forget()
             self._scroll_top("run")
             return
         self._run_card.pack(fill="x")
         bars[self._mode].pack(fill="x", pady=(self.px(CARD_GAP), 0))
-        self._adv_card.pack(fill="x", pady=(self.px(CARD_GAP), 0))
         self._scroll_top("run")
 
     def _naming_hide(self) -> None:
@@ -5488,10 +5656,6 @@ class App(tk.Tk):
         self._run_preview.insert("1.0", helpmd.flatten(text))
         self._run_preview.configure(state="disabled")
 
-    def _run_stop_click(self) -> None:
-        cancel.request()
-        self._stage("正在停止…(引擎會在下一個段落邊界停下)")
-
     def _run_lock(self, running: bool, outcome: int = winui.TBPF_NOPROGRESS) -> None:
         r"""鎖住/放開「檔案轉檔」這條路的按鈕;`outcome` 是收工時留在工作列上的顏色。
 
@@ -5511,10 +5675,13 @@ class App(tk.Tk):
             self._run_dirs = None       # 這一趟的成品位置由這一趟自己說
         else:
             self._taskbar_end(outcome)
-        for go, stop in ((self._run_btn, self._run_stop),
-                         (self._relabel_btn, self._relabel_stop)):
-            go.configure(state="disabled" if running else "normal")
-            stop.configure(state="normal" if running else "disabled")
+        # ⚠️ **收工時要清 `_stopping`**:不清的話下一趟一開跑,那顆鈕就直接是灰的
+        # 「停止中…」——工作真的在跑,而畫面說它正在停。
+        if not running:
+            self._stopping = False
+        # ⚠️ **四組一起更新**:錄音收尾也走這一支(`_rec_stop` → `_run_lock(True)`),
+        # 而它要翻的是 `rec` 那一顆;`doc` 那顆存在才會被碰(見 `_action_refresh`)。
+        self._action_refresh()
 
     def _run_start(self) -> None:
         r"""按下「開始轉檔」。
@@ -5742,25 +5909,20 @@ class App(tk.Tk):
         self._doc_summary = self._wrap(
             ttk.Label(inner, style="PageStatus.TLabel", justify="left"))
 
-        # ---- 動作列(卡片外,三顆等寬同高;同網頁版)----
+        # ---- 動作列(卡片外,兩顆等寬同高)----
+        # ⚠️ **原本是三顆**(開始轉檔／停止／輸出資料夾…),2026-09-12 合成之後剩兩顆
+        # ——而那一列的欄數要跟著從 3 改成 2,否則主要動作鈕只有 1/3 寬,與另外三組
+        # 對不齊(使用者選的是「半寬」)。
         bar = ttk.Frame(inner, style="Page.TFrame")
         bar.pack(fill="x", pady=(gap, 0))
         self._doc_actions = bar
-        for i in range(3):
-            bar.columnconfigure(i, weight=1, uniform="act")
         # 「開始轉檔」**一律可按**(使用者 2026-08-01 指定,與逐字稿那條刻意不同):
         # 貼上路徑時不一定觸發任何事件,鈕不亮會讓人以為工具壞了;按下去才把關,
         # 錯誤訊息會講清楚是空的、找不到、還是格式不支援。
-        self._doc_run = HandButton(bar, text="開始轉檔", style=skin.RUN_PAGE_STYLE,
-                                   command=self._doc_start)
-        self._doc_run.grid(row=0, column=0, sticky="ew", padx=(0, gap // 2))
-        self._doc_stop = HandButton(bar, text="停止", style=skin.STOP_PAGE_STYLE,
-                                    state="disabled", command=self._doc_stop_click)
-        self._doc_stop.grid(row=0, column=1, sticky="ew",
-                            padx=(gap - gap // 2, gap // 2))
+        self._doc_run = self._action_btn(bar, "doc", DOC_ACTION)
         self._doc_open = HandButton(bar, text="輸出資料夾…", style=skin.SKIP_PAGE_STYLE,
                                     state="disabled", command=self._doc_open_dirs)
-        self._doc_open.grid(row=0, column=2, sticky="ew", padx=(gap - gap // 2, 0))
+        self._action_slot(bar, self._doc_run, self._doc_open)
 
         # ---- 進階參數設定:三個選項(網頁版的 Accordion,預設收著)----
         self._doc_adv = self._fold(
@@ -5938,10 +6100,6 @@ class App(tk.Tk):
     def _doc_open_dirs(self) -> None:
         doctab.open_output_dirs(self._doc_dirs)
 
-    def _doc_stop_click(self) -> None:
-        cancel.request()
-        self._doc_say("正在停止…(會先把手上這一份做完)")
-
     def _doc_lock(self, running: bool,
                   outcome: int = winui.TBPF_NOPROGRESS) -> None:
         self._busy["doc"] = running
@@ -5950,8 +6108,9 @@ class App(tk.Tk):
             self._taskbar(None)
         else:
             self._taskbar_end(outcome)
-        self._doc_run.configure(state="disabled" if running else "normal")
-        self._doc_stop.configure(state="normal" if running else "disabled")
+        if not running:                 # 同 `_run_lock`:收工要清,否則下一趟開頭就是灰的
+            self._stopping = False
+        self._action_refresh("doc")
 
     def _doc_reset_view(self) -> None:
         r"""把「上一趟的成果」從畫面上清掉。
