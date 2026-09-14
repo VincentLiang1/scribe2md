@@ -4096,8 +4096,10 @@ class App(tk.Tk):
         之後同一個狀態是 +77。
         ⚠️ **三個模式各一顆**,跟著自己那一列換上換下(命名中也跟著收,見 `_naming_focus`)。
         選 B 而不是「講者人數旁」,理由之一就是位置不跳:「重設講者」沒有講者人數欄。
-        ⚠️ **工作進行中不鎖**:按下去開的是對話框,裡面的控制項才由 `_adv_lock` 鎖——使用者
-        轉檔中常常只是想看一眼核心數設多少,連入口都鎖就是看都不給看。
+        ⚠️ **工作進行中連入口一起鎖**(2026-09-14 使用者:「當開始錄音時…連外面的按鈕都
+        DISABLE」):先前只鎖對話框裡的控制項,結果是按得開、裡面卻整窗都是灰的。鎖在
+        `_params_lock`,**條件與 `_adv_lock` 同一個**(`rec` 或 `run`)——不走 `_lockable`,
+        那一支連文件轉檔(`doc`)也鎖,而那時對話框裡的東西是開著的。
         ⚠️ **灰底 `SKIP_PAGE_STYLE`,不是藍框**:同一列的主角是那顆藍色的「● 開始…」,
         而文件頁同一個位置的「輸出資料夾…」也是這一款——四組長得一樣。"""
         btn = HandButton(bar, text=ADV_BUTTON, style=skin.SKIP_PAGE_STYLE,
@@ -4113,9 +4115,9 @@ class App(tk.Tk):
         (同核對視窗 `_audit_window`)。
         ⚠️ **每次開都重建內容**:三段的說明字都跟當下的狀態有關(走 GPU 還是 CPU、
         這台機器有沒有 GPU、核心數的預設值),留著上次那一份只會顯示過期的話。
-        ⚠️ **開起來的當下要立刻套用鎖**(`_adv_lock`):轉檔中才第一次點開它的那一趟,
-        沒有任何 `_params_lock` 會再經過這裡——而那正是最需要鎖的時候(同 `_lockable`
-        那條「新建的那一頁要立刻吃到現在的狀態」)。"""
+        ⚠️ **開起來的當下要立刻套用鎖**(`_adv_lock`):「運算裝置」那排在沒有 GPU 的機器
+        上一開就要是停用的,而那與 `_busy` 無關、沒有別人會替它套。工作進行中入口鈕是鎖的
+        (見 `_adv_button`),所以「轉檔中才第一次點開」從介面上已經走不到。"""
         win = self._adv_win
         if win is not None and win.winfo_exists():
             win.deiconify()
@@ -4361,7 +4363,9 @@ class App(tk.Tk):
         ——網頁版要鎖它是因為那邊一直看得到。
         ⚠️ **進階參數那三個在對話框裡、可能根本不存在**(2026-09-07 選案 C 之後):
         那一半交給 `_adv_lock` 自己判斷,這裡不准直接摸——摸了就是「工作跑到一半、
-        使用者從來沒開過那個對話框」的那一趟出 AttributeError。"""
+        使用者從來沒開過那個對話框」的那一趟出 AttributeError。
+        ⚠️ **入口鈕則一定在**(三組都跟著轉檔頁一起建),所以直接鎖在這裡;對話框若在
+        按下開始之前就開著,它留著、裡面鎖住,「關閉」照樣按得下去。"""
         busy = self._busy["rec"] or self._busy["run"]
         # 「要做什麼」與「收音情境」:`_mode_show` / `_scene_show` 開頭本來就擋著
         # `_busy`,這裡補的是**看得出來**那一半(同 `_segment_enable` 的 docstring)。
@@ -4369,6 +4373,8 @@ class App(tk.Tk):
         self._segment_enable(self._mode_cells, not busy)
         self._segment_enable(self._scene_cells, not busy)
         self._adv_lock()
+        for btn in self._adv_btns:
+            btn.configure(state="disabled" if busy else "normal")
         # 講者人數:只有「錄音中」放行,收尾(`run`)與檔案轉檔一起鎖
         self._speakers_spin.configure(
             state="disabled" if self._busy["run"] else "normal")
