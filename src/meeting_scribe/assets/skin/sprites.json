@@ -356,6 +356,25 @@
      "sticky": "nswe",
      "width": 10
     },
+    "Sq.seg": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 37,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
     "Sq.seg_on": {
      "border": [
       16,
@@ -364,7 +383,7 @@
       0
      ],
      "height": 31,
-     "on": "#2c2c2e",
+     "on": "#3a3a3c",
      "padding": 0,
      "states": [
       [
@@ -374,6 +393,25 @@
      ],
      "sticky": "nswe",
      "width": 33
+    },
+    "Sq.segtab": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
     },
     "Sq.stop": {
      "border": [
@@ -766,87 +804,99 @@
      105,
      7
     ],
-    "seg-on": [
+    "seg": [
      0,
      1739,
+     54,
+     37
+    ],
+    "seg-on": [
+     0,
+     1776,
      48,
      31
     ],
+    "segtab": [
+     0,
+     1807,
+     46,
+     30
+    ],
     "stop-dis": [
      0,
-     1770,
+     1837,
      56,
      40
     ],
     "stop-hover": [
      0,
-     1810,
+     1877,
      56,
      40
     ],
     "stop-page-dis": [
      0,
-     1850,
+     1917,
      56,
      40
     ],
     "stop-page-hover": [
      0,
-     1890,
+     1957,
      56,
      40
     ],
     "stop-page-pressed": [
      0,
-     1930,
+     1997,
      56,
      40
     ],
     "stop-page-rest": [
      0,
-     1970,
+     2037,
      56,
      40
     ],
     "stop-pressed": [
      0,
-     2010,
+     2077,
      56,
      40
     ],
     "stop-rest": [
      0,
-     2050,
+     2117,
      56,
      40
     ],
     "subtab": [
      0,
-     2090,
+     2157,
      46,
      30
     ],
     "toc-on": [
      0,
-     2120,
+     2187,
      122,
      122
     ],
     "toc-wrap": [
      0,
-     2242,
+     2309,
      126,
      126
     ],
     "tree-rest": [
      0,
-     2368,
+     2435,
      118,
      118
     ],
     "trough": [
      0,
-     2486,
+     2553,
      105,
      7
     ]
@@ -1198,6 +1248,25 @@
      "sticky": "nswe",
      "width": 12
     },
+    "Sq.seg": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 46,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
     "Sq.seg_on": {
      "border": [
       20,
@@ -1206,7 +1275,7 @@
       0
      ],
      "height": 39,
-     "on": "#2c2c2e",
+     "on": "#3a3a3c",
      "padding": 0,
      "states": [
       [
@@ -1216,6 +1285,25 @@
      ],
      "sticky": "nswe",
      "width": 41
+    },
+    "Sq.segtab": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
     },
     "Sq.stop": {
      "border": [
@@ -1608,87 +1696,99 @@
      131,
      9
     ],
-    "seg-on": [
+    "seg": [
      0,
      2179,
+     66,
+     46
+    ],
+    "seg-on": [
+     0,
+     2225,
      60,
      39
     ],
+    "segtab": [
+     0,
+     2264,
+     58,
+     38
+    ],
     "stop-dis": [
      0,
-     2218,
+     2302,
      70,
      50
     ],
     "stop-hover": [
      0,
-     2268,
+     2352,
      70,
      50
     ],
     "stop-page-dis": [
      0,
-     2318,
+     2402,
      70,
      50
     ],
     "stop-page-hover": [
      0,
-     2368,
+     2452,
      70,
      50
     ],
     "stop-page-pressed": [
      0,
-     2418,
+     2502,
      70,
      50
     ],
     "stop-page-rest": [
      0,
-     2468,
+     2552,
      70,
      50
     ],
     "stop-pressed": [
      0,
-     2518,
+     2602,
      70,
      50
     ],
     "stop-rest": [
      0,
-     2568,
+     2652,
      70,
      50
     ],
     "subtab": [
      0,
-     2618,
+     2702,
      58,
      38
     ],
     "toc-on": [
      0,
-     2656,
+     2740,
      150,
      150
     ],
     "toc-wrap": [
      0,
-     2806,
+     2890,
      158,
      158
     ],
     "tree-rest": [
      0,
-     2964,
+     3048,
      146,
      146
     ],
     "trough": [
      0,
-     3110,
+     3194,
      131,
      9
     ]
@@ -2040,6 +2140,25 @@
      "sticky": "nswe",
      "width": 13
     },
+    "Sq.seg": {
+     "border": [
+      28,
+      0,
+      28,
+      0
+     ],
+     "height": 56,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 57
+    },
     "Sq.seg_on": {
      "border": [
       23,
@@ -2048,12 +2167,31 @@
       0
      ],
      "height": 46,
-     "on": "#2c2c2e",
+     "on": "#3a3a3c",
      "padding": 0,
      "states": [
       [
        "",
        "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.segtab": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
       ]
      ],
      "sticky": "nswe",
@@ -2450,87 +2588,99 @@
      156,
      10
     ],
-    "seg-on": [
+    "seg": [
      0,
      2604,
+     80,
+     56
+    ],
+    "seg-on": [
+     0,
+     2660,
      70,
      46
     ],
+    "segtab": [
+     0,
+     2706,
+     70,
+     45
+    ],
     "stop-dis": [
      0,
-     2650,
+     2751,
      84,
      60
     ],
     "stop-hover": [
      0,
-     2710,
+     2811,
      84,
      60
     ],
     "stop-page-dis": [
      0,
-     2770,
+     2871,
      84,
      60
     ],
     "stop-page-hover": [
      0,
-     2830,
+     2931,
      84,
      60
     ],
     "stop-page-pressed": [
      0,
-     2890,
+     2991,
      84,
      60
     ],
     "stop-page-rest": [
      0,
-     2950,
+     3051,
      84,
      60
     ],
     "stop-pressed": [
      0,
-     3010,
+     3111,
      84,
      60
     ],
     "stop-rest": [
      0,
-     3070,
+     3171,
      84,
      60
     ],
     "subtab": [
      0,
-     3130,
+     3231,
      70,
      45
     ],
     "toc-on": [
      0,
-     3175,
+     3276,
      182,
      182
     ],
     "toc-wrap": [
      0,
-     3357,
+     3458,
      188,
      188
     ],
     "tree-rest": [
      0,
-     3545,
+     3646,
      176,
      176
     ],
     "trough": [
      0,
-     3721,
+     3822,
      156,
      10
     ]
@@ -2882,6 +3032,25 @@
      "sticky": "nswe",
      "width": 15
     },
+    "Sq.seg": {
+     "border": [
+      33,
+      0,
+      33,
+      0
+     ],
+     "height": 65,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 67
+    },
     "Sq.seg_on": {
      "border": [
       27,
@@ -2890,7 +3059,7 @@
       0
      ],
      "height": 54,
-     "on": "#2c2c2e",
+     "on": "#3a3a3c",
      "padding": 0,
      "states": [
       [
@@ -2900,6 +3069,25 @@
      ],
      "sticky": "nswe",
      "width": 55
+    },
+    "Sq.segtab": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
     },
     "Sq.stop": {
      "border": [
@@ -3292,87 +3480,99 @@
      182,
      12
     ],
-    "seg-on": [
+    "seg": [
      0,
      3030,
+     94,
+     65
+    ],
+    "seg-on": [
+     0,
+     3095,
      82,
      54
     ],
+    "segtab": [
+     0,
+     3149,
+     80,
+     52
+    ],
     "stop-dis": [
      0,
-     3084,
+     3201,
      98,
      70
     ],
     "stop-hover": [
      0,
-     3154,
+     3271,
      98,
      70
     ],
     "stop-page-dis": [
      0,
-     3224,
+     3341,
      98,
      70
     ],
     "stop-page-hover": [
      0,
-     3294,
+     3411,
      98,
      70
     ],
     "stop-page-pressed": [
      0,
-     3364,
+     3481,
      98,
      70
     ],
     "stop-page-rest": [
      0,
-     3434,
+     3551,
      98,
      70
     ],
     "stop-pressed": [
      0,
-     3504,
+     3621,
      98,
      70
     ],
     "stop-rest": [
      0,
-     3574,
+     3691,
      98,
      70
     ],
     "subtab": [
      0,
-     3644,
+     3761,
      80,
      52
     ],
     "toc-on": [
      0,
-     3696,
+     3813,
      214,
      214
     ],
     "toc-wrap": [
      0,
-     3910,
+     4027,
      218,
      218
     ],
     "tree-rest": [
      0,
-     4128,
+     4245,
      206,
      206
     ],
     "trough": [
      0,
-     4334,
+     4451,
      182,
      12
     ]
@@ -3724,6 +3924,25 @@
      "sticky": "nswe",
      "width": 17
     },
+    "Sq.seg": {
+     "border": [
+      37,
+      0,
+      37,
+      0
+     ],
+     "height": 74,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 75
+    },
     "Sq.seg_on": {
      "border": [
       31,
@@ -3732,7 +3951,7 @@
       0
      ],
      "height": 62,
-     "on": "#2c2c2e",
+     "on": "#3a3a3c",
      "padding": 0,
      "states": [
       [
@@ -3742,6 +3961,25 @@
      ],
      "sticky": "nswe",
      "width": 63
+    },
+    "Sq.segtab": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
     },
     "Sq.stop": {
      "border": [
@@ -4134,87 +4372,99 @@
      208,
      14
     ],
-    "seg-on": [
+    "seg": [
      0,
      3470,
+     106,
+     74
+    ],
+    "seg-on": [
+     0,
+     3544,
      94,
      62
     ],
+    "segtab": [
+     0,
+     3606,
+     92,
+     60
+    ],
     "stop-dis": [
      0,
-     3532,
+     3666,
      112,
      80
     ],
     "stop-hover": [
      0,
-     3612,
+     3746,
      112,
      80
     ],
     "stop-page-dis": [
      0,
-     3692,
+     3826,
      112,
      80
     ],
     "stop-page-hover": [
      0,
-     3772,
+     3906,
      112,
      80
     ],
     "stop-page-pressed": [
      0,
-     3852,
+     3986,
      112,
      80
     ],
     "stop-page-rest": [
      0,
-     3932,
+     4066,
      112,
      80
     ],
     "stop-pressed": [
      0,
-     4012,
+     4146,
      112,
      80
     ],
     "stop-rest": [
      0,
-     4092,
+     4226,
      112,
      80
     ],
     "subtab": [
      0,
-     4172,
+     4306,
      92,
      60
     ],
     "toc-on": [
      0,
-     4232,
+     4366,
      242,
      242
     ],
     "toc-wrap": [
      0,
-     4474,
+     4608,
      250,
      250
     ],
     "tree-rest": [
      0,
-     4724,
+     4858,
      234,
      234
     ],
     "trough": [
      0,
-     4958,
+     5092,
      208,
      14
     ]
@@ -4566,6 +4816,25 @@
      "sticky": "nswe",
      "width": 19
     },
+    "Sq.seg": {
+     "border": [
+      42,
+      0,
+      42,
+      0
+     ],
+     "height": 83,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 85
+    },
     "Sq.seg_on": {
      "border": [
       35,
@@ -4574,7 +4843,7 @@
       0
      ],
      "height": 70,
-     "on": "#2c2c2e",
+     "on": "#3a3a3c",
      "padding": 0,
      "states": [
       [
@@ -4584,6 +4853,25 @@
      ],
      "sticky": "nswe",
      "width": 71
+    },
+    "Sq.segtab": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
     },
     "Sq.stop": {
      "border": [
@@ -4976,87 +5264,99 @@
      234,
      16
     ],
-    "seg-on": [
+    "seg": [
      0,
      3910,
+     120,
+     83
+    ],
+    "seg-on": [
+     0,
+     3993,
      106,
      70
     ],
+    "segtab": [
+     0,
+     4063,
+     104,
+     68
+    ],
     "stop-dis": [
      0,
-     3980,
+     4131,
      126,
      90
     ],
     "stop-hover": [
      0,
-     4070,
+     4221,
      126,
      90
     ],
     "stop-page-dis": [
      0,
-     4160,
+     4311,
      126,
      90
     ],
     "stop-page-hover": [
      0,
-     4250,
+     4401,
      126,
      90
     ],
     "stop-page-pressed": [
      0,
-     4340,
+     4491,
      126,
      90
     ],
     "stop-page-rest": [
      0,
-     4430,
+     4581,
      126,
      90
     ],
     "stop-pressed": [
      0,
-     4520,
+     4671,
      126,
      90
     ],
     "stop-rest": [
      0,
-     4610,
+     4761,
      126,
      90
     ],
     "subtab": [
      0,
-     4700,
+     4851,
      104,
      68
     ],
     "toc-on": [
      0,
-     4768,
+     4919,
      270,
      270
     ],
     "toc-wrap": [
      0,
-     5038,
+     5189,
      282,
      282
     ],
     "tree-rest": [
      0,
-     5320,
+     5471,
      262,
      262
     ],
     "trough": [
      0,
-     5582,
+     5733,
      234,
      16
     ]
@@ -5408,6 +5708,25 @@
      "sticky": "nswe",
      "width": 21
     },
+    "Sq.seg": {
+     "border": [
+      46,
+      0,
+      46,
+      0
+     ],
+     "height": 92,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 93
+    },
     "Sq.seg_on": {
      "border": [
       39,
@@ -5416,7 +5735,7 @@
       0
      ],
      "height": 78,
-     "on": "#2c2c2e",
+     "on": "#3a3a3c",
      "padding": 0,
      "states": [
       [
@@ -5426,6 +5745,25 @@
      ],
      "sticky": "nswe",
      "width": 79
+    },
+    "Sq.segtab": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
     },
     "Sq.stop": {
      "border": [
@@ -5818,87 +6156,99 @@
      260,
      18
     ],
-    "seg-on": [
+    "seg": [
      0,
      4336,
+     132,
+     92
+    ],
+    "seg-on": [
+     0,
+     4428,
      118,
      78
     ],
+    "segtab": [
+     0,
+     4506,
+     116,
+     75
+    ],
     "stop-dis": [
      0,
-     4414,
+     4581,
      140,
      100
     ],
     "stop-hover": [
      0,
-     4514,
+     4681,
      140,
      100
     ],
     "stop-page-dis": [
      0,
-     4614,
+     4781,
      140,
      100
     ],
     "stop-page-hover": [
      0,
-     4714,
+     4881,
      140,
      100
     ],
     "stop-page-pressed": [
      0,
-     4814,
+     4981,
      140,
      100
     ],
     "stop-page-rest": [
      0,
-     4914,
+     5081,
      140,
      100
     ],
     "stop-pressed": [
      0,
-     5014,
+     5181,
      140,
      100
     ],
     "stop-rest": [
      0,
-     5114,
+     5281,
      140,
      100
     ],
     "subtab": [
      0,
-     5214,
+     5381,
      116,
      75
     ],
     "toc-on": [
      0,
-     5289,
+     5456,
      302,
      302
     ],
     "toc-wrap": [
      0,
-     5591,
+     5758,
      312,
      312
     ],
     "tree-rest": [
      0,
-     5903,
+     6070,
      292,
      292
     ],
     "trough": [
      0,
-     6195,
+     6362,
      260,
      18
     ]
@@ -6250,6 +6600,25 @@
      "sticky": "nswe",
      "width": 24
     },
+    "Sq.seg": {
+     "border": [
+      56,
+      0,
+      56,
+      0
+     ],
+     "height": 111,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 113
+    },
     "Sq.seg_on": {
      "border": [
       47,
@@ -6258,7 +6627,7 @@
       0
      ],
      "height": 93,
-     "on": "#2c2c2e",
+     "on": "#3a3a3c",
      "padding": 0,
      "states": [
       [
@@ -6268,6 +6637,25 @@
      ],
      "sticky": "nswe",
      "width": 95
+    },
+    "Sq.segtab": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#2c2c2e",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
     },
     "Sq.stop": {
      "border": [
@@ -6660,87 +7048,99 @@
      311,
      21
     ],
-    "seg-on": [
+    "seg": [
      0,
      5201,
+     160,
+     111
+    ],
+    "seg-on": [
+     0,
+     5312,
      142,
      93
     ],
+    "segtab": [
+     0,
+     5405,
+     138,
+     90
+    ],
     "stop-dis": [
      0,
-     5294,
+     5495,
      168,
      120
     ],
     "stop-hover": [
      0,
-     5414,
+     5615,
      168,
      120
     ],
     "stop-page-dis": [
      0,
-     5534,
+     5735,
      168,
      120
     ],
     "stop-page-hover": [
      0,
-     5654,
+     5855,
      168,
      120
     ],
     "stop-page-pressed": [
      0,
-     5774,
+     5975,
      168,
      120
     ],
     "stop-page-rest": [
      0,
-     5894,
+     6095,
      168,
      120
     ],
     "stop-pressed": [
      0,
-     6014,
+     6215,
      168,
      120
     ],
     "stop-rest": [
      0,
-     6134,
+     6335,
      168,
      120
     ],
     "subtab": [
      0,
-     6254,
+     6455,
      138,
      90
     ],
     "toc-on": [
      0,
-     6344,
+     6545,
      362,
      362
     ],
     "toc-wrap": [
      0,
-     6706,
+     6907,
      374,
      374
     ],
     "tree-rest": [
      0,
-     7080,
+     7281,
      350,
      350
     ],
     "trough": [
      0,
-     7430,
+     7631,
      311,
      21
     ]
@@ -7092,6 +7492,25 @@
      "sticky": "nswe",
      "width": 10
     },
+    "Sq.seg": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 37,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
+    },
     "Sq.seg_on": {
      "border": [
       16,
@@ -7100,7 +7519,7 @@
       0
      ],
      "height": 31,
-     "on": "#ffffff",
+     "on": "#e8e8ed",
      "padding": 0,
      "states": [
       [
@@ -7110,6 +7529,25 @@
      ],
      "sticky": "nswe",
      "width": 33
+    },
+    "Sq.segtab": {
+     "border": [
+      15,
+      0,
+      15,
+      0
+     ],
+     "height": 30,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 31
     },
     "Sq.stop": {
      "border": [
@@ -7502,87 +7940,99 @@
      105,
      7
     ],
-    "seg-on": [
+    "seg": [
      0,
      1739,
+     54,
+     37
+    ],
+    "seg-on": [
+     0,
+     1776,
      48,
      31
     ],
+    "segtab": [
+     0,
+     1807,
+     46,
+     30
+    ],
     "stop-dis": [
      0,
-     1770,
+     1837,
      56,
      40
     ],
     "stop-hover": [
      0,
-     1810,
+     1877,
      56,
      40
     ],
     "stop-page-dis": [
      0,
-     1850,
+     1917,
      56,
      40
     ],
     "stop-page-hover": [
      0,
-     1890,
+     1957,
      56,
      40
     ],
     "stop-page-pressed": [
      0,
-     1930,
+     1997,
      56,
      40
     ],
     "stop-page-rest": [
      0,
-     1970,
+     2037,
      56,
      40
     ],
     "stop-pressed": [
      0,
-     2010,
+     2077,
      56,
      40
     ],
     "stop-rest": [
      0,
-     2050,
+     2117,
      56,
      40
     ],
     "subtab": [
      0,
-     2090,
+     2157,
      46,
      30
     ],
     "toc-on": [
      0,
-     2120,
+     2187,
      122,
      122
     ],
     "toc-wrap": [
      0,
-     2242,
+     2309,
      126,
      126
     ],
     "tree-rest": [
      0,
-     2368,
+     2435,
      118,
      118
     ],
     "trough": [
      0,
-     2486,
+     2553,
      105,
      7
     ]
@@ -7934,6 +8384,25 @@
      "sticky": "nswe",
      "width": 12
     },
+    "Sq.seg": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 46,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
     "Sq.seg_on": {
      "border": [
       20,
@@ -7942,7 +8411,7 @@
       0
      ],
      "height": 39,
-     "on": "#ffffff",
+     "on": "#e8e8ed",
      "padding": 0,
      "states": [
       [
@@ -7952,6 +8421,25 @@
      ],
      "sticky": "nswe",
      "width": 41
+    },
+    "Sq.segtab": {
+     "border": [
+      19,
+      0,
+      19,
+      0
+     ],
+     "height": 38,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 39
     },
     "Sq.stop": {
      "border": [
@@ -8344,87 +8832,99 @@
      131,
      9
     ],
-    "seg-on": [
+    "seg": [
      0,
      2179,
+     66,
+     46
+    ],
+    "seg-on": [
+     0,
+     2225,
      60,
      39
     ],
+    "segtab": [
+     0,
+     2264,
+     58,
+     38
+    ],
     "stop-dis": [
      0,
-     2218,
+     2302,
      70,
      50
     ],
     "stop-hover": [
      0,
-     2268,
+     2352,
      70,
      50
     ],
     "stop-page-dis": [
      0,
-     2318,
+     2402,
      70,
      50
     ],
     "stop-page-hover": [
      0,
-     2368,
+     2452,
      70,
      50
     ],
     "stop-page-pressed": [
      0,
-     2418,
+     2502,
      70,
      50
     ],
     "stop-page-rest": [
      0,
-     2468,
+     2552,
      70,
      50
     ],
     "stop-pressed": [
      0,
-     2518,
+     2602,
      70,
      50
     ],
     "stop-rest": [
      0,
-     2568,
+     2652,
      70,
      50
     ],
     "subtab": [
      0,
-     2618,
+     2702,
      58,
      38
     ],
     "toc-on": [
      0,
-     2656,
+     2740,
      150,
      150
     ],
     "toc-wrap": [
      0,
-     2806,
+     2890,
      158,
      158
     ],
     "tree-rest": [
      0,
-     2964,
+     3048,
      146,
      146
     ],
     "trough": [
      0,
-     3110,
+     3194,
      131,
      9
     ]
@@ -8776,6 +9276,25 @@
      "sticky": "nswe",
      "width": 13
     },
+    "Sq.seg": {
+     "border": [
+      28,
+      0,
+      28,
+      0
+     ],
+     "height": 56,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 57
+    },
     "Sq.seg_on": {
      "border": [
       23,
@@ -8784,12 +9303,31 @@
       0
      ],
      "height": 46,
-     "on": "#ffffff",
+     "on": "#e8e8ed",
      "padding": 0,
      "states": [
       [
        "",
        "seg-on"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 47
+    },
+    "Sq.segtab": {
+     "border": [
+      23,
+      0,
+      23,
+      0
+     ],
+     "height": 45,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
       ]
      ],
      "sticky": "nswe",
@@ -9186,87 +9724,99 @@
      156,
      10
     ],
-    "seg-on": [
+    "seg": [
      0,
      2604,
+     80,
+     56
+    ],
+    "seg-on": [
+     0,
+     2660,
      70,
      46
     ],
+    "segtab": [
+     0,
+     2706,
+     70,
+     45
+    ],
     "stop-dis": [
      0,
-     2650,
+     2751,
      84,
      60
     ],
     "stop-hover": [
      0,
-     2710,
+     2811,
      84,
      60
     ],
     "stop-page-dis": [
      0,
-     2770,
+     2871,
      84,
      60
     ],
     "stop-page-hover": [
      0,
-     2830,
+     2931,
      84,
      60
     ],
     "stop-page-pressed": [
      0,
-     2890,
+     2991,
      84,
      60
     ],
     "stop-page-rest": [
      0,
-     2950,
+     3051,
      84,
      60
     ],
     "stop-pressed": [
      0,
-     3010,
+     3111,
      84,
      60
     ],
     "stop-rest": [
      0,
-     3070,
+     3171,
      84,
      60
     ],
     "subtab": [
      0,
-     3130,
+     3231,
      70,
      45
     ],
     "toc-on": [
      0,
-     3175,
+     3276,
      182,
      182
     ],
     "toc-wrap": [
      0,
-     3357,
+     3458,
      188,
      188
     ],
     "tree-rest": [
      0,
-     3545,
+     3646,
      176,
      176
     ],
     "trough": [
      0,
-     3721,
+     3822,
      156,
      10
     ]
@@ -9618,6 +10168,25 @@
      "sticky": "nswe",
      "width": 15
     },
+    "Sq.seg": {
+     "border": [
+      33,
+      0,
+      33,
+      0
+     ],
+     "height": 65,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 67
+    },
     "Sq.seg_on": {
      "border": [
       27,
@@ -9626,7 +10195,7 @@
       0
      ],
      "height": 54,
-     "on": "#ffffff",
+     "on": "#e8e8ed",
      "padding": 0,
      "states": [
       [
@@ -9636,6 +10205,25 @@
      ],
      "sticky": "nswe",
      "width": 55
+    },
+    "Sq.segtab": {
+     "border": [
+      26,
+      0,
+      26,
+      0
+     ],
+     "height": 52,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 53
     },
     "Sq.stop": {
      "border": [
@@ -10028,87 +10616,99 @@
      182,
      12
     ],
-    "seg-on": [
+    "seg": [
      0,
      3030,
+     94,
+     65
+    ],
+    "seg-on": [
+     0,
+     3095,
      82,
      54
     ],
+    "segtab": [
+     0,
+     3149,
+     80,
+     52
+    ],
     "stop-dis": [
      0,
-     3084,
+     3201,
      98,
      70
     ],
     "stop-hover": [
      0,
-     3154,
+     3271,
      98,
      70
     ],
     "stop-page-dis": [
      0,
-     3224,
+     3341,
      98,
      70
     ],
     "stop-page-hover": [
      0,
-     3294,
+     3411,
      98,
      70
     ],
     "stop-page-pressed": [
      0,
-     3364,
+     3481,
      98,
      70
     ],
     "stop-page-rest": [
      0,
-     3434,
+     3551,
      98,
      70
     ],
     "stop-pressed": [
      0,
-     3504,
+     3621,
      98,
      70
     ],
     "stop-rest": [
      0,
-     3574,
+     3691,
      98,
      70
     ],
     "subtab": [
      0,
-     3644,
+     3761,
      80,
      52
     ],
     "toc-on": [
      0,
-     3696,
+     3813,
      214,
      214
     ],
     "toc-wrap": [
      0,
-     3910,
+     4027,
      218,
      218
     ],
     "tree-rest": [
      0,
-     4128,
+     4245,
      206,
      206
     ],
     "trough": [
      0,
-     4334,
+     4451,
      182,
      12
     ]
@@ -10460,6 +11060,25 @@
      "sticky": "nswe",
      "width": 17
     },
+    "Sq.seg": {
+     "border": [
+      37,
+      0,
+      37,
+      0
+     ],
+     "height": 74,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 75
+    },
     "Sq.seg_on": {
      "border": [
       31,
@@ -10468,7 +11087,7 @@
       0
      ],
      "height": 62,
-     "on": "#ffffff",
+     "on": "#e8e8ed",
      "padding": 0,
      "states": [
       [
@@ -10478,6 +11097,25 @@
      ],
      "sticky": "nswe",
      "width": 63
+    },
+    "Sq.segtab": {
+     "border": [
+      30,
+      0,
+      30,
+      0
+     ],
+     "height": 60,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 61
     },
     "Sq.stop": {
      "border": [
@@ -10870,87 +11508,99 @@
      208,
      14
     ],
-    "seg-on": [
+    "seg": [
      0,
      3470,
+     106,
+     74
+    ],
+    "seg-on": [
+     0,
+     3544,
      94,
      62
     ],
+    "segtab": [
+     0,
+     3606,
+     92,
+     60
+    ],
     "stop-dis": [
      0,
-     3532,
+     3666,
      112,
      80
     ],
     "stop-hover": [
      0,
-     3612,
+     3746,
      112,
      80
     ],
     "stop-page-dis": [
      0,
-     3692,
+     3826,
      112,
      80
     ],
     "stop-page-hover": [
      0,
-     3772,
+     3906,
      112,
      80
     ],
     "stop-page-pressed": [
      0,
-     3852,
+     3986,
      112,
      80
     ],
     "stop-page-rest": [
      0,
-     3932,
+     4066,
      112,
      80
     ],
     "stop-pressed": [
      0,
-     4012,
+     4146,
      112,
      80
     ],
     "stop-rest": [
      0,
-     4092,
+     4226,
      112,
      80
     ],
     "subtab": [
      0,
-     4172,
+     4306,
      92,
      60
     ],
     "toc-on": [
      0,
-     4232,
+     4366,
      242,
      242
     ],
     "toc-wrap": [
      0,
-     4474,
+     4608,
      250,
      250
     ],
     "tree-rest": [
      0,
-     4724,
+     4858,
      234,
      234
     ],
     "trough": [
      0,
-     4958,
+     5092,
      208,
      14
     ]
@@ -11302,6 +11952,25 @@
      "sticky": "nswe",
      "width": 19
     },
+    "Sq.seg": {
+     "border": [
+      42,
+      0,
+      42,
+      0
+     ],
+     "height": 83,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 85
+    },
     "Sq.seg_on": {
      "border": [
       35,
@@ -11310,7 +11979,7 @@
       0
      ],
      "height": 70,
-     "on": "#ffffff",
+     "on": "#e8e8ed",
      "padding": 0,
      "states": [
       [
@@ -11320,6 +11989,25 @@
      ],
      "sticky": "nswe",
      "width": 71
+    },
+    "Sq.segtab": {
+     "border": [
+      34,
+      0,
+      34,
+      0
+     ],
+     "height": 68,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 69
     },
     "Sq.stop": {
      "border": [
@@ -11712,87 +12400,99 @@
      234,
      16
     ],
-    "seg-on": [
+    "seg": [
      0,
      3910,
+     120,
+     83
+    ],
+    "seg-on": [
+     0,
+     3993,
      106,
      70
     ],
+    "segtab": [
+     0,
+     4063,
+     104,
+     68
+    ],
     "stop-dis": [
      0,
-     3980,
+     4131,
      126,
      90
     ],
     "stop-hover": [
      0,
-     4070,
+     4221,
      126,
      90
     ],
     "stop-page-dis": [
      0,
-     4160,
+     4311,
      126,
      90
     ],
     "stop-page-hover": [
      0,
-     4250,
+     4401,
      126,
      90
     ],
     "stop-page-pressed": [
      0,
-     4340,
+     4491,
      126,
      90
     ],
     "stop-page-rest": [
      0,
-     4430,
+     4581,
      126,
      90
     ],
     "stop-pressed": [
      0,
-     4520,
+     4671,
      126,
      90
     ],
     "stop-rest": [
      0,
-     4610,
+     4761,
      126,
      90
     ],
     "subtab": [
      0,
-     4700,
+     4851,
      104,
      68
     ],
     "toc-on": [
      0,
-     4768,
+     4919,
      270,
      270
     ],
     "toc-wrap": [
      0,
-     5038,
+     5189,
      282,
      282
     ],
     "tree-rest": [
      0,
-     5320,
+     5471,
      262,
      262
     ],
     "trough": [
      0,
-     5582,
+     5733,
      234,
      16
     ]
@@ -12144,6 +12844,25 @@
      "sticky": "nswe",
      "width": 21
     },
+    "Sq.seg": {
+     "border": [
+      46,
+      0,
+      46,
+      0
+     ],
+     "height": 92,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 93
+    },
     "Sq.seg_on": {
      "border": [
       39,
@@ -12152,7 +12871,7 @@
       0
      ],
      "height": 78,
-     "on": "#ffffff",
+     "on": "#e8e8ed",
      "padding": 0,
      "states": [
       [
@@ -12162,6 +12881,25 @@
      ],
      "sticky": "nswe",
      "width": 79
+    },
+    "Sq.segtab": {
+     "border": [
+      38,
+      0,
+      38,
+      0
+     ],
+     "height": 75,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 77
     },
     "Sq.stop": {
      "border": [
@@ -12554,87 +13292,99 @@
      260,
      18
     ],
-    "seg-on": [
+    "seg": [
      0,
      4336,
+     132,
+     92
+    ],
+    "seg-on": [
+     0,
+     4428,
      118,
      78
     ],
+    "segtab": [
+     0,
+     4506,
+     116,
+     75
+    ],
     "stop-dis": [
      0,
-     4414,
+     4581,
      140,
      100
     ],
     "stop-hover": [
      0,
-     4514,
+     4681,
      140,
      100
     ],
     "stop-page-dis": [
      0,
-     4614,
+     4781,
      140,
      100
     ],
     "stop-page-hover": [
      0,
-     4714,
+     4881,
      140,
      100
     ],
     "stop-page-pressed": [
      0,
-     4814,
+     4981,
      140,
      100
     ],
     "stop-page-rest": [
      0,
-     4914,
+     5081,
      140,
      100
     ],
     "stop-pressed": [
      0,
-     5014,
+     5181,
      140,
      100
     ],
     "stop-rest": [
      0,
-     5114,
+     5281,
      140,
      100
     ],
     "subtab": [
      0,
-     5214,
+     5381,
      116,
      75
     ],
     "toc-on": [
      0,
-     5289,
+     5456,
      302,
      302
     ],
     "toc-wrap": [
      0,
-     5591,
+     5758,
      312,
      312
     ],
     "tree-rest": [
      0,
-     5903,
+     6070,
      292,
      292
     ],
     "trough": [
      0,
-     6195,
+     6362,
      260,
      18
     ]
@@ -12986,6 +13736,25 @@
      "sticky": "nswe",
      "width": 24
     },
+    "Sq.seg": {
+     "border": [
+      56,
+      0,
+      56,
+      0
+     ],
+     "height": 111,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "seg"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 113
+    },
     "Sq.seg_on": {
      "border": [
       47,
@@ -12994,7 +13763,7 @@
       0
      ],
      "height": 93,
-     "on": "#ffffff",
+     "on": "#e8e8ed",
      "padding": 0,
      "states": [
       [
@@ -13004,6 +13773,25 @@
      ],
      "sticky": "nswe",
      "width": 95
+    },
+    "Sq.segtab": {
+     "border": [
+      45,
+      0,
+      45,
+      0
+     ],
+     "height": 90,
+     "on": "#ffffff",
+     "padding": 0,
+     "states": [
+      [
+       "",
+       "segtab"
+      ]
+     ],
+     "sticky": "nswe",
+     "width": 91
     },
     "Sq.stop": {
      "border": [
@@ -13396,92 +14184,104 @@
      311,
      21
     ],
-    "seg-on": [
+    "seg": [
      0,
      5201,
+     160,
+     111
+    ],
+    "seg-on": [
+     0,
+     5312,
      142,
      93
     ],
+    "segtab": [
+     0,
+     5405,
+     138,
+     90
+    ],
     "stop-dis": [
      0,
-     5294,
+     5495,
      168,
      120
     ],
     "stop-hover": [
      0,
-     5414,
+     5615,
      168,
      120
     ],
     "stop-page-dis": [
      0,
-     5534,
+     5735,
      168,
      120
     ],
     "stop-page-hover": [
      0,
-     5654,
+     5855,
      168,
      120
     ],
     "stop-page-pressed": [
      0,
-     5774,
+     5975,
      168,
      120
     ],
     "stop-page-rest": [
      0,
-     5894,
+     6095,
      168,
      120
     ],
     "stop-pressed": [
      0,
-     6014,
+     6215,
      168,
      120
     ],
     "stop-rest": [
      0,
-     6134,
+     6335,
      168,
      120
     ],
     "subtab": [
      0,
-     6254,
+     6455,
      138,
      90
     ],
     "toc-on": [
      0,
-     6344,
+     6545,
      362,
      362
     ],
     "toc-wrap": [
      0,
-     6706,
+     6907,
      374,
      374
     ],
     "tree-rest": [
      0,
-     7080,
+     7281,
      350,
      350
     ],
     "trough": [
      0,
-     7430,
+     7631,
      311,
      21
     ]
    }
   }
  },
- "version": 3
+ "version": 5
 }

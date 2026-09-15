@@ -66,7 +66,12 @@ from meeting_scribe.pipeline import run_pipeline
 from meeting_scribe.types import (DEVICE_NAMES, MAX_SPEAKERS,
                                   UNKNOWN_SPEAKER)
 
-logger = logging.getLogger(__name__)
+# ⚠️ **名字寫死,不可以用 `__name__`**(2026-09-15 量啟動速度時才發現):`啟動.vbs` 跑的是
+# `pythonw -m meeting_scribe.desktop`,那時 `__name__` 是 `__main__`,不在 `meeting_scribe`
+# 底下——`filelog` 只把 `meeting_scribe` 那一支調到 DEBUG,`__main__` 退回 root 預設的
+# WARNING,這一支的 INFO/DEBUG(十幾行)在使用者的紀錄檔裡**一行都沒有**,而測試是
+# import 進來跑的、名字是對的,永遠是綠的。
+logger = logging.getLogger("meeting_scribe.desktop")
 
 # 視窗尺寸。⚠️ **比姊妹專案高**:這裡最長的一頁是命名區,一場會議可能有 20 多位
 # 講者(使用者 2026-08-29 特別點名這一頁要注意),而那一頁是往下捲的——⚠️ **下方
@@ -115,25 +120,26 @@ PAGE_PAD, CARD_PAD, CARD_GAP = 20, SP_XL, 20
 # 第 6 節(開真的視窗、逐個 widget 量墨跡中線)。
 NAV_LIFT, SUBNAV_LIFT = 3, 4
 
-# segmented control 的三個尺寸(邏輯 px)。⚠️ **`SEG_H_ON` 必須與 `scripts/make_skin.py`
-# 的 `SQ_H_SEG_ON` 一模一樣**:膠囊底板的圖高與元件高度不相等時,Tk 不是垂直重複貼
-# (下緣長出第二段圓角)就是裁切(下半個圓被削平)——兩種都不報錯、`reqheight` 也看
-# 不出來,只有截圖看得到。`tests/test_desktop.py` 兩邊釘在一起。
-# ⚠️ **2026-09-06 拿掉了灰槽**(使用者選案 H,四案對照見 `docs/dev/native-ui.md`):未選
-# 中的那幾格改成直接坐在卡片白上,選中的那格是白膠囊 ＋ 一圈 `accent` 描邊。成因是
-# **對比不是好看**——`muted` 坐在 `btn` 上淺色 8.85、深色 7.47,兩個模式都過不了共用包
-# 那條 9:1,而 `btn` 從來就不在 `winkit.palette.MUTED_SURFACES` 裡。
-# ⚠️ **`SEG_H` 因此只剩「那一列多高」,沒有對應的底板了**:它不再向皮膚問高度(沒有圖
-# 要對齊),直接 `px()`。選中段仍然靠 `rowconfigure` 的 weight 垂直置中,差出來的一圈
-# 現在單純是留白;`SEG_PAD` 也一樣,只是那一列左右各留的一圈。
-# ⚠️ **膠囊同日從 25 調回 31**(使用者選案,四個高度開真視窗逐一截圖比過):25 是灰槽
-# 時代那條外弧條件逼出來的,槽沒了就沒有理由留著。31 與一般按鈕/子分頁膠囊的 30 同一
-# 個量級,而**刻意低於主要動作鈕的 40**——它只是個選項,比主要動作鈕還重就本末倒置。
-# ⚠️ **一併消失的是「選中段的方角不可壓到槽的外弧」那條幾何條件**(2026-09-01 使用者
-# 第二次圈出來的那件事:槽的四個角上各有一小塊灰)。沒有槽就沒有外弧,選中段的圓角外
-# 側現在畫的是卡片白,所以那條式子與 `test_the_selected_segment_never_covers_the_track_corner`
-# 一起移除了——沿革留在 `docs/dev/native-ui.md`,不要照著舊註解把它推導回來。
-SEG_H, SEG_H_ON, SEG_PAD = 37, 31, 6
+# segmented control 狀態選擇那三排的尺寸(邏輯 px):灰槽高、選中那顆白膠囊高、槽的左右內距。
+# ⚠️ **`SEG_H` / `SEG_H_ON` 必須與 `scripts/make_skin.py` 的 `SQ_H_SEG` / `SQ_H_SEG_ON`
+# 一模一樣**:膠囊底板的圖高與元件高度不相等時,Tk 不是垂直重複貼(下緣長出第二段圓角)
+# 就是裁切(下半個圓被削平)——兩種都不報錯、`reqheight` 也看不出來,只有截圖看得到。
+# `tests/test_desktop.py` 兩邊釘在一起。
+# ⚠️ **2026-09-15 灰槽回來了**(使用者選案 C,五案實拍見 `docs/dev/native-ui.md` §15):
+# 灰槽 ＋ 帶淡影的白膠囊。2026-09-06 拿掉它是因為 `muted` 坐在 `btn` 上過不了 9:1——
+# **沒選中的字這次改用 `ink`**(`SegItem.TLabel`),那個理由就不成立了。
+# ⚠️ **`SEG_PAD` 不是留白,是一條幾何條件**(2026-09-01 使用者第二次圈出來的那件事:槽的
+# 四個角上各有一小塊灰)。Tk 疊不了兩個透明圓角——選中段的圓角外側畫的是槽色,那一塊
+# 只要伸出槽的弧,就把槽的圓角填平。條件是 `(R − p)² + (R − g)² ≤ R²`(R = 槽高一半、
+# p = 這個內距、g = 上下間隙)。@1x 解出 p ≥ 8.4,⚠️ **但 9 不夠**:@1.25x 槽 46、膠囊 39,
+# 差 7 是奇數,grid 置中取整數、上緣只剩 3,角伸出弧 0.3 px——所以是 10。6 在每一檔都不夠。
+# ⚠️ **要剛好選中第一格或最後一格才看得見**,所以守它的
+# `test_the_selected_segment_never_covers_the_track_corner` 是純算的、八個縮放檔逐檔驗。
+# ⚠️ **不要為了收窄那一圈去降膠囊高度**:2026-09-01 那次就是這樣從 31 被壓到 25,使用者
+# 2026-09-06 看過四個高度才選回 31。
+# ⚠️ **「要做什麼」那一排不吃這三個數字**(2026-09-15 使用者選案 C):它長得跟分頁一樣,
+# 高度是 `TAB_PILL_H` ＋ `TAB_BAR_H`、左右不留內距,見 `App._segmented` 的 `tabs`。
+SEG_H, SEG_H_ON, SEG_PAD = 37, 31, 10
 
 # 兩排分頁選中那一格的膠囊高度。⚠️ **量網頁版得到的**:兩排都是 **45 實體 px**
 # @150%(頂層 y 339~383、子層 417~461),÷1.5 = 30——兩排一樣高不是巧合,它們在網頁版
@@ -196,7 +202,9 @@ OUTPUT_DIR = repo_root() / "output"
 
 # 模型的介面標籤 ↔ 引擎鍵。⚠️ **這個選擇必須保留**(2026-07-26 曾移除、同日裁定
 # 還原):快速 = large-v3-turbo、精準 = large-v3。
-MODEL_LABELS = {"快速": "fast", "精準": "accurate"}
+# ⚠️ **排列順序就是對話框裡那排的左右**(`MODEL_OPTIONS` 照它排):「精準」在左(使用者
+# 2026-09-15 指定,理由見 `DEVICE_OPTIONS`)。
+MODEL_LABELS = {"精準": "accurate", "快速": "fast"}
 MODEL_KEYS = {v: k for k, v in MODEL_LABELS.items()}
 
 # 核對表最多列幾列。⚠️ **限的是列數不是長度**(使用者 2026-08-13 指定改成逐列
@@ -276,12 +284,14 @@ MODEL_INFO = {
 # 就不降級),當時只列進 spec §11 的已知限制——這一排就是那條限制的逃生口。做型號白名單
 # 的路已經否決過:清單必然過時而且誤殺。
 # ⚠️ **沒有圖示**(空字串,同「模型」那排):兩格是同一件事的兩個檔位。
-# ⚠️ **「只用 CPU」排左邊、「自動」排右邊**(使用者 2026-09-07 指定對調):這樣兩排
-# segmented 的**預設選中格都落在右邊**(模型那排預設是「精準」),右緣對齊之外連選中的
-# 那顆膠囊都對齊。⚠️ **對調的只有顯示順序,預設值沒有變**——預設仍是 `DEVICE_AUTO`,
-# 那是 `default_device_key()` 算出來的,與這個 tuple 的排列無關。
+# ⚠️ **「自動」排左邊、「只用 CPU」排右邊**,模型那排同樣是預設的「精準」在左(使用者
+# 2026-09-15 指定):兩排 segmented 的**預設選中格都落在左邊**,連選中的那顆膠囊都對齊。
+# (2026-09-07 曾經反過來排、預設都落在右邊;那一次的理由同樣是「兩排對齊」,這次只是換到
+# 常用的那一側先讀到。)⚠️ **對調的只有顯示順序,預設值沒有變**——預設仍是 `DEVICE_AUTO`,
+# 那是 `default_device_key()` 算出來的,與這個 tuple 的排列無關。⚠️ 沒有 GPU 的機器上模型
+# 預設是「快速」、會落在右邊,但那時運算裝置那排整排停用,對不齊的是一排灰的。
 DEVICE_AUTO, DEVICE_CPU = "auto", "cpu"
-DEVICE_OPTIONS = ((DEVICE_CPU, "", "只用 CPU"), (DEVICE_AUTO, "", "自動"))
+DEVICE_OPTIONS = ((DEVICE_AUTO, "", "自動"), (DEVICE_CPU, "", "只用 CPU"))
 
 # 「運算裝置」底下那句,三種情形各一句(**一行**,理由與量法見 `MODEL_INFO`)。
 # ⚠️ **「自動」那句要講的是「什麼時候該改」**,不是「現在偵測到什麼」——偵測結果就寫在
@@ -296,12 +306,17 @@ DEVICE_INFO = {
 }
 
 # 進階參數設定對話框的兩欄(2026-09-07 使用者選案 D,五案實拍見 `docs/dev/native-ui.md`):
-# 左邊是小標＋一行說明,右邊是控制項,右緣對齊成一條線。
+# 左邊是小標＋一行說明,右邊是控制項。⚠️ **三個控制項都撐滿右欄**(2026-09-15 使用者:灰底
+# 要一樣長),所以 `ADV_CTL_W` 同時就是它們的寬度,見 `_adv_open` 的 `section`。
 # ⚠️ **兩欄都用 `minsize` 釘死,不可以讓內容決定**:視窗的大小由內容算出來,而說明字會
 # 隨著使用者切換裝置換一句——不釘的話,切一次裝置整扇窗就自己變寬一次,看起來像畫面壞掉
 # (實測 393 → 510 px)。⚠️ **文字欄 270 是量出來的**:最長的那句(「舊電腦的 GPU 比 CPU
 # 還慢時,改成「只用 CPU」」)要 259 實體 px,只剩 11 px 餘裕——要加字先跑那條測試。
 ADV_TEXT_W, ADV_CTL_W = 270, 220
+
+# 開窗之後在背景偵測 GPU,主執行緒多久問一次「好了沒」(毫秒;見 `App._probe_start`)。
+# 只影響紀錄檔那一行什麼時候寫,不影響任何值——要用到結果的地方都會自己等(`_probe_wait`)。
+PROBE_POLL_MS = 100
 
 
 def default_device_key() -> str:
@@ -677,15 +692,24 @@ STYLES = (
     ("NavOn.TLabel", "btn", "ink", 11, True),        # 選中的那一個
     ("Sub.TLabel", "page", "muted", 10, False),      # 未選中的子分頁
     ("SubOn.TLabel", "btn", "ink", 10, True),        # 選中的子分頁(膠囊底)
-    # segmented control 的兩種格子(2026-09-01,見 `App._segmented`)。⚠️ **底色要
-    # 跟著各自坐的那一層**——`ttk.Label` 是實色底、不是透明的,給錯就是一塊色差方塊
-    # 壓在膠囊上。⚠️ **2026-09-06 起兩種都坐在卡片白上**(拿掉灰槽,使用者選案 H):
-    # 沒選中的直接畫在卡片上,選中的那格是白膠囊 ＋ 一圈 accent 描邊、底色也是白。
-    # ⚠️ **沒選中那格不可以改回 `btn`**:`muted` 坐在 `btn` 上深色只有 7.47:1,而共用包
-    # 承諾的只有 `page` / `card` / `field` 三階——`test_every_muted_style_sits_on_a_
-    # surface_the_shared_package_promises` 擋著,突變 M584 守著。
-    ("Seg.TLabel", "card", "muted", 10, False),      # 沒選中的那幾格
+    # segmented control 狀態選擇那三排的兩種格子(見 `App._segmented`)。⚠️ **底色要跟著
+    # 各自坐的那一層**——`ttk.Label` 是實色底、不是透明的,給錯就是一塊色差方塊壓在膠囊上:
+    # 沒選中的坐在灰槽(`btn`)上,選中的坐在白膠囊(`card`)上。
+    # ⚠️ **沒選中那格的字是 `ink` 不是 `muted`**(2026-09-15 使用者選案 C,灰槽回來):
+    # `muted` 坐在 `btn` 上深色只有 7.47:1,共用包也沒承諾那一階——2026-09-06 整個拿掉灰槽
+    # 就是為了這個。換成 `ink` 之後淺 13.78、深 10.42;選中與否靠「白膠囊對灰槽 ＋ 粗體」。
+    # 改回 `muted` 的話 `test_every_muted_style_sits_on_a_surface_the_shared_package_promises`
+    # 會紅。
+    ("SegItem.TLabel", "btn", "ink", 10, False),     # 沒選中的那幾格
     ("SegOn.TLabel", "card", "ink", 10, True),       # 選中的那一格
+    # 「要做什麼」那一排沒選中的那幾格(2026-09-15 選案 C:長得跟分頁一樣,坐在卡片白上、
+    # 淡字,同 `Sub.TLabel` 那一族)。⚠️ **不可以挪到 `btn`**:同上那條對比,突變 M584 守著。
+    ("Seg.TLabel", "card", "muted", 10, False),
+    # 「要做什麼」那一排選中的那一格(2026-09-15 使用者選案 C:長得跟分頁一樣,見
+    # `App._segmented` 的 `tabs`)。⚠️ **值與 `SubOn.TLabel` 一模一樣**(灰膠囊上的黑粗字),
+    # 但要自己一個:這一排工作中會停用(`_segment_enable`),停用的字色 `map` 只掛在這裡,
+    # 分頁那一份從來不停用,不該跟著背一個用不到的狀態。
+    ("SegTabOn.TLabel", "btn", "ink", 10, True),
     ("CardH.TLabel", "card", "ink", 11, True),       # 卡片標題
     ("Hint.TLabel", "card", "muted", 9, False),      # 卡片裡的說明小字
     # 命名卡裡的欄位名(「講者 N 的名字」「改成幾位講者」),2026-09-02 照網頁版:那邊
@@ -747,20 +771,27 @@ def configure_styles(root: tk.Misc, fam: str, pal: dict) -> None:
     # segmented 的格子**裡面**那一層(見 `App._segmented`)。⚠️ **不可以直接用
     # `SegOn.TFrame`**:那一支的 layout 被換成了一張膠囊底板,每用一次就多畫一顆膠
     # 囊——框中框,而症狀是文字被一條白邊切掉(看起來像沒對齊,不像樣式錯了)。
-    # ⚠️ **`Seg.TFrame` 從 2026-09-06 起要在這裡設**:灰槽拿掉之後它沒有底板了,也就
-    # 不再進 `skin.SKIN_FRAMES`——那份名單才是「誰的底色由共用包設」的來源,不在裡面
-    # 就沒有人設它,而 ttk 會照後綴退到 `TFrame` 的預設灰:白卡片上一條說不出理由的
-    # 灰帶,而且不當掉、不報錯。
+    st.configure("SegOnBody.TFrame", background=pal["card"])
+    # 狀態選擇那三排**沒選中**的格子與它裡面那一層:只有灰槽的底色、沒有底板(同使用說明
+    # 目錄的 `TocItem.TFrame`)。⚠️ **不可以借「要做什麼」那排的 `SegCell.TFrame`**:那個是
+    # 卡片白,放進灰槽就是一格一格的白方塊。
+    st.configure("SegItem.TFrame", background=pal["btn"])
+    # 「要做什麼」那一排(長得跟分頁一樣,沒有底板)的槽與沒選中的格子。
+    # ⚠️ **`Seg.TFrame` 要在這裡設**:它沒有底板,不在 `skin.SKIN_FRAMES` 裡——那份名單才是
+    # 「誰的底色由共用包設」的來源,不在裡面就沒有人設它,而 ttk 會照後綴退到 `TFrame` 的
+    # 預設灰:白卡片上一條說不出理由的灰帶,而且不當掉、不報錯。
     st.configure("Seg.TFrame", background=pal["card"])
     st.configure("SegCell.TFrame", background=pal["card"])
-    st.configure("SegOnBody.TFrame", background=pal["card"])
     # segmented 的**停用**外觀(2026-09-03 使用者:「現場錄音時,進階參數設定應該要
     # DISABLE」)。⚠️ **它本來就按不動,缺的是看得出來**:`_model_show` / `_scene_show`
     # 開頭就 `if self._busy[...]: return`,所以錄音中點它一直是沒反應——而「按了沒反應」
     # 與「壞掉」在畫面上長得一模一樣。字色用 `run_off_fg`,那是整個視窗停用態共用的那個
     # (`skin.ACCENT_STYLES` 的 map 也是它),不另外發明一個顏色。
-    for _seg in ("Seg.TLabel", "SegOn.TLabel"):
+    for _seg in ("SegItem.TLabel", "SegOn.TLabel", "Seg.TLabel", "SegTabOn.TLabel"):
         st.map(_seg, foreground=[("disabled", pal["run_off_fg"])])
+    # 「要做什麼」選中那一格,膠囊**裡面**那一層(理由同 `SegOnBody`:內層是實色底,給錯就是
+    # 一塊白方塊壓在灰膠囊中間)。
+    st.configure("SegTabBody.TFrame", background=pal["btn"])
     # 子分頁選中時,膠囊**裡面**那一層(同上,見 `App._build_ui`)。
     st.configure("SubOnBody.TFrame", background=pal["btn"])
     # 卡片上的勾選項(2026-09-03 使用者:「進階選項有灰底,應該是白底」)。sv_ttk 的
@@ -1089,6 +1120,63 @@ class HandButton(ttk.Button):
             self, cursor="no" if self.instate(["disabled"]) else "hand2")
 
 
+def seconds_since_process_start() -> float | None:
+    r"""這個行程建立到現在過了幾秒(問 Windows,取不到回 None)。
+
+    ⚠️ **要從行程建立算,不是從這一支 import 算**:Python 自己起來、套件根與 `desktop`
+    的 import 也是使用者等的那一段(2026-09-15 量到約 0.2 秒),拿 `perf_counter` 在模組
+    裡記起點就漏掉了。⚠️ **仍然不含 `啟動.vbs` 那一層**(wscript ＋ cmd,約 0.14 秒):
+    那是父行程的時間,這裡問不到。"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        k32 = ctypes.windll.kernel32
+        k32.GetCurrentProcess.restype = wintypes.HANDLE
+        created, _exit, _kernel, _user, now = (wintypes.FILETIME() for _ in range(5))
+        if not k32.GetProcessTimes(wintypes.HANDLE(k32.GetCurrentProcess()),
+                                   ctypes.byref(created), ctypes.byref(_exit),
+                                   ctypes.byref(_kernel), ctypes.byref(_user)):
+            return None
+        k32.GetSystemTimePreciseAsFileTime(ctypes.byref(now))
+
+        def ticks(ft) -> int:
+            return (ft.dwHighDateTime << 32) | ft.dwLowDateTime
+
+        return (ticks(now) - ticks(created)) / 10_000_000     # FILETIME 是 100ns
+    except Exception:
+        return None
+
+
+class ModelChoice(tk.StringVar):
+    r"""「模型」那個值:**沒有人選過的話,第一次 `get()` 才決定預設**。
+
+    (2026-09-15 使用者:「感覺按下啟動.vbs 到畫面出來有點慢」。)預設要看有沒有 GPU
+    (`transcribe.default_model_key`),而偵測是整條開窗路徑上最貴的一段——`import
+    openvino` ＋ 列裝置,暖的時候約 0.34 秒(整趟開窗 1.23 秒),而且載入約 106 MB 的
+    DLL(冷啟動要從磁碟讀、過防毒)。所以開窗時不決定,改成視窗畫好之後在背景偵測
+    (`App._probe_start`),值等到有人要讀才落定。
+    ⚠️ **「落定」放在 `get()` 裡**,不是要求每個讀的地方先記得叫一次:讀它的有開始錄音、
+    轉錄音檔、多檔、對話框四處,漏一處就是「沒有 GPU 的電腦被派了精準」——慢四倍,而且
+    畫面上看不出來。
+    ⚠️ `wait` 是「背景偵測還在跑就先等它」(`App._probe_wait`):兩條執行緒一起偵測的話,
+    `lru_cache` 擋不住重算,只會把那 106 MB 再載一次。
+    ⚠️ **已經有人選過(`set` 過)就不再動它**:偵測晚到,也不可以把使用者剛點的那一格
+    蓋回預設。"""
+
+    def __init__(self, master: tk.Misc, wait) -> None:
+        super().__init__(master, value="")
+        self._wait = wait
+
+    def get(self) -> str:
+        value = super().get()
+        if not value:
+            self._wait()
+            value = MODEL_KEYS[transcribe.default_model_key()]
+            self.set(value)
+        return value
+
+
 class App(tk.Tk):
     """主視窗。"""
 
@@ -1195,8 +1283,12 @@ class App(tk.Tk):
         # 趟,以及文件頁轉錄音檔時(`_doc_*` 也讀 `_run_model`)。widget 那一半一律
         # 可能是 None,碰之前先問(見 `_adv_lock`),同 CLAUDE.md 那條「不准回頭摸
         # 另一頁的 widget」。
-        self._run_model = tk.StringVar(
-            value=MODEL_KEYS[transcribe.default_model_key()])
+        # ⚠️ **預設值不在這裡決定**(要偵測 GPU,見 `ModelChoice`):開窗時不偵測,視窗畫好
+        # 之後才在背景做(`_boot_done`),而值在第一次被讀的那一刻落定。
+        self._probe = None                # 背景偵測 GPU 的那條執行緒(`_probe_start`)
+        self._probe_result: tuple[str, float] | None = None
+        self._probe_reported = False
+        self._run_model = ModelChoice(self, self._probe_wait)
         self._run_cores = tk.StringVar(value=str(power.default_worker_count()))
         # ⚠️ **「運算裝置」刻意沒有自己的變數**:它的真值是 `transcribe.cpu_only()`
         # (落地在 `%LOCALAPPDATA%`,使用者 2026-09-07 選定「記住」),畫面只是它的投影
@@ -1245,6 +1337,78 @@ class App(tk.Tk):
         # ⚠️ **最後一行才現身**(見 `__init__` 開頭那段):尺寸、最小尺寸、停在哪一頁
         # 全部定了才 map,使用者看到的就只有最終那一幀。
         self.deiconify()
+
+    # ---- 開窗之後才做的事 ------------------------------------------------ #
+    def _boot_done(self) -> None:
+        r"""視窗第一次畫好之後:記下開窗花了多久,再開始背景偵測 GPU(`main` 排的)。
+
+        (2026-09-15 使用者:「感覺按下啟動.vbs 到畫面出來有點慢」。)
+        ⚠️ **秒數寫進紀錄檔,是為了拿到「開機後第一次」的真實數字**:開發機上量得到的
+        都是暖的(檔案早在記憶體裡),而使用者感覺慢的通常是冷的那一次。從行程建立算起、
+        不含啟動器那一層(見 `seconds_since_process_start`)。
+        ⚠️ **偵測排在畫好之後才開始**,不是視窗一建好就開:`import openvino` 載 DLL 時
+        握著 GIL,跟第一幀搶同一顆鎖的話,視窗框是出來了、裡面卻晚一步才畫。所以先
+        `update_idletasks()` 把排著的重畫做完。"""
+        try:
+            self.update_idletasks()
+        except tk.TclError:             # pragma: no cover - 視窗剛好被關掉
+            return
+        secs = seconds_since_process_start()
+        if secs is not None:
+            logger.info("視窗畫好:啟動後 %.2f 秒(從行程建立算起,不含啟動.vbs 那一層)", secs)
+        self._probe_start()
+
+    def _probe_start(self) -> None:
+        r"""在背景偵測 GPU(結果進 `transcribe` 的行程級快取,之後問就不必再等)。
+
+        ⚠️ **只偵測、不碰 Tk**:工作執行緒摸 widget 或 `StringVar` 會丟
+        `RuntimeError: main thread is not in main loop`。結果留在 `_probe_result`,由主
+        執行緒的 `_probe_poll` 或 `_probe_wait` 收。
+        ⚠️ **偵測失敗不擋任何事**:驅動壞掉時 `transcribe` 那兩支本來就回 False,這裡再
+        兜一層只是為了紀錄檔那一行不要變成 traceback。"""
+        if self._probe is not None:
+            return
+        import threading
+
+        t0 = time.perf_counter()
+
+        def run() -> None:
+            try:
+                device = transcribe.predicted_device()
+            except Exception:
+                logger.debug("背景偵測轉錄裝置失敗", exc_info=True)
+                device = "(偵測失敗)"
+            self._probe_result = (device, time.perf_counter() - t0)
+
+        self._probe = threading.Thread(target=run, name="device-probe", daemon=True)
+        self._probe.start()
+        self.after(PROBE_POLL_MS, self._probe_poll)
+
+    def _probe_poll(self) -> None:
+        """主執行緒:背景偵測跑完了沒;跑完就把結果寫進紀錄檔。"""
+        if self._probe is not None and self._probe.is_alive():
+            self.after(PROBE_POLL_MS, self._probe_poll)
+            return
+        self._probe_report()
+
+    def _probe_wait(self) -> None:
+        r"""背景偵測還在跑就等它跑完(主執行緒)。
+
+        ⚠️ **每個會問 GPU 的地方都要先叫它**:模型的預設值(`ModelChoice`)、對話框的說明、
+        說明頁的「本機目前會用」、文件頁的模型。不等的話結果照樣對(`transcribe` 自己會
+        再偵測一次),只是兩條執行緒各載一次那 106 MB。等的時間最多就是剩下的那一截
+        ——要在視窗出現後半秒內就按下去才會碰到。"""
+        if self._probe is not None and self._probe.is_alive():
+            self._probe.join()
+        self._probe_report()
+
+    def _probe_report(self) -> None:
+        """把背景偵測的結果寫進紀錄檔(一次;檔頭那一行只寫了「見下方」)。"""
+        if self._probe_reported or self._probe_result is None:
+            return
+        self._probe_reported = True
+        device, took = self._probe_result
+        logger.info("轉錄裝置(偵測):%s(背景偵測 %.2f 秒)", device, took)
 
     # ---- 基礎 ----------------------------------------------------------- #
     def px(self, n: float) -> int:
@@ -1677,11 +1841,6 @@ class App(tk.Tk):
         combo.bind("<ButtonPress-1>", lambda e, c=combo: self._pick_press(c, e))
         combo.bind("<Down>", lambda _e, c=combo: self._pick_toggle(c))
         combo.bind("<Destroy>", lambda _e, c=combo: self._pick_close_for(c))
-        # ⚠️ **版面把這一格推走時,輸入法要跟著搬**(2026-09-12 使用者回報):清掉名字之後
-        # `_naming_changed` 會把線索那一行 `grid()` 回來,下拉整個往下移一列——而 Tk 只在
-        # 插入點變動時告訴 IME 座標,於是注音打的字畫在**上面那一行**(就是線索的位置)。
-        # 內距給 `SP_SM`:那是 `Tall.TCombobox` 文字左緣的 padding(見 `_styles`)。
-        winui.follow_ime_caret(combo, self.px(SP_SM))
 
     def _pick_press(self, combo: ttk.Combobox, event) -> str:
         """按在輸入格的任何地方 → 展開清單;已經開著 → 收起來(同 Tk 內建的切換)。"""
@@ -2174,24 +2333,7 @@ class App(tk.Tk):
         lab = ttk.Label(body, text=text, style=off,
                         padding=(self.px(SP_XS), 0, 0, 0))
         lab.pack(side="left")
-        # 選中的那一條藍線,**兩層**:外層 `bar` 是藍條的高度,內層 `seg` 貼底一段灰線。
-        # ⚠️ **沒選中時 `seg` 是灰線色,不是頁面色**——那條貫穿整排的灰線被每一格的
-        # 實色背景蓋住了(`ttk.Frame` 不透明),所以**由每一格自己接出那一段**;兩側
-        # 沒有格子的地方才由 `_tab_rule` 那條補(2026-09-01 使用者:「灰線被擋住了」)。
-        # ⚠️ **為什麼要兩層**:灰線比藍條薄一列(`_tab_rule_h` 對 `TAB_BAR_H`),做成
-        # 同一條的話灰線就跟藍條一樣厚,比網頁版粗一截(2026-09-02 使用者:「灰色的兩
-        # 條線比較粗」)。選中時兩層一起翻藍,藍條就自然蓋住灰線、而且底邊對齊。
-        # ⚠️ 用 `tk.Frame` 而不是 ttk:它要的只是一塊純色,而 ttk 的 Frame 顏色歸樣式
-        # 管,為了兩種狀態各開一個樣式並不划算。
-        # ⚠️ **`pack_propagate(False)` 少不得**:不關的話外層會縮成內層的高度,藍條
-        # 就只剩灰線那麼薄(探針量到 3 → 2)——而 `cget("height")` 照樣回原值,而且
-        # 要等視窗 map 之後才發生(`_paint_tab` 的 `configure(bg=)` 會把設定的高度
-        # 重新要一次,下一次 ConfigureNotify 才又傳播),測試那個藏起來的視窗量不到。
-        bar = tk.Frame(cell, bg=self.pal["page"], height=self.px(TAB_BAR_H))
-        bar.pack(fill="x")
-        bar.pack_propagate(False)
-        seg = tk.Frame(bar, bg=self.pal["line_off"], height=self._tab_rule_h())
-        seg.pack(side="bottom", fill="x")
+        bar, seg = self._tab_bar(cell, "page")
         for w in (cell, pill, body, ico, lab):
             w.bind("<Button-1>", lambda _e: command())
             w.configure(cursor="hand2")
@@ -2207,6 +2349,40 @@ class App(tk.Tk):
         pill.configure(width=body.winfo_reqwidth() + h + self.px(SP_XS), height=h)
         pill.pack_propagate(False)
         return lab, ico, pill, body, bar, seg
+
+    def _tab_bar(self, parent, surface: str) -> tuple[tk.Frame, tk.Frame]:
+        r"""分頁膠囊底下那一條,**兩層**:外層 `bar` 是藍條的高度,內層 `seg` 貼底一段灰線。
+
+        `surface` 是它坐的那一階底色鍵:分頁坐視窗底(`page`),「要做什麼」那一排坐卡片
+        (`card`,2026-09-15 使用者選案 C)——沒選中時外層退成它。⚠️ **兩處共用這一支**,
+        「那一排長得跟分頁一樣」才不是靠兩份抄得一模一樣的程式碼撐著。上色見 `_paint_tab_bar`。
+
+        ⚠️ **沒選中時 `seg` 是灰線色,不是底色**——那條貫穿整排的灰線被每一格的實色背景
+        蓋住了(`ttk.Frame` 不透明),所以**由每一格自己接出那一段**;分頁列兩側沒有格子的
+        地方才由 `_tab_rule` 那條補(2026-09-01 使用者:「灰線被擋住了」)。
+        ⚠️ **為什麼要兩層**:灰線比藍條薄一列(`_tab_rule_h` 對 `TAB_BAR_H`),做成同一條
+        的話灰線就跟藍條一樣厚,比網頁版粗一截(2026-09-02 使用者:「灰色的兩條線比較粗」)。
+        選中時兩層一起翻藍,藍條就自然蓋住灰線、而且底邊對齊。
+        ⚠️ 用 `tk.Frame` 而不是 ttk:它要的只是一塊純色,而 ttk 的 Frame 顏色歸樣式管,為了
+        兩種狀態各開一個樣式並不划算。
+        ⚠️ **`pack_propagate(False)` 少不得**:不關的話外層會縮成內層的高度,藍條就只剩灰線
+        那麼薄(探針量到 3 → 2)——而 `cget("height")` 照樣回原值,而且要等視窗 map 之後才
+        發生(上色時的 `configure(bg=)` 會把設定的高度重新要一次,下一次 ConfigureNotify 才又
+        傳播),測試那個藏起來的視窗量不到。"""
+        bar = tk.Frame(parent, bg=self.pal[surface], height=self.px(TAB_BAR_H))
+        bar.pack(fill="x")
+        bar.pack_propagate(False)
+        seg = tk.Frame(bar, bg=self.pal["line_off"], height=self._tab_rule_h())
+        seg.pack(side="bottom", fill="x")
+        return bar, seg
+
+    def _paint_tab_bar(self, bar: tk.Frame, seg: tk.Frame, on: bool, surface: str) -> None:
+        """把 `_tab_bar` 那一條切成選中(兩層都藍)/沒選中(外層退成底色、內層接出灰線)。
+
+        ⚠️ **兩層一起翻**:只翻外層,選中那一格的藍條底下會露出一條灰;只翻內層,藍條就只剩
+        灰線那麼薄。"""
+        bar.configure(bg=self.pal["accent"] if on else self.pal[surface])
+        seg.configure(bg=self.pal["accent"] if on else self.pal["line_off"])
 
     def _tab_rule(self, row) -> tk.Frame:
         r"""一排分頁下面那條細灰線——⚠️ **畫在藍條的同一列,而且被藍條蓋住**。
@@ -2251,10 +2427,7 @@ class App(tk.Tk):
         # 一塊淺色方塊壓在膠囊中間(理由同 `_segmented` 的 `SegOnBody`)。
         pill.configure(style="SubOnCell.TFrame" if on else "Page.TFrame")
         body.configure(style="SubOnBody.TFrame" if on else "Page.TFrame")
-        # ⚠️ **兩層一起翻**:只翻外層,選中那一格的藍條底下會露出一條灰;只翻內層,
-        # 藍條就只剩灰線那麼薄。
-        bar.configure(bg=self.pal["accent"] if on else self.pal["page"])
-        seg.configure(bg=self.pal["accent"] if on else self.pal["line_off"])
+        self._paint_tab_bar(bar, seg, on, "page")
 
     def _brand_image(self, pt: int):
         """頁首那顆程式圖示(讀出貨的 PNG,縮到要的大小)。畫不出來就回 `None`。
@@ -2322,18 +2495,32 @@ class App(tk.Tk):
                 return got[0]
         return self.px(fallback)
 
-    def _segmented(self, parent, options, command) -> tuple[ttk.Frame, dict]:
+    def _segmented(self, parent, options, command, *,
+                   tabs: bool = False) -> tuple[ttk.Frame, dict]:
         r"""一排幾選一的膠囊 segmented(照網頁版的 `.seg-radio`)。
 
         `options` 是 `((鍵, 圖示, 文字), …)`,回傳 `(整條槽, {鍵: (格子, 內層,
-        圖示, 文字)})`——狀態切換交給呼叫端的 `_segment_show`。
+        圖示, 文字, 藍條, 灰線)})`——狀態切換交給呼叫端的 `_segment_show`。後兩個只有
+        `tabs` 那一種有,其餘是 None。
 
-        (2026-09-01 使用者選案:網頁版那三排是灰底膠囊槽 + 白色的選中段,而原生版
-        原本是方角小標籤與下拉選單。他的原話是「沒有膠囊圓角效果」「選單也不直覺」。)
-        ⚠️ **2026-09-06 又改過一次**(使用者選案 H,四案對照見 `docs/dev/native-ui.md`):
-        灰槽拿掉,未選中的那幾格直接坐在卡片白上,選中的那格是白膠囊 ＋ 一圈 `accent`
-        描邊。**成因是對比不是好看**——`muted` 坐在 `btn` 上兩個模式都過不了 9:1
-        (見 `STYLES` 那段),而那條路壓深色票已經算過是死的。
+        **`tabs=True`:長得跟上面兩排分頁一樣**(2026-09-15 使用者選案 C,四案實拍):選中
+        那格是灰膠囊 ＋ 黑粗字 ＋ 底下一條藍條,整排坐在一條細灰線上。⚠️ **只給「要做什麼」
+        那一排**——使用者同日指定「下一層那排樣式不要動」,「收音情境」與對話框裡那兩排是
+        另一種長相(下面的 `tabs=False`)。⚠️ **與 `_tab_cell` 不同的兩處都是他選的**:①三格照舊
+        **等分**(案 D 那種依內容寬靠左排是落選案);②**膠囊撐滿整格**、藍條跟著撐滿(案 A
+        那種膠囊只包住文字也是落選案)。⚠️ **藍條與灰線照抄 `_tab_cell` 那兩層**(理由在
+        那邊:灰線比藍條薄一列、外層要關傳播),格子之間不留縫、整排不留左右內距——留了灰線
+        就在那裡斷掉,也不會跟卡片同寬。
+
+        **`tabs=False`(「收音情境」與對話框那兩排):灰槽 ＋ 選中那格一顆帶淡影的白膠囊**
+        (2026-09-15 使用者選案 C,五案實拍見 `docs/dev/native-ui.md` §15):選的是狀態、不是
+        換頁,長相要跟分頁分得開——Apple 也這樣分(換內容用字＋底線,切狀態用底座＋膠囊)。
+        沒選中的字是 `ink`、坐在槽上(`SegItem.*`);選中那格換成白膠囊(`SegOn.*`)。
+        ⚠️ **槽的左右內距 `SEG_PAD` 撐著一條幾何條件**,理由見那個常數。
+
+        (沿革:2026-09-01 照網頁版做成灰槽 + 白色選中段;2026-09-06 為了 `muted` 坐在灰槽
+        上過不了 9:1 拿掉槽、改成白膠囊 ＋ `accent` 描邊(選案 H);2026-09-15 沒選中的字改用
+        `ink`,灰槽回來。)
 
         ⚠️ **每一格等分、右緣齊頭**靠的是 `columnconfigure(uniform=)`:少了 uniform
         就只是「平分剩餘空間」,而「只錄電腦聲音」比「線上會議」多兩個字,那兩個字
@@ -2345,38 +2532,65 @@ class App(tk.Tk):
         ⚠️ **格子裡面那一層用 `place` 置中**:圖示與文字是兩個 Label(基線不同,見
         `_icon_pad`),要當成一個整體擺在格子正中間;`place` 的子元件不參與尺寸傳播,
         所以格子的高度不會被內容撐開——那正是這裡最怕的一件事。"""
-        track = ttk.Frame(parent, style="Seg.TFrame",
-                          padding=(self.px(SEG_PAD), 0))
-        # ⚠️ 這一列**沒有底板**(2026-09-06 拿掉灰槽),所以高度直接 `px()`:沒有圖要
-        # 對齊,`_plate_h` 那條「要問皮膚不要自己算」只適用於穿著膠囊的那一層。
-        track.configure(height=self.px(SEG_H))
+        if tabs:
+            # ⚠️ 膠囊的高度問皮膚(見 `_plate_h`),藍條照分頁那一條 `px()`;整列就是兩者
+            # 相加,不另外留白——分頁那顆也是膠囊直接接藍條。
+            pill_h = self._plate_h("Sq.segtab", TAB_PILL_H)
+            bar_h = self.px(TAB_BAR_H)
+            track = ttk.Frame(parent, style="Seg.TFrame")
+            track.configure(height=pill_h + bar_h)
+        else:
+            # ⚠️ 槽本身是一張膠囊底板,高度一樣要問皮膚(見 `_plate_h`),不可以 `px(SEG_H)`
+            track = ttk.Frame(parent, style="SegTrack.TFrame",
+                              padding=(self.px(SEG_PAD), 0))
+            track.configure(height=self._plate_h("Sq.seg", SEG_H))
+        off_cell = "SegCell.TFrame" if tabs else "SegItem.TFrame"
+        off_label = "Seg.TLabel" if tabs else "SegItem.TLabel"
         track.grid_propagate(False)
         track.rowconfigure(0, weight=1)
         cells: dict[str, tuple] = {}
         for i, (key, icon, text) in enumerate(options):
             track.columnconfigure(i, weight=1, uniform="seg")
-            cell = ttk.Frame(track, style="SegCell.TFrame")
-            cell.configure(height=self._plate_h("Sq.seg_on", SEG_H_ON))
-            cell.grid(row=0, column=i, sticky="ew")
-            body = ttk.Frame(cell, style="SegCell.TFrame")
+            if tabs:
+                # 一格 = 膠囊 ＋ 藍條,上下疊在同一欄裡
+                col = ttk.Frame(track, style="SegCell.TFrame")
+                col.grid(row=0, column=i, sticky="ew")
+                cell = ttk.Frame(col, style="SegCell.TFrame")
+                cell.pack(fill="x")
+            else:
+                cell = ttk.Frame(track, style=off_cell)
+                cell.configure(height=self._plate_h("Sq.seg_on", SEG_H_ON))
+                cell.grid(row=0, column=i, sticky="ew")
+            body = ttk.Frame(cell, style=off_cell)
             body.place(relx=0.5, rely=0.5, anchor="center")
             # ⚠️ **圖示可以沒有**(模型那排就沒有):空字串時整個 Label 不建,而不是
             # 建一個空的——空 Label 照樣佔一份 padding,那一排就會比別排偏右。
             ico = None
             if icon:
                 ico = self._nav_icon(body, icon, 10, 0, 0, SUBNAV_LIFT)
-                ico.configure(style="Seg.TLabel")
+                ico.configure(style=off_label)
                 ico.pack(side="left")
-            lab = ttk.Label(body, text=text, style="Seg.TLabel",
+            lab = ttk.Label(body, text=text, style=off_label,
                             padding=(self.px(SP_XS) if icon else 0, 0, 0, 0))
             lab.pack(side="left")
+            bar = seg = None
+            if tabs:
+                # ⚠️ **膠囊撐滿整格,但請求寬度仍給「內容 ＋ 左右各一個半徑」**:`fill="x"`
+                # 讓它跟著格子寬,而請求值是視窗拉窄時的底線,也是「內容壓不壓得到圓角」
+                # 唯一量得到的數字(測試的視窗不 map,`winfo_width()` 一律回 1)。
+                # 算法與那一格多留的 `SP_XS` 同 `_tab_cell`。
+                body.update_idletasks()
+                cell.configure(width=body.winfo_reqwidth() + pill_h + self.px(SP_XS),
+                               height=pill_h)
+                cell.pack_propagate(False)
+                bar, seg = self._tab_bar(col, "card")
             # ⚠️ 停用時**連點都不要進到 command**:那幾支開頭雖然有 `_busy` 的把關,
             # 但那是「正在跑」的把關,而停用可能有別的理由(見 `_segment_enable`)。
             for w in (cell, body, lab) + ((ico,) if ico is not None else ()):
                 w.bind("<Button-1>",
                        lambda _e, k=key, t=lab: None if t.instate(["disabled"]) else command(k))
                 w.configure(cursor="hand2")
-            cells[key] = (cell, body, ico, lab)
+            cells[key] = (cell, body, ico, lab, bar, seg)
         return track, cells
 
     def _segment_enable(self, cells: dict, on: bool) -> None:
@@ -2387,7 +2601,7 @@ class App(tk.Tk):
         使用者按了沒反應會當成壞掉。字色由 `configure_styles` 的 `map` 換成停用色。
         ⚠️ **狀態設在 Label 上**(`Frame` 沒有前景色),而 `_segment_show` 只換 style、
         不動 state,所以停用期間切換選中格也不會把它放開。"""
-        for cell, body, ico, lab in cells.values():
+        for cell, body, ico, lab, _bar, _seg in cells.values():
             for w in (lab,) + ((ico,) if ico is not None else ()):
                 w.state(["!disabled"] if on else ["disabled"])
             # ⚠️ **游標四個都要換**:它設在 cell/body/lab/ico 上(見 `_segmented`),
@@ -2396,12 +2610,19 @@ class App(tk.Tk):
                 w.configure(cursor="hand2" if on else "arrow")
 
     def _segment_show(self, cells: dict, key: str) -> None:
-        """把 segmented 切到某一格(選中的那格翻成白膠囊;圖示兩種狀態都是彩色)。"""
-        for k, (cell, body, ico, lab) in cells.items():
+        """把 segmented 切到某一格(選中的那格翻成灰槽裡的白膠囊,`tabs` 那一排翻成灰膠囊 ＋
+        藍條;圖示兩種狀態都是彩色)。"""
+        for k, (cell, body, ico, lab, bar, seg) in cells.items():
             on = k == key
-            cell.configure(style="SegOn.TFrame" if on else "SegCell.TFrame")
-            body.configure(style="SegOnBody.TFrame" if on else "SegCell.TFrame")
-            style = "SegOn.TLabel" if on else "Seg.TLabel"
+            if bar is None:
+                cell.configure(style="SegOn.TFrame" if on else "SegItem.TFrame")
+                body.configure(style="SegOnBody.TFrame" if on else "SegItem.TFrame")
+                style = "SegOn.TLabel" if on else "SegItem.TLabel"
+            else:
+                cell.configure(style="SegTab.TFrame" if on else "SegCell.TFrame")
+                body.configure(style="SegTabBody.TFrame" if on else "SegCell.TFrame")
+                style = "SegTabOn.TLabel" if on else "Seg.TLabel"
+                self._paint_tab_bar(bar, seg, on, "card")
             lab.configure(style=style)
             if ico is not None:
                 self._paint_icon(ico, style)
@@ -3563,8 +3784,9 @@ class App(tk.Tk):
         self._mode_info.pack(anchor="w", pady=(self.px(SP_XS), 0))
         self._mode = RUN_MODES[0][0]
         # ⚠️ `RUN_MODES` 每一列是四欄(多一欄說明小字),而 segmented 只吃前三欄。
+        # ⚠️ **只有這一排是 `tabs`**(2026-09-15 使用者選案 C;「收音情境」那排指定不動)。
         track, self._mode_cells = self._segmented(
-            card, [(m[0], m[1], m[2]) for m in RUN_MODES], self._mode_show)
+            card, [(m[0], m[1], m[2]) for m in RUN_MODES], self._mode_show, tabs=True)
         track.pack(fill="x", pady=(self.px(SP_SM), 0))
 
         # 段二:這個模式自己的東西(收音情境 / 選檔),一次只出現一組
@@ -4098,8 +4320,10 @@ class App(tk.Tk):
         選 B 而不是「講者人數旁」,理由之一就是位置不跳:「重設講者」沒有講者人數欄。
         ⚠️ **工作進行中連入口一起鎖**(2026-09-14 使用者:「當開始錄音時…連外面的按鈕都
         DISABLE」):先前只鎖對話框裡的控制項,結果是按得開、裡面卻整窗都是灰的。鎖在
-        `_params_lock`,**條件與 `_adv_lock` 同一個**(`rec` 或 `run`)——不走 `_lockable`,
-        那一支連文件轉檔(`doc`)也鎖,而那時對話框裡的東西是開著的。
+        `_params_lock`,**條件與 `_adv_lock` 問同一支 `_params_busy`**(文件轉檔也算,理由
+        見那一支)——不走 `_lockable`:對話框那一半進不了它(點了才建、關了就銷毀,segmented
+        要連游標一起換,運算裝置還多一個 GPU 條件),入口鈕跟著對話框留在 `_params_lock`,
+        兩邊的條件才擺在同一支裡看得到。
         ⚠️ **灰底 `SKIP_PAGE_STYLE`,不是藍框**:同一列的主角是那顆藍色的「● 開始…」,
         而文件頁同一個位置的「輸出資料夾…」也是這一款——四組長得一樣。"""
         btn = HandButton(bar, text=ADV_BUTTON, style=skin.SKIP_PAGE_STYLE,
@@ -4124,6 +4348,8 @@ class App(tk.Tk):
             win.lift()
             win.focus_set()
             return
+        # 三段說明與模型的預設都要問 GPU:背景偵測還沒跑完就先等它(見 `_probe_wait`)
+        self._probe_wait()
         win = tk.Toplevel(self)
         win.title(ADV_TITLE)
         win.configure(background=self.pal["page"])
@@ -4147,8 +4373,11 @@ class App(tk.Tk):
         def section(n: int, title: str, hint: str, build):
             r"""一列:左邊小標＋一行說明,右邊控制項;段與段之間一條細線。
 
-            ⚠️ **控制項欄 `sticky="e"`**:三列的控制項寬度不同(兩排 segmented ＋ 一個
-            數字框),不靠右的話右緣是鋸齒狀的,而那正是使用者說「排版不好看」的那一類。
+            ⚠️ **三個控制項一律撐滿控制項那一欄**(`sticky="ew"`,裡面再 `fill="x"`),灰底
+            因此一樣長、兩緣都切齊。(2026-09-15 使用者先要兩排 segmented「灰底長度一致」,
+            再要「CPU 核心數的灰底也跟上面相同長度」。先前是 `sticky="e"` 只靠右,三個寬度
+            各不相同,左緣是鋸齒狀的。)⚠️ **靠結構對齊,不是各抄一個相同的數字**:寬度只有
+            欄的 `minsize`(`ADV_CTL_W`)一份,哪天那一欄變寬,三個一起變寬。
             ⚠️ **說明不登記進 `self._wrap`**:那一套跟著**主視窗**寬度重算,而這扇窗的
             寬度是固定的(`resizable(False, False)`)——登記進去只會在使用者拉主視窗時,
             把這裡的換行寬度改成別的欄的。"""
@@ -4159,7 +4388,7 @@ class App(tk.Tk):
                              wraplength=self.px(ADV_TEXT_W))
             note.pack(anchor="w", pady=(self.px(SP_XS), 0))
             holder = ttk.Frame(body, style="CardBody.TFrame")
-            holder.grid(row=n * 2, column=1, sticky="e")
+            holder.grid(row=n * 2, column=1, sticky="ew")
             build(holder)
             if n < 2:
                 # ⚠️ 用 `tk.Frame` 不是 `ttk.Separator`:分隔線的顏色要跟著皮膚走
@@ -4169,15 +4398,16 @@ class App(tk.Tk):
                     pady=self.px(SP_LG))
             return note
 
-        def sized_segment(parent, options, command, width):
-            r"""一排寬度**釘死**的 segmented(不撐滿整欄)。
+        def seg_row(parent, options, command):
+            r"""一排 segmented,**撐滿控制項那一欄**(`ADV_CTL_W`,理由見 `section`)。
 
-            ⚠️ **兩格的 segmented 撐滿整欄會被拉成兩顆巨大的膠囊**——那正是 2026-09-07
-            使用者說「排版不好看」時畫面上的樣子(每格 215 px 寬)。`_segmented` 那一列
-            本來就 `grid_propagate(False)`,所以寬度只能從這裡給。"""
+            (先前兩排各自釘 220 與 190,沒有灰槽時看不出來,2026-09-15 灰槽一回來就是一長一短。)
+            ⚠️ **不要撐滿整張卡**:兩格的 segmented 撐滿 430 px 會被拉成兩顆巨大的膠囊——那正是
+            2026-09-07 使用者說「排版不好看」時畫面上的樣子。`_segmented` 那一列
+            `grid_propagate(False)`,自己要不到寬度,所以一定要從外面撐(`fill="x"` ＋
+            `section` 的 `"ew"`)。"""
             track, cells = self._segmented(parent, options, command)
-            track.configure(width=self.px(width))
-            track.pack()
+            track.pack(fill="x")
             return cells
 
         # ---- 運算裝置 ------------------------------------------------------ #
@@ -4188,7 +4418,7 @@ class App(tk.Tk):
         self._device_hint = section(
             0, "運算裝置", "",
             lambda p: setattr(self, "_device_cells",
-                              sized_segment(p, DEVICE_OPTIONS, self._device_show, 220)))
+                              seg_row(p, DEVICE_OPTIONS, self._device_show)))
         self._segment_show(self._device_cells, default_device_key())
 
         # ---- 模型 ---------------------------------------------------------- #
@@ -4196,7 +4426,7 @@ class App(tk.Tk):
         self._model_hint = section(
             1, "模型", "",
             lambda p: setattr(self, "_model_cells",
-                              sized_segment(p, MODEL_OPTIONS, self._model_show, 190)))
+                              seg_row(p, MODEL_OPTIONS, self._model_show)))
         self._segment_show(self._model_cells, self._run_model.get())
 
         # ---- CPU 核心數 ---------------------------------------------------- #
@@ -4210,7 +4440,8 @@ class App(tk.Tk):
             self._cores_spin = ttk.Spinbox(
                 parent, textvariable=self._run_cores, from_=1,
                 to=power.max_cpu_cores(), width=6, style="Tall.TSpinbox")
-            self._cores_spin.pack()
+            # 撐滿那一欄,灰底跟上面兩排 segmented 一樣長(見 `section`)
+            self._cores_spin.pack(fill="x")
 
         section(2, "CPU 核心數", cores_info(), cores)
 
@@ -4272,6 +4503,19 @@ class App(tk.Tk):
                 text=DEVICE_INFO[(transcribe.gpu_present(),
                                   default_device_key())])
 
+    def _params_busy(self) -> bool:
+        r"""進階參數(對話框裡的控制項**與**外面的入口鈕)現在該不該鎖:三條工作路徑任一條在跑。
+
+        ⚠️ **只有這一份**:入口鈕(`_params_lock`)與對話框裡的控制項(`_adv_lock`)的條件
+        一不一致,就是「外面灰的、裡面能動」或反過來(2026-09-14 那次的教訓);`_model_show`
+        / `_device_show` 的早退也問這一支。
+        ⚠️ **文件轉檔(`doc`)也算**(2026-09-14 使用者裁定):先前以為「那條路不讀這幾個
+        值」而刻意開著,**其實運算裝置它是讀的**——批次裡每個音檔的轉錄指令都帶著**當下**
+        的「只用 CPU」(`transproc.transcribe`),而模型卻是開批時依裝置挑定的
+        (`transcribe.default_model_key`)。中途切成只用 CPU,剩下的音檔就是「精準」模型
+        在 CPU 上跑、慢四倍上下,畫面上什麼都看不出來。"""
+        return any(self._busy.values())
+
     def _adv_lock(self) -> None:
         r"""依 `_busy` 鎖住/放開對話框裡的控制項;對話框沒開就什麼都不做。
 
@@ -4283,7 +4527,7 @@ class App(tk.Tk):
         結束時被 `not busy` 一起放開——那樣按下去會切到一個沒有任何作用的選項。"""
         if self._adv_win is None or not self._adv_win.winfo_exists():
             return
-        busy = self._busy["rec"] or self._busy["run"]
+        busy = self._params_busy()
         self._segment_enable(self._model_cells, not busy)
         self._segment_enable(self._device_cells,
                              not busy and transcribe.gpu_present())
@@ -4298,7 +4542,7 @@ class App(tk.Tk):
         時機是「下一趟開始」,不是「下次重開程式」。
         ⚠️ **正在跑的那一趟不受影響**:引擎在那一趟開始時就建好了,而中途換裝置等於
         把跑到一半的轉錄丟掉重來。說明文字寫的正是這件事。"""
-        if self._busy["rec"] or self._busy["run"]:
+        if self._params_busy():
             return
         transcribe.set_cpu_only(key == DEVICE_CPU)
         if self._device_cells is not None:
@@ -4320,6 +4564,16 @@ class App(tk.Tk):
         if any(self._busy.values()):
             widget.configure(state="disabled")
         return widget
+
+    def _apply_busy_locks(self) -> None:
+        r"""`_busy` 一變就叫這一支:所有「工作進行中不該能動」的東西依現況鎖上或放開。
+
+        ⚠️ **三條工作路徑(`_rec_start`、`_run_lock`、`_doc_lock`)一律叫這一支,不要各自
+        挑 `_params_lock` / `_data_lock` 來叫**:2026-09-14 文件轉檔就是只叫了 `_data_lock`,
+        「進階參數設定」整個沒鎖,而批次裡的音檔是讀運算裝置的。兩支管的 widget 互不
+        重疊,先後無所謂。"""
+        self._params_lock()
+        self._data_lock()
 
     def _data_lock(self) -> None:
         r"""依 `_busy` 的現況鎖住/放開三個資料分頁與選檔那幾樣東西。
@@ -4366,12 +4620,18 @@ class App(tk.Tk):
         使用者從來沒開過那個對話框」的那一趟出 AttributeError。
         ⚠️ **入口鈕則一定在**(三組都跟著轉檔頁一起建),所以直接鎖在這裡;對話框若在
         按下開始之前就開著,它留著、裡面鎖住,「關閉」照樣按得下去。"""
-        busy = self._busy["rec"] or self._busy["run"]
+        busy = self._params_busy()
         # 「要做什麼」與「收音情境」:`_mode_show` / `_scene_show` 開頭本來就擋著
         # `_busy`,這裡補的是**看得出來**那一半(同 `_segment_enable` 的 docstring)。
-        # ⚠️ 兩組都在轉檔頁裡建,而這一支只從 `_run_lock` 走得到——那時頁一定在。
-        self._segment_enable(self._mode_cells, not busy)
-        self._segment_enable(self._scene_cells, not busy)
+        # ⚠️ **這兩組只跟著這一頁自己的工作鎖(`rec`/`run`),不問 `_params_busy`**:文件
+        # 轉檔中切模式無害(`_mode_show` 也不擋它),鎖了只是一排按不動、又沒有理由的灰。
+        # ⚠️ 兩組與入口鈕都在轉檔頁裡建,而這一支只從 `_apply_busy_locks` 走得到(呼叫端是
+        # `_run_lock`、`_rec_start`、`_doc_lock`)——文件頁那條不是轉檔頁的鈕按出來的,靠的是
+        # **轉檔頁開視窗時就建好**(`TABS[0]` / `SUBTABS[0]`,`__init__` 的 `_show(self.tab)`);
+        # 改預設分頁要回來看這裡。
+        own = self._busy["rec"] or self._busy["run"]
+        self._segment_enable(self._mode_cells, not own)
+        self._segment_enable(self._scene_cells, not own)
         self._adv_lock()
         for btn in self._adv_btns:
             btn.configure(state="disabled" if busy else "normal")
@@ -4381,7 +4641,7 @@ class App(tk.Tk):
 
     def _model_show(self, key: str) -> None:
         """切模型。⚠️ **轉檔中不准切**:引擎的參數在開始那一刻就定死了。"""
-        if self._busy["rec"] or self._busy["run"]:
+        if self._params_busy():
             return
         self._run_model.set(key)
         if self._model_cells is not None:
@@ -4495,8 +4755,7 @@ class App(tk.Tk):
         # `_rec_done` 的 `_run_lock(False)` 一起把它熄掉)。⚠️ **一定是跑馬燈**:
         # 散會時間不是這支程式算得出來的東西。
         self._taskbar(None)
-        self._params_lock()           # 錄音中鎖進階參數(講者人數例外,見那一支)
-        self._data_lock()             # 三個資料分頁與選檔那幾樣(見 `_data_lock`)
+        self._apply_busy_locks()      # 進階參數(講者人數例外)與資料分頁,見那一支
         # ⚠️ **每一場都要歸零**:不歸零的話這一場的預覽會接在上一場的字後面,
         # 而 `_live_n` 還停在上一場的段數 → 新的段落根本畫不出來。
         self._live_n = -1
@@ -5676,8 +5935,7 @@ class App(tk.Tk):
         `_busy["run"]` 這一個旗標與同一顆停止鈕的語意,漏掉哪一組,那一組就會在
         工作進行中還亮著——按下去是第二趟,而第一趟還在跑。"""
         self._busy["run"] = running
-        self._params_lock()             # 進行中鎖進階參數(見那一支;錄音收尾也走這裡)
-        self._data_lock()               # 三個資料分頁與選檔那幾樣(見 `_data_lock`)
+        self._apply_busy_locks()        # 進階參數與資料分頁(見那一支;錄音收尾也走這裡)
         # 工作列上的進度掛在這裡(而不是各個 start):`_run_lock` 是這條路唯一的總開關
         # ——五個進入點(單檔、批次、重設講者、重新分群、錄音收尾)全走它,掛在那五支
         # 上遲早漏掉一支,而漏掉的症狀是那一種工作在工作列上完全看不出來。
@@ -6116,7 +6374,7 @@ class App(tk.Tk):
     def _doc_lock(self, running: bool,
                   outcome: int = winui.TBPF_NOPROGRESS) -> None:
         self._busy["doc"] = running
-        self._data_lock()               # 三個資料分頁與選檔那幾樣(見 `_data_lock`)
+        self._apply_busy_locks()        # 進階參數也鎖:批次裡的音檔讀運算裝置(見 `_params_busy`)
         if running:                     # 同 `_run_lock`:開頭沒有分母,先流動
             self._taskbar(None)
         else:
@@ -6171,6 +6429,9 @@ class App(tk.Tk):
         # 切分頁、跑測試都碰不到)。
         ocr = bool(self._doc_opts["ocr"].get())
         mail = bool(self._doc_opts["mail"].get())
+        # 批次裡的錄音檔要挑模型(問 GPU):背景偵測還沒跑完就先在這裡等它,不要讓工作
+        # 執行緒再偵測一次(見 `_probe_wait`)
+        self._probe_wait()
 
         def work(say) -> None:
             report = docpipe.convert_batch(
@@ -6234,6 +6495,8 @@ class App(tk.Tk):
         # 一直向下捲動,且跨越章節……因此全部內容(可搜尋)最後一個選項請去掉」):整本本來就接成
         # 一份連續的內容(`_help_render_all`),目錄是跳章與跟著捲動亮的索引,再放一篇「全部」
         # 就是同一份內容出現兩次。網頁版仍然是一篇一篇的,那一篇留給它用。
+        # 「本機目前會用」要問 GPU:背景偵測還沒跑完就先等它(見 `_probe_wait`)
+        self._probe_wait()
         pages = [page_ for page_ in help_text.help_pages(
                      DEVICE_NAMES[transcribe.predicted_device()], MAX_SPEAKERS)
                  if page_.label != help_text.EVERYTHING]
@@ -6924,7 +7187,9 @@ def main() -> None:
     # 同一個檔上**——而那沒有任何錯誤訊息,只是紀錄檔的內容交錯。另外二十支模組用的
     # 都是這一份,視窗這一支沒有理由不一樣。⚠️ 哪一份最後成為唯一真值還沒定案
     # (winkit 的 `CLAUDE.md` 記著),在那之前**不要把這裡換過去**。
-    filelog.start()
+    # ⚠️ **檔頭不偵測 GPU**(`device=False`,2026-09-15):那一趟是開窗路徑上最貴的一段,
+    # 改在視窗畫好之後背景做,結果另起一行(`App._boot_done`)。
+    filelog.start(device=False)
     # ⚠️ **硬退出殘留的暫存目錄要在這裡清**(同網頁版 `app._launch` 的位置):關視窗
     # /當機來不及自清的 `meeting-scribe-*` 留在系統暫存裡,沒有人會回頭刪它。
     # ⚠️ **先前這一支完全沒清**——網頁版清、命令列的 `doccli` 清,就原生視窗不清,
@@ -6943,6 +7208,8 @@ def main() -> None:
     # ⚠️ 模型下載的進度要進視窗(見 `App._model_progress`):掛在這裡而不是
     # `App.__init__` 裡,是因為它是**行程層級**的單一插槽——一個行程只有一個視窗。
     app = App()
+    # 視窗畫好之後:紀錄檔記下開窗花了幾秒,再開始背景偵測 GPU(見 `_boot_done`)
+    app.after_idle(app._boot_done)
     models.set_progress_hook(app._model_progress)
     try:
         app.mainloop()

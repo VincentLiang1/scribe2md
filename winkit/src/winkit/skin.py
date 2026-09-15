@@ -566,6 +566,9 @@ def apply(root: tk.Misc, scale: float,
     # 過它座標、沒告訴過它字型(2026-09-12 量到 IME 用的是 `System` 20px **粗體**)——症狀
     # 是打中文時格子裡的字小一號,選完字才恢復。見 `winui.follow_ime_composition_font`。
     winui.follow_ime_composition_font(root, fam, 10)
+    # ⚠️ **位置也一樣只做了一半**:版面把輸入框推走時 IME 還瞄在原地,組字的字畫在格子外面
+    # (2026-09-12 回報)。綁在整個程式上、不逐格綁,見 `winui.follow_ime_caret_everywhere`。
+    winui.follow_ime_caret_everywhere(root)
 
     mode = winui.preferred_theme_mode(PALETTES)
     pal = dict(PALETTES[mode])

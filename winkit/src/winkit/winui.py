@@ -1,5 +1,5 @@
 r"""Windows 平台整合:DPI、工作列身分、單一實例、視窗落點、工作列進度、深色標題列、
-輸入法組字的字型、還原那一幀的底色。
+輸入法組字的字型與位置、還原那一幀的底色。
 
 **原始出處是 `C:\SOURCE5\Python\NotebookLM_OCR\pdf2ppt_gui_2.py`**(2026-08-26
 抄進 MP4-2-SRT,使用者指定「工作列圖示與工作列進度也一起做出來」),2026-08-28 搬進
@@ -219,55 +219,6 @@ def set_ime_composition_font(root, family: str, size_pt: int) -> bool:
         return False
 
 
-def set_ime_caret(entry, text_left: int = 0) -> None:
-    r"""把輸入法「組字要畫在哪」對回這一格目前的插入點。
-
-    ⚠️ **Tk 只在插入點變動時告訴 IME 座標,widget 被版面推走時它不管**(2026-09-12
-    實測:把一個 Label `grid()` 回來、下拉整個下移 29px 之後,IME 的組字座標一動也
-    不動,而 `icursor()`、`focus_set()`、`selection_clear()` 一個都喚不醒它——**只有
-    `tk caret` 有效**)。症狀是組字中的那幾個字畫在**格子外面**(meeting-scribe-native
-    的使用者 2026-09-12 回報:清掉名字之後線索那一行長回來,注音打的字就落在格子上方
-    那一行上)。
-    ⚠️ **座標傳「相對這一格」的,Tk 會自己換算成相對 toplevel 的**(實測:傳 `-x 4
-    -y 4` 給一個位在 (20,66) 的下拉,IME 那邊讀回來的是 (24,90))。
-    ⚠️ **只對有焦點的那一格做**:視窗一縮放,畫面上每一格都會收到 `<Configure>`,而
-    沒有焦點的格子根本不會組字——命名區二十幾位時那是二十幾次白算的 `measure()`。"""
-    try:
-        import tkinter.font as tkfont
-        from tkinter import ttk
-
-        if str(entry.focus_get()) != str(entry):
-            return
-        style = str(entry.cget("style")) or entry.winfo_class()
-        spec = ttk.Style(entry).lookup(style, "font") or "TkDefaultFont"
-        font = tkfont.Font(root=entry, font=spec)
-        before = str(entry.get())[:entry.index("insert")]
-        height = font.metrics("linespace")
-        # ⚠️ 垂直**置中**、不問樣式的上內距:那是下游各自的皮膚規格(A 類),而算得出來
-        # 的東西不該靠呼叫端傳對。
-        top = max(0, (entry.winfo_height() - height) // 2)
-        entry.tk.call("tk", "caret", str(entry),
-                      "-x", text_left + font.measure(before), "-y", top,
-                      "-height", height)
-    except Exception:
-        pass
-
-
-def follow_ime_caret(entry, text_left: int = 0) -> None:
-    r"""讓組字位置一路跟著這一格走:版面把它推到哪,IME 就跟到哪。
-
-    ⚠️ **綁 `<Configure>` 綁在這一格自己身上**,不是綁在視窗上(CLAUDE.md 那條自我
-    餵養的陷阱講的是後者):這支處理常式只下 `tk caret`、**不動任何元件的幾何**,所以
-    不會回授。
-    ⚠️ **`add="+"`**:下游自己也可能綁 `<Configure>`。"""
-    if not sys.platform.startswith("win"):
-        return
-    try:
-        entry.bind("<Configure>", lambda _e: set_ime_caret(entry, text_left), add="+")
-    except Exception:
-        pass
-
-
 def follow_ime_composition_font(root, family: str, size_pt: int) -> None:
     r"""讓組字字型一路跟著介面字型:現在設一次,之後每次焦點落進視窗再設一次。
 
@@ -284,6 +235,98 @@ def follow_ime_composition_font(root, family: str, size_pt: int) -> None:
         root.bind("<FocusIn>",
                   lambda _e: set_ime_composition_font(root, family, size_pt), add="+")
         set_ime_composition_font(root, family, size_pt)
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- #
+#  輸入法組字的位置:版面把輸入格推走時,IME 要跟著搬
+# --------------------------------------------------------------------------- #
+# 症狀是組字中的那幾個字畫在**格子外面**(meeting-scribe-native 的使用者 2026-09-12 回報:
+# 清掉名字之後線索那一行長回來、下拉整個下移 29px,注音打的字就落在格子上方那一行上)。
+#
+# ⚠️ **成因是 Tk 的 `Tk_SetCaretPos` 自己有一層快取**(2026-09-14 以 `GetCaretPos` 實測,
+# Tk 8.6.12):(widget, x, y) 跟上一次**相同**就直接 return——而 x、y 是**相對那一格**的,
+# 格子整個被推走時它們不變,所以輸入格每次閃游標重畫時的那一呼叫全部被吃掉。⚠️ **`tk caret`
+# 走的是同一支**:傳進去的值只要剛好等於快取裡的,一樣什麼都不做。
+# ⚠️ **2026-09-14 更正**:09-12 那次寫的是「Tk 只在插入點變動時告訴 IME 座標,`icursor()`
+# 即使插入點真的變了也喚不醒它」。前半是症狀、不是成因;後半跟快取對不上(插入點一變 x 就
+# 不同,不會被吃掉),較可能是當時的格子沒有真的拿到焦點——**未重測**。⚠️ 照舊說法理解的人
+# 會以為「座標算準一點」就好,而**算得愈準、愈會剛好等於快取裡那個值**。
+_IME_CARET_EVENTS = ("<Configure>", "<FocusIn>")
+
+
+def _focus_path(root) -> str:
+    r"""有焦點那個 widget 的路徑;程式不在前景時是空字串。
+
+    ⚠️ **不用 `focus_get()`**:它多一趟 `nametowidget`,而這支在畫面上每一個 `<Configure>`
+    都會被問一次、絕大多數都沒命中(2026-09-14 實測見 `follow_ime_caret_everywhere`)。
+    ⚠️ 獨立成一支是給測試換的:藏著的視窗沒有焦點。"""
+    return str(root.tk.call("focus"))
+
+
+def _ime_caret_moved(root, path: str) -> None:
+    r"""`path` 那個 widget 動了或拿到焦點:它若是有焦點那一格**自己或祖先**,就把 caret 重下一次。
+
+    ⚠️ **重下 Tk 快取裡的那一組,不自己重算位置**(2026-09-14 /simplify 改):過期的只有
+    「換算成相對 toplevel」那一步,相對格子的 (x, y, height) 是輸入格自己畫游標時存進去的,
+    本來就對。用 `bbox("insert")` 重算的那一版得另外處理類別白名單、游標在最後面、夾在格子裡、
+    還沒排版就瞄會偏 (13, 9)——每一條都是可能跟 ttk 對不上的地方,`Text` 也被排除在外。
+    `tk caret` 不帶選項時回的是**整個 display 共用的那一份**,問哪一格都一樣。
+    ⚠️ **一定要下兩次、第一次故意差 1px**:下的正是快取裡的值,單下一次必定是 no-op。
+    ⚠️ **瞄的永遠是有焦點的那一格,不是動的那一個**:`tk caret` 整個 display 共用一份,沒有
+    焦點的格子不會組字,瞄了反而把正在打字的那一格蓋掉。
+    ⚠️ 焦點剛落進另一格、它還沒畫游標的那一瞬間,快取裡是上一格的值:新格子一畫游標就自己
+    修正(值不同會穿過快取;值相同時這一呼叫本來就對)。焦點在按鈕、清單這類不畫游標的元件上
+    時,移動的是看不見的 Win32 caret,無害。"""
+    try:
+        here = _focus_path(root)
+        # ⚠️ 兩邊都補一個結尾的 `.` 再比:`.card.rows2` 不是 `.card.rows` 的子孫;`.` 是所有人的祖先
+        if not here or not (here + ".").startswith(path.rstrip(".") + "."):
+            return
+        raw = root.tk.call("tk", "caret", here)
+        caret = dict(zip(map(str, raw[::2]), map(int, raw[1::2])))
+        for dx in (1, 0):
+            root.tk.call("tk", "caret", here, "-x", caret["-x"] + dx, "-y", caret["-y"],
+                         "-height", caret["-height"])
+    except Exception:
+        pass
+
+
+def follow_ime_caret_everywhere(root) -> None:
+    r"""讓整個程式的輸入框,組字位置都一路跟著格子走:版面把它推到哪,IME 就跟到哪。
+
+    ⚠️ **綁在 `all` 這個 bindtag 上,不逐格綁**(2026-09-14 改):逐格綁必然有漏——
+    meeting-scribe-native 第一版只接了命名區的下拉,它自己的其他輸入框、另外兩支 AP 的輸入框
+    全都沒有;`all` 在每個 widget 的 bindtags 裡,連之後才長出來的都算。由 `skin.apply` 呼叫,所以
+    **下游一行都不必改**(同 `follow_ime_composition_font`)。
+    ⚠️ **不能只看輸入框自己的 `<Configure>`**:那個事件只報「相對父元件」的變動(同日實測),
+    只有祖先被推走時(例如左欄是 Canvas,滾輪一捲、動的是裡面那層 Frame)那一格自己**一個事件
+    都收不到**。所以每個 widget 的 `<Configure>` 都要看「動的是不是有焦點那一格的祖先」。
+    ⚠️ **不綁在 toplevel 上**:meeting-scribe-native 有一句沒帶 `add="+"` 的
+    `self.bind("<Configure>", …)`,會把它整條換掉,而且沒有錯誤訊息。
+    ⚠️ **`<FocusIn>` 也要**:沒有焦點時被推走的那一格沒人瞄,焦點回來時 ttk 自己那一呼叫又被
+    快取吃掉。切回視窗時 `<FocusIn>` 落在 toplevel 上,而 toplevel 是所有人的祖先,一樣算數。
+    ⚠️ **只傳 `%W`,不用 `bind_all`**:`bind_all` 每個事件要替 Python 組一整個 `Event`(十九個
+    欄位),而 `<Configure>` 是視窗一縮放畫面上**每一個**尺寸有變的 widget 都送一次。
+    同日實測(8 層深、藏著的視窗,每個事件):沒綁 0.7µs、`bind_all` 空處理常式 12µs、本包
+    沒命中 1.8µs、命中 16µs(兩下 `tk caret` 各是一次 Win32 `SetCaretPos` 加
+    `ImmSetCompositionWindow`)。
+    ⚠️ **視窗一縮放,焦點那一格的每一層祖先各重下一次**:8 層約 140µs 一步,結果都一樣。合併成
+    一次 `after_idle` 要多一份待辦狀態、測試收尾還得清掉沒跑的 idle,量過不值得。
+    ⚠️ 處理常式只下 `tk caret`、**不動任何元件的幾何**,所以沒有「綁在視窗上的
+    `<Configure>` 自我餵養」的問題(meeting-scribe-native `docs/dev/native-ui.md`)。
+    ⚠️ **同一個 Tk 只綁一次**:`all` 是整個直譯器共用的,多呼叫一次就是每個事件多跑一趟。"""
+    if not sys.platform.startswith("win"):
+        return
+    try:
+        top = root._root()
+        if getattr(top, "_winkit_ime_caret", False):
+            return
+        cmd = top.register(lambda path: _ime_caret_moved(top, str(path)))
+        for seq in _IME_CARET_EVENTS:
+            top.tk.call("bind", "all", seq, f"+{cmd} %W")
+        top._winkit_ime_caret = True
     except Exception:
         pass
 

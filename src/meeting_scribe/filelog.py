@@ -172,10 +172,11 @@ def code_version() -> str:
 def _device_hint() -> str:
     """轉錄會走哪顆晶片。
 
-    build_ui 稍後還會問一次,而 predicted_device 沒有 memo——所以這是
-    實打實多跑一次裝置列舉(實測 +146ms),不是「提早幾秒」。付得起:
-    收音掉幀這類問題的成因高度綁機器,少了這行事後就對不起來。
-    偵測失敗(驅動壞掉)絕不能讓紀錄檔擋住啟動,故整段兜底。"""
+    ⚠️ **偵測本身不便宜**(`import openvino` ＋ 列裝置,暖的時候約 0.34 秒,結果整個
+    行程快取一份,見 `transcribe._intel_gpu_available`),所以原生視窗不在檔頭問它
+    (`header` 的 `device`)。收音掉幀這類問題的成因高度綁機器,少了這行事後就對不
+    起來,所以其他進入點照舊寫在檔頭。偵測失敗(驅動壞掉)絕不能讓紀錄檔擋住啟動,
+    故整段兜底。"""
     try:
         from meeting_scribe import transcribe
 
@@ -184,23 +185,33 @@ def _device_hint() -> str:
         return "(偵測失敗)"
 
 
-def header(path: Path) -> list[str]:
+# 檔頭那一行不偵測時寫什麼(原生視窗:偵測挪到開窗之後在背景做,結果另起一行)。
+DEVICE_LATER = "開窗後在背景偵測,結果見下方「轉錄裝置(偵測)」那一行"
+
+
+def header(path: Path, *, device: bool = True) -> list[str]:
     """檔頭。分析一份 log 要先知道「哪一版的碼、在什麼機器上跑的」——
-    收音掉幀這類問題的成因高度綁機器,少了這幾行就對不起來。"""
+    收音掉幀這類問題的成因高度綁機器,少了這幾行就對不起來。
+
+    `device=False` 不在這裡偵測轉錄裝置(原生視窗用,2026-09-15):偵測要
+    `import openvino` 再列裝置,暖的時候 0.34 秒、而且載入約 106 MB 的 DLL,
+    寫在檔頭就等於**每次開窗都先等它**。那一行改由視窗在背景偵測完再補
+    (`desktop.App._probe_done`),機器資訊一樣留得下來。"""
     now = datetime.datetime.now()
+    hint = _device_hint() if device else DEVICE_LATER
     return [
         "=" * 72,
         f"AI 文件.MD 轉換器 執行紀錄  開始 {now:%Y-%m-%d %H:%M:%S}",
         f"  程式版本:{code_version()}",
         f"  紀錄檔:{path}",
         f"  Python:{sys.version.split()[0]}  平台:{sys.platform}",
-        f"  CPU 核心數:{os.cpu_count()}  轉錄裝置(偵測):{_device_hint()}",
+        f"  CPU 核心數:{os.cpu_count()}  轉錄裝置(偵測):{hint}",
         "  黑視窗看得到的是 INFO 以上;這個檔另收 DEBUG(收音診斷等細節)。",
         "=" * 72,
     ]
 
 
-def start(tee: bool = True) -> Path | None:
+def start(tee: bool = True, *, device: bool = True) -> Path | None:
     """開一份執行紀錄:清舊檔 → 掛檔案 handler →(可選)代收 print。
 
     **順序有三個約束,寫成程式碼而不是註解**:清舊檔要在開檔之前(否則
@@ -211,9 +222,9 @@ def start(tee: bool = True) -> Path | None:
     讀的那個紀錄檔裡**,而那正是規定要前後對比的數字。
 
     tee=False 給「stdout 是機器可讀契約」的進入點(如 doccli:一行一個 md
-    絕對路徑),那種通道不能被攔截。"""
+    絕對路徑),那種通道不能被攔截。`device` 見 `header`。"""
     purge_old()
-    path = attach()
+    path = attach(device=device)
     if path is not None:
         if tee:
             tee_console()
@@ -221,10 +232,10 @@ def start(tee: bool = True) -> Path | None:
     return path
 
 
-def attach(path: Path | None = None) -> Path | None:
+def attach(path: Path | None = None, *, device: bool = True) -> Path | None:
     """把往後所有 log 同時寫進檔案;回傳實際路徑(失敗回 None)。
 
-    冪等:重複呼叫直接回上次的路徑,不會疊出第二個 handler。"""
+    冪等:重複呼叫直接回上次的路徑,不會疊出第二個 handler。`device` 見 `header`。"""
     global _attached, _handler
     if _attached is not None:
         return _attached
@@ -232,7 +243,7 @@ def attach(path: Path | None = None) -> Path | None:
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("a", encoding="utf-8", newline="\n") as f:
-            f.write("\n".join(header(p)) + "\n")
+            f.write("\n".join(header(p, device=device)) + "\n")
         handler = logging.FileHandler(p, encoding="utf-8")
     except OSError:
         return None
