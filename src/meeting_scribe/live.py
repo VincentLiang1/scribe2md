@@ -31,6 +31,7 @@ import bisect
 import contextvars
 import difflib
 import logging
+import os
 import re
 import shutil
 import tempfile
@@ -654,6 +655,83 @@ _FINISH_SPANS = {
 }
 
 
+def track_dest(out_dir: Path, stem: str, kind: str) -> Path:
+    """分軌檔放哪(雙軌合成失敗改交分軌、收尾沒做完保住音軌,兩處共用同一套檔名)。"""
+    return out_dir / f"{stem}_{'現場' if kind == 'mic' else '電腦'}.wav"
+
+
+def _move_in_place(src: Path, dest: Path) -> None:
+    r"""同一顆磁碟上把檔換到另一個目錄(`os.replace`)。
+
+    抽出來只為了讓測試換掉它、模擬「不同磁碟換不了名」(真的造出兩顆磁碟太麻煩)——
+    同 `record._co_initialize_ex` 的理由。"""
+    os.replace(src, dest)
+
+
+def salvage_tracks(tracks: list, out_dir: Path, stem: str) -> list[Path]:
+    r"""收尾沒做完(按了中止、報錯)或錄音中關視窗時,把錄好的音軌放進 `out_dir`,回傳**真的存好**的檔。
+
+    ⚠️ **硬規則**(`docs/spec/01` §1.3 原則 4、`docs/spec/10`):現場收音的任何失敗路徑都要
+    先把音軌保進成品資料夾再報錯——逐字稿可以重轉,會議原音不能。網頁版在 `app.py` 做了,
+    原生版接上錄音收尾時漏掉(成功時音檔在收尾最後才進 `output`,中途失敗就只留在
+    `%LOCALAPPDATA%` 底下的 `recordings`,同仁找不到),2026-09-15 對文案時才發現、使用者
+    裁定補上。
+    ⚠️ **單軌存成 `<stem>.wav`**(與成功時同名);**雙軌存兩個分軌檔、不合成**:合成要跑
+    ffmpeg,而收尾失敗的原因可能正是它。
+    ⚠️ **一軌失敗不擋另一軌,而且不拋**:呼叫端正要報另一個錯,這裡再拋會把原本的錯蓋掉;
+    失敗寫進紀錄檔,由回傳值少了哪幾個讓呼叫端講出來。
+    ⚠️ **先直接搬,搬不動才複製**(2026-09-15 使用者:「用移動檔案的方式會比較快」):同一顆
+    磁碟上搬只是換目錄項,幾百 MB 也是瞬間,錄音工作目錄裡也不會多留一份。搬不動的兩種情況
+    才退回複製——**不同磁碟**(工具裝在 D:,`%LOCALAPPDATA%` 在 C:),以及**檔案還被佔用**
+    (收尾中關視窗時,收尾那條執行緒或講者分析子行程可能還開著它,Windows 不准搬)。
+    ⚠️ **複製成功才刪原檔,刪不掉就留著**:多一份比少一份好。同一顆磁碟的搬移是一步完成的,
+    不會出現「搬到一半」,所以「原檔是複製失敗時唯一的退路」這件事照樣成立。
+    ⚠️ **複製先寫暫存檔再換名,不直接寫 `dest`**:關視窗那條由主執行緒保音軌,而收尾那條
+    工作執行緒是 daemon、可能同時也在保,或者寫到一半就隨行程結束被砍掉。直接寫的話,`dest`
+    可能是另一邊剛放好的完整檔,被 `wb` 截斷之後又沒寫完;換名則讓 `dest` 永遠是完整的,最壞
+    只在旁邊留一個 `.part`。暫存檔名帶執行緒代號,兩邊各寫各的。"""
+    saved: list[Path] = []
+    for t in tracks:
+        dest = out_dir / f"{stem}.wav" if len(tracks) == 1 else track_dest(out_dir, stem, t.kind)
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            _move_in_place(t.path, dest)
+        except FileNotFoundError:
+            # 來源已經不在(另一邊搬走了,或根本沒有)——複製也只會再失敗一次
+            logger.exception("錄音音軌沒能存進成品資料夾:%s → %s", t.path, dest)
+            continue
+        except OSError:
+            if not _copy_track(t.path, dest):
+                continue
+        except Exception:
+            logger.exception("錄音音軌沒能存進成品資料夾:%s → %s", t.path, dest)
+            continue
+        saved.append(dest)
+    logger.info("收尾沒做完,已保住 %d/%d 條音軌:%s", len(saved), len(tracks),
+                "、".join(p.name for p in saved) or "(一條都沒存成)")
+    return saved
+
+
+def _copy_track(src: Path, dest: Path) -> bool:
+    """搬不動時的退路:複製到暫存檔、換成正式檔名、再刪原檔。成功回 True,失敗記紀錄檔回 False。"""
+    part = dest.with_name(f"{dest.name}.{threading.get_ident()}.part")
+    try:
+        shutil.copy2(src, part)
+        part.replace(dest)
+    except Exception:
+        logger.exception("錄音音軌沒能存進成品資料夾:%s → %s", src, dest)
+        try:
+            part.unlink(missing_ok=True)
+        except OSError:
+            pass            # 清不掉就留著:它只是暫存檔,原本那個錯才是要講的
+        return False
+    try:
+        Path(src).unlink()
+    except OSError:
+        logger.debug("音軌已複製進成品資料夾,原檔還被佔用、先留著:%s", src, exc_info=True)
+    return True
+
+
 def run_live_finish(
     tracks: list,  # list[record.RecordedTrack]
     live: LiveTranscriber,
@@ -800,7 +878,7 @@ def run_live_finish(
                 audio_out = None
                 extra = []
                 for t in tracks:
-                    dest = out_dir / f"{stem}_{'現場' if t.kind == 'mic' else '電腦'}.wav"
+                    dest = track_dest(out_dir, stem, t.kind)
                     shutil.copy2(t.path, dest)
                     extra.append(dest)
         else:

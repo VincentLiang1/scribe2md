@@ -37,6 +37,7 @@ import contextlib
 import logging
 import shutil
 import time
+import webbrowser
 from dataclasses import dataclass
 import tkinter as tk
 from datetime import datetime
@@ -340,7 +341,7 @@ def cores_info() -> str:
 # 還沒開始錄音時狀態列那一句(同網頁版的 `_REC_IDLE_MD`)。
 REC_IDLE = "尚未開始錄音。"
 
-# 按了「停止並轉檔」之後、收尾跑完之前那一句(同網頁版的 `_REC_FINISHING_MD`,
+# 按了「停止錄音」之後、收尾跑完之前那一句(同網頁版的 `_REC_FINISHING_MD`,
 # 只把方位詞換成這一版的版面:網頁版預覽在右邊,這裡在下面)。
 # ⚠️ **一定要有這句、而且計時器要停**:先前那行字整個收尾期間都還寫著「● 錄音中・
 # 已錄 62:05」而且**數字繼續往上跳**——收音其實早就停了(`_rec_tick` 只看
@@ -348,6 +349,32 @@ REC_IDLE = "尚未開始錄音。"
 # 那段時間畫面等於在說謊,而使用者唯一的判讀是「它還在錄」。
 # ⚠️ **不寫 Markdown 的粗體記號**:狀態行是普通的 ttk.Label,`**` 會原樣畫出來。
 REC_FINISHING = "收尾中:完成剩餘轉錄與講者分析,進度見下方的預覽區…"
+# 收尾沒做完時狀態列的開頭(見 `_rec_done`),後面一律接 `salvage_note` 講錄音檔存到哪。
+# ⚠️ **要講錄音檔在哪、以及怎麼補救**:放棄的是一整場會議的逐字稿,只講「已停止」或
+# 「出錯」的話,使用者會以為那場會議整個沒了。
+REC_ABORTED = "已依要求停止,這一趟的逐字稿放棄了。"
+REC_FAILED = "收尾時出錯,詳情見紀錄檔(logs 資料夾)。"
+
+
+def salvage_note(salvaged: tuple[list[Path], int] | None, rec_dir: Path | None) -> str:
+    r"""收尾沒做完時,錄音檔存到哪了的那一句(接在 `REC_ABORTED`／`REC_FAILED` 之類後面)。
+
+    `salvaged` 是 `live.salvage_tracks` 的結果配上應該有幾條(`App._rec_salvaged`);
+    `None` = 沒走到保音軌那一步(「錄音太短」在那之前就擋下),什麼都不講。
+    ⚠️ **沒存成的要講出原始檔的完整路徑**:`recordings` 在 `%LOCALAPPDATA%` 底下,只講
+    資料夾名同仁找不到(2026-09-15 之前每一條失敗路徑都是這樣講的)。"""
+    if salvaged is None:
+        return ""
+    saved, want = salvaged
+    text = ""
+    if saved:
+        text = (f"錄音檔已存到 output 資料夾:{'、'.join(p.name for p in saved)},"
+                "之後可以用「轉錄音檔」重轉。")
+    if len(saved) < want:
+        where = f":{rec_dir}" if rec_dir is not None else ""
+        text += (f"⚠ {'有一條音軌' if saved else '錄音檔'}沒能存到 output(詳見紀錄檔),"
+                 f"原始檔還在{where}")
+    return text
 
 # 摺疊卡收合的記號(**文件頁**那張「進階參數設定」;轉檔頁那張 2026-09-07 改成對話框,
 # 入口見 `ADV_BUTTON`)。⚠️ **不帶 VS16**(見檔頭):▶ 正是那七個受害字元之一,
@@ -596,7 +623,9 @@ PICK_HOVER_LIGHT, PICK_HOVER_DARK = "#e8e8ed", "#3a3a3f"   # hover/選中列(網
 WORK_BUSY_TEXT = {
     "doc": "文件轉檔還在跑,請先等它結束,或到「文字、圖像→MD」按停止。",
     "run": "檔案轉檔還在跑,請先等它結束,或到「聲音→MD」按停止。",
-    "rec": "現在正在錄音,請先按「停止並轉檔」。",
+    # ⚠️ **鈕名要跟 `REC_ACTION.busy` 一致**(測試釘著):2026-09-12 四組合成「同一顆兼任
+    # 停止」之後那顆叫「■ 停止錄音」,這句卻一直寫著更早的「停止並轉檔」到 09-15 才發現。
+    "rec": "現在正在錄音,請先按「停止錄音」。",
 }
 
 # 工作列那條進度的刻度數(見 `App._taskbar`)。⚠️ **與畫面上的進度條無關**:那條吃
@@ -838,6 +867,10 @@ ACTION_STOPPING = "停止中…"
 # 開錄之後隔多久才讓那顆鈕按得下去(防誤按,見 `App._rec_arm`)。⚠️ **不要再拉長**:
 # 真的按錯情境(開會前試按)兩秒就夠了,而超過這個長度會變成「按了停止沒反應」。
 REC_ARM_DELAY_MS = 2000
+# 錄音收尾中關視窗時,最多等收尾那條執行緒自己把音軌保好幾秒(見 `App._close_salvage`)。
+# ⚠️ **不要拉長**:等的時候視窗已經藏起來、行程還在,拉長只是讓「關了但還沒真的結束」那段
+# 變久;等不到也不會丟音軌——由關視窗那一側自己保。
+CLOSE_SALVAGE_WAIT_SEC = 10
 # 主要動作鈕的寬度(邏輯 px,靠左固定;文件頁的「輸出資料夾…」同寬並排)。
 # 2026-09-13 使用者第二輪收窄:先前是「整列的一半」(這台量到 230),實拍之後他說
 # 還是太長,四案(210/195/180/172)裡選了 180。
@@ -1237,6 +1270,10 @@ class App(tk.Tk):
         # 位置**,手滑按兩下就是一場會議沒了(而錄音不能重來),所以開錄後兩秒才解鎖
         # (2026-09-12 使用者指定,見 `_rec_arm`)。
         self._rec_armed = True
+        # 收尾沒做完時保住了哪些音軌:(存好的檔, 應該有幾條);`None` = 沒走到保音軌那一步
+        # (成功、或「錄音太短」在那之前就擋下)。工作執行緒寫、`_rec_done` 在主執行緒讀——
+        # 讀的時候工作執行緒已經結束了(`_run_job` 的收尾排在它後面),不必上鎖。
+        self._rec_salvaged: tuple[list[Path], int] | None = None
         # 「工作進行中不該能動」的元件,以及它們**閒著時**該是什麼狀態(見
         # `_lockable` / `_data_lock`)。⚠️ **要記原本的狀態**:`ttk.Combobox` 閒著時
         # 是 `readonly`,一律放回 `normal` 會把它變成可以自由打字的欄位。
@@ -1265,6 +1302,9 @@ class App(tk.Tk):
         self._icons: dict[tuple, object] = {}
         # 正在跑的那個長工作的訊息佇列(見 `_run_job` / `_model_progress`)
         self._job_box = None
+        # 正在跑的那個長工作的執行緒。只有關視窗時會問它(`_close_salvage`:錄音收尾中關掉,
+        # 先等它自己把音軌保好)。
+        self._job_thread: threading.Thread | None = None
         # 預覽框裡那段文字的**原文**(Markdown 還在):核對改掛要改它、命名進度落地要存它,
         # 而畫在框裡的是 `helpmd.flatten` 剝過記號的版本(見 `_run_set_preview`)。
         self._preview_md = ""
@@ -2996,8 +3036,9 @@ class App(tk.Tk):
         ⚠️ **措辭要講清楚「為什麼還沒停」**:引擎的檢查點在段落邊界上,抽音軌與 VAD
         是單一長呼叫、插不進去,最久要等幾十秒。⚠️ **三條路徑的代價不一樣,不可以共用
         一句話**:文件轉檔會先把手上那一份做完;錄音收尾放棄的是**一整場會議的逐字
-        稿**,所以那句一定要講「錄音檔還在」——不講的話使用者不敢按,而那顆鈕就等於
-        不存在。"""
+        稿**,所以那句一定要講「錄音檔會存下來、存到哪」——不講的話使用者不敢按,而那顆鈕
+        就等於不存在。⚠️ **講 output 不講 recordings**(2026-09-15):停下來時音軌會被搬
+        進 output(`live.salvage_tracks`),而 recordings 在 `%LOCALAPPDATA%` 底下、同仁找不到。"""
         cancel.request()
         self._stopping = True
         self._action_refresh(key)
@@ -3006,7 +3047,7 @@ class App(tk.Tk):
         elif key == "rec":
             self._rec_status.configure(
                 text="正在停止…(算完手上這一段就停)。這一趟的逐字稿會放棄,"
-                     "錄音檔留在 recordings 資料夾,之後可以用「轉錄音檔」重轉。")
+                     "錄音檔會存到 output 資料夾,之後可以用「轉錄音檔」重轉。")
         else:
             self._stage("正在停止…(引擎會在下一個段落邊界停下)")
 
@@ -3062,7 +3103,8 @@ class App(tk.Tk):
                 self._job_say(kind, payload)
             self.after(80, pump)
 
-        threading.Thread(target=worker, daemon=True).start()
+        self._job_thread = threading.Thread(target=worker, daemon=True)
+        self._job_thread.start()
         self.after(80, pump)
 
     def _model_progress(self, line: str, frac: float) -> None:
@@ -3990,6 +4032,7 @@ class App(tk.Tk):
         bar = ttk.Frame(parent, style="Page.TFrame")
         self._run_btn = self._action_btn(bar, "run", FILE_ACTION)
         self._action_slot(bar, self._run_btn, self._adv_button(bar))
+        self._slot_shrink(bar)                  # 視窗窄到放不下時兩顆一起縮
         return bar
 
     def _action_btn(self, bar: ttk.Frame, key: str, texts: ActionText) -> "HandButton":
@@ -4004,7 +4047,7 @@ class App(tk.Tk):
         return btn
 
     def _action_slot(self, bar: ttk.Frame, btn: ttk.Button, second: ttk.Button,
-                     row: int = 0) -> None:
+                     row: int = 0, tail: ttk.Button | None = None) -> None:
         r"""把主要動作鈕與它右邊那顆擺成**兩顆同寬、靠左**(`ACTION_BTN_W`)。
 
         ⚠️ **寬度是固定值,不是「整列的一半」**(2026-09-13 使用者又收窄一次):先前
@@ -4015,18 +4058,84 @@ class App(tk.Tk):
         **高度**則由圖高釘死,不受 `sticky` 影響。
         `second` 在文件頁是「輸出資料夾…」,在轉檔頁的三組是「⚙ 進階參數設定…」
         (2026-09-13 使用者選案 B,見 `_adv_button`)——四組因此是同一種排法。
-        ⚠️ **視窗窄於約 974 邏輯 px 時第二顆會被左欄裁掉**(兩顆加一道縫要 570 實體 px,
-        最窄時左欄只剩 437):文件頁在這之前就是這樣,選案時已知,要處理得另外出案。"""
-        w, gap = self.px(ACTION_BTN_W), self.px(CARD_GAP)
-        bar.columnconfigure(0, weight=0, minsize=w, uniform="")
+        `tail` 只有文件頁的選檔鈕列用得到:「選擇檔案…／選擇資料夾…」要與底下的動作列
+        **同寬對齊**(2026-09-15 使用者圈出來指定),「清空」照內容寬、隔同一道縫接在後面
+        (同日選案 A,另一案是推到最右)。⚠️ **走這一支而不是自己抄一份欄設定**:兩列要對齊的
+        是同一個數字,各寫各的,下次調 `ACTION_BTN_W` 只會動到其中一列。
+        視窗窄到放不下時前兩顆縮短(`_slot_fit`,由呼叫端用 `_slot_shrink` 接上):轉檔頁
+        三組各自縮,文件頁兩列一起縮、「清空」照樣露出來。"""
         btn.grid(row=row, column=0, sticky="ew", padx=0)
         # ⚠️ **兩顆之間的縫要自己一欄,不可以用第二顆的 `padx`**:`padx` 吃在**欄寬
         # 裡**,那顆鈕於是只剩 `minsize` 減掉那道縫(實拍量到 180 對 160,而兩顆
         # 一大一小在畫面上很明顯)。
-        bar.columnconfigure(1, weight=0, minsize=gap, uniform="")
-        bar.columnconfigure(2, weight=0, minsize=w, uniform="")
-        bar.columnconfigure(3, weight=1, uniform="")
+        bar.columnconfigure(1, weight=0, minsize=self.px(CARD_GAP), uniform="")
         second.grid(row=row, column=2, sticky="ew", padx=0)
+        if tail is not None:
+            tail.grid(row=row, column=4, sticky="w", padx=0)
+        # 兩顆的寬度與剩餘空間給哪一欄,**只寫在 `_slot_fit` 一處**(這時列寬還沒排出來,
+        # 走「放得下」那一支)。⚠️ 不要在這裡另外抄一份:兩處各寫一份時,改壞其中一處會被
+        # 另一處蓋回來,測試抓不到(突變 M652 就是這樣逃掉過)。
+        self._slot_fit((bar,), tail)
+
+    def _slot_shrink(self, *bars: ttk.Frame, tail: ttk.Button | None = None) -> None:
+        r"""讓這幾列在視窗窄到放不下時,前兩顆**一起**縮短(接在第一列的 `<Configure>` 上)。
+
+        (2026-09-15 使用者指定。)轉檔頁三組各自一列:`_slot_shrink(bar)`;文件頁的選檔鈕列
+        與動作列要上下對齊:`_slot_shrink(選檔列, 動作列, tail=清空)`,**只接在帶 `tail` 的
+        那一列上**——兩列寬度一樣,各接各的會各算各的,帶 `tail` 那列先縮、另一列還以為放得下。"""
+        bars[0].bind("<Configure>", lambda _e: self._slot_fit(bars, tail), add="+")
+
+    def _slot_fit(self, bars: tuple[ttk.Frame, ...], tail: ttk.Button | None = None,
+                  width: int | None = None) -> None:
+        r"""`_action_slot` 那幾列的欄寬:放得下時兩顆固定寬,放不下時**每一列**的前兩顆一起縮短。
+
+        (2026-09-15 使用者指定的退路,分三步:文件頁「清空」一定看得到 → 「開始轉檔」
+        「輸出資料夾…」也跟著一起縮 → 「聲音→MD」那三組也要。)不縮的話 grid 不收沒有
+        `weight` 的欄,**被裁掉的是整顆按鈕**:文件頁三顆加兩道縫在開發機 150% 下要 682 實體
+        px(視窗約 1150 邏輯 px 以下「清空」開始消失),轉檔頁兩顆加一道縫要 570(約 970 以下
+        「⚙ 進階參數設定…」右半邊被切掉)。`bars[0]` 是觸發的那一列;同一組的列寬都一樣
+        (同在左欄裡 `fill="x"`)。
+        ⚠️ **放得下時**:沒有 `tail` 的列剩餘空間在第 3 欄;帶 `tail` 的那一列第 3 欄是縫、
+        剩餘在第 5 欄——它第 3 欄留著 `weight` 的話,「清空」會被往右推(沒選的 B 案,
+        畫面上看起來也說得通)。
+        ⚠️ **窄的時候每顆的寬度自己算、同一組設同一個數字**(列寬扣掉縫與「清空」再平分),
+        不交給 grid 平分:兩列的按鈕請求寬度不同,grid 分奇數那 1 px 時會分給不同顆,實測
+        840~930 邏輯 px 之間第二顆差 1 px。
+        ⚠️ **欄寬總和要剛好等於列寬**:奇數那 1 px 塞進兩顆後面那一欄的 `minsize`(有 `tail`
+        是第 4 欄、沒有是第 3 欄)——少了它,多出來的 1 px 會被 grid 分給有 `weight` 的前兩欄,
+        兩顆差 1 px(M656)。總和剛好時後面那幾欄有沒有 `weight` 排出來都一樣(試過,突變
+        逃掉),窄的時候給 0 只是讓狀態好讀。
+        ⚠️ **前兩欄窄的時候要有 `weight`**:grid 在容器不夠寬時只從有 `weight` 的欄往回收、
+        收到 `minsize` 為止——沒有 `weight`,欄寬照樣被按鈕自己的請求寬度撐著,後面那顆
+        還是被擠出去。代價是**鈕比字窄時字會被裁**(Tk 不給省略號),門檻見
+        `docs/spec/06` §6.3 與 `docs/spec/04` §4.9。
+        ⚠️ **錄音那一列第 0 列還有一行狀態、跨滿四欄**(`_rec_status`):窄的時候那行長字的
+        請求寬度會被加到跨的範圍裡有 `weight` 的欄,但列寬是釘死的,grid 接著又從同樣那幾欄
+        收回到 `minsize`——欄寬總和等於列寬,所以兩顆照樣是算好的寬度。
+        ⚠️ **寬度還沒排出來(`winfo_width()` ≤ 1)當成放得下**:否則分頁剛建好時先排成
+        窄的,等 `<Configure>` 送到才跳回固定寬,畫面會閃一下。
+        ⚠️ 不會回授:這裡只改欄設定,列寬由左欄釘死(見 `_two_columns`),請求寬度變了
+        也不會回頭改它,所以 `<Configure>` 不會因為這裡再送一次。
+        `width` 不給就量 `bars[0]`;給的只有測試——沒 map 過的測試視窗裡列寬是 Canvas 沒排過
+        的殘值(實測 59 px),要驗「放得下時」的排法得自己指定寬度。"""
+        w, gap = self.px(ACTION_BTN_W), self.px(CARD_GAP)
+        width = bars[0].winfo_width() if width is None else width
+        clear = tail.winfo_reqwidth() if tail is not None else 0
+        rest = width - gap - (gap + clear if tail is not None else 0)   # 前兩顆共分得到的寬度
+        roomy = width <= 1 or rest >= 2 * w
+        each = w if roomy else max(rest // 2, 0)
+        odd = 0 if roomy else rest - 2 * each    # 0 或 1,塞給兩顆後面那一欄
+        for bar in bars:
+            for col in (0, 2):
+                bar.columnconfigure(col, minsize=each, weight=0 if roomy else 1)
+            if tail is None:
+                bar.columnconfigure(3, weight=1 if roomy else 0, minsize=odd)
+                continue
+            own = tail.master is bar
+            bar.columnconfigure(3, weight=1 if roomy and not own else 0,
+                                minsize=gap if own or not roomy else 0)
+            bar.columnconfigure(4, weight=0, minsize=0 if roomy else clear + odd)
+            bar.columnconfigure(5, weight=1 if roomy and own else 0)
 
     # ---- 重設講者 -------------------------------------------------------- #
     def _relabel_build(self, parent) -> ttk.Frame:
@@ -4069,6 +4178,7 @@ class App(tk.Tk):
         # ⚠️ **這一組也要有**:重設講者雖然不重轉,聲紋分析仍吃「CPU 核心數」(使用說明
         # 「⚙️ 調準確度與速度」那篇寫著)——少了這顆,那個模式就改不到它。
         self._action_slot(bar, self._relabel_btn, self._adv_button(bar))
+        self._slot_shrink(bar)                  # 視窗窄到放不下時兩顆一起縮
         return bar
 
     def _relabel_pick(self) -> None:
@@ -4269,6 +4379,7 @@ class App(tk.Tk):
                               pady=(0, self.px(SP_SM)))
         self._rec_go = self._action_btn(bar, "rec", REC_ACTION)
         self._action_slot(bar, self._rec_go, self._adv_button(bar), row=1)
+        self._slot_shrink(bar)                  # 視窗窄到放不下時兩顆一起縮
         return bar
 
     def _fold(self, parent, title: str, on_toggle) -> "Fold":
@@ -4608,7 +4719,7 @@ class App(tk.Tk):
         生效的**——它在收尾時才讀(`_rec_stop` 那行 `self._run_cores.get()`),錄音中
         改它會悄悄改掉這一場的收尾行為,而使用者以為自己什麼都沒改。
         ⚠️ **講者人數不鎖**(使用者 2026-07-24 對網頁版指定,這裡照抄):它同樣在按
-        「停止並轉檔」那一刻才讀,而**開會中數清人數、停止前才填**是正當用法。檔案
+        「停止錄音」那一刻才讀,而**開會中數清人數、停止前才填**是正當用法。檔案
         轉檔沒有這個例外——那條路的人數在按「開始」當下就定案,中途改不生效,開著
         只會誤導,所以那時一起鎖。
         ⚠️ **一律從 `_busy` 算,不要在各個呼叫端各記一次**:錄音與收尾是**兩個**旗標
@@ -4651,7 +4762,7 @@ class App(tk.Tk):
         """錄音中每秒更新一次:計時、背景轉錄進度,以及即時逐字稿。
 
         ⚠️ 沒有這個的話,畫面上看不出它還在錄。
-        ⚠️ **按過「停止並轉檔」就不要再跳**(2026-09-04;網頁版 `_lock_for_rec_finish`
+        ⚠️ **按過「停止錄音」就不要再跳**(2026-09-04;網頁版 `_lock_for_rec_finish`
         的第一件事正是 `gr.Timer(active=False)`):`_rec` 裡的 recorder 要到
         `_rec_done` 才清,不擋的話這一行會在整個收尾期間把 `REC_FINISHING` 蓋回
         「● 錄音中・已錄 …」,而且數字繼續加——收音早就停了。"""
@@ -4751,7 +4862,7 @@ class App(tk.Tk):
                          scene=scene_label)
         self._busy["rec"] = True
         # ⚠️ **錄音是唯一不經 `_run_lock` 的工作**,所以它的跑馬燈要自己點起來(清掉
-        # 的那一側則共用:按下「停止並轉檔」會 `_run_lock(True)`,收尾結束時
+        # 的那一側則共用:按下「停止錄音」會 `_run_lock(True)`,收尾結束時
         # `_rec_done` 的 `_run_lock(False)` 一起把它熄掉)。⚠️ **一定是跑馬燈**:
         # 散會時間不是這支程式算得出來的東西。
         self._taskbar(None)
@@ -4771,7 +4882,7 @@ class App(tk.Tk):
         self._rec_tick()
 
     def _rec_stop(self) -> None:
-        r"""按下「停止並轉檔」:停止收音,然後把尾巴算完。
+        r"""按下「停止錄音」:停止收音,然後把尾巴算完。
 
         ⚠️ **收尾是最慢的一段**(講者分析的積壓要在這裡補完),而在此之前畫面
         一行字都沒有的話,使用者無從判斷是還在算、還是卡住了——2026-08-04 那場
@@ -4785,6 +4896,9 @@ class App(tk.Tk):
         self._rec_status.configure(text="正在停止收音…")
         self.update_idletasks()      # `stop()` 會擋住主執行緒(補零/修剪),先把這句畫出來
         tracks = self._rec["recorder"].stop()
+        # ⚠️ **音軌清單要記在 `_rec` 上**:收尾中關視窗時 `_close_salvage` 要靠它保音軌,
+        # 而 `Recorder.stop()` 第二次呼叫回的是空清單(軌已經交出去了)。
+        self._rec["tracks"] = tracks
         # ⚠️ **收音停止的時刻要記下來**:計時器靠它停(見 `_rec_tick`),關視窗時要問
         # 的「錄了多久」也靠它——收尾期間拿現在的時間去減開錄時刻會越報越長。
         self._rec_t1 = time.monotonic()
@@ -4795,51 +4909,30 @@ class App(tk.Tk):
         cores = self._run_cores.get()
         self._run_lock(True)
         self._run_bar.configure(value=0)
+        self._rec_salvaged = None
 
         def work(say) -> None:
             try:
                 if not tracks or max((t.duration for t in tracks), default=0.0) < 2.0:
                     raise UserFacingError("錄音太短(不到 2 秒),沒有可轉的內容")
-                # 收尾再套一次(同網頁版 `_finish_recording`):錄音中使用者可能改過
-                pipeline.apply_worker_count(cores)
-                result = live_scribe.run_live_finish(
-                    tracks, live, out_dir, stem, num_speakers=speakers,
-                    on_stage=lambda stage, frac: say(("run_stage", (stage, frac))),
-                )
-                wavs = [Path(p) for p in result.outputs
-                        if str(p).lower().endswith(".wav")]
-                # 首行講錄音檔存在哪(同網頁版 `_finish_recording`),**不講執行裝置**:
-                # 收尾不是一次跑完整條管線,`run_live_finish` 給的 device 是空字串——
-                # 先前照抄檔案轉檔那句,畫面上就是「執行裝置:・」(2026-09-02 使用者
-                # 截圖對照網頁版抓到的)。
-                preview = (f"(錄音檔已存於 output 資料夾:"
-                           f"{'、'.join(p.name for p in wavs)})\n\n{result.preview}")
-                if not pending.anyone_to_name(result.speakers,
-                                              result.speaker_hints or {}):
-                    preview = f"{NO_SPEECH_NOTE}\n\n{preview}"
-                say(("run_preview", preview))
-                # 試聽剪**對應的音軌**(`speaker_sources`:線上會議的現場講者剪麥克風軌、
-                # 遠端講者剪系統軌,剪錯軌只會聽到回音版或無聲)。⚠️ **要在刪錄音工作目錄
-                # 之前剪**——軌檔就住在那裡。先前一律從合成後的立體聲檔剪、而且是第一次
-                # 按試聽才剪,雙軌合成失敗那條(`stem.wav` 根本不存在)就整批靜默失敗。
-                clips = (naming_core._cut_speaker_clips(
-                             Path(tracks[0].path), result.speaker_hints or {},
-                             sources=result.speaker_sources)
-                         if result.speaker_hints else {})
-                # 核對的來源只能用 output\ 裡的成品音檔:`speaker_sources` 指的是錄音
-                # 工作目錄裡的軌檔,而那個目錄底下幾行就整個刪掉了(同網頁版)。
-                audit_src = wavs[0] if wavs else None
-                say(("named", dict(
-                    result=result, src=audit_src,
-                    audit=(naming_core._audit_payload(result, audit_src, sources={})
-                           if audit_src else {}),
-                    clips=clips)))
-                # 音檔已進 output/、試聽片段已剪出:錄音工作目錄功成身退(同網頁版)。放
-                # 最後:前面任何一步炸掉都還留著原始素材。⚠️ **先前這裡沒刪**——每一場
-                # 都把整場的原始 wav 留在 `recordings` 底下(2026-09-02 查到八場),而
-                # 啟動時的 `cleanup_stale_temp` 刻意不掃那裡(錄音不能重來)。
-                if rec_dir is not None:
-                    shutil.rmtree(rec_dir, ignore_errors=True)
+                try:
+                    finish(say)
+                except BaseException:
+                    # ⚠️ **收尾沒做完(按了中止、報錯)也要先把音軌保進 output 再報錯**
+                    # (`docs/spec/01` §1.3 原則 4;2026-09-15 使用者裁定補上,見
+                    # `live.salvage_tracks`)。⚠️ **包住整段、不只 `run_live_finish`**:
+                    # 它成功之後剪試聽、組核對資料也可能炸,那時音檔雖然已經在 output,
+                    # 再搬一次(同名覆寫、內容相同)換「每一條失敗路徑都講得出檔在哪」划算。
+                    # 「錄音太短」刻意在這之外:不到 2 秒沒有東西值得保。
+                    # ⚠️ **先收掉增量轉錄再搬**:它還開著軌檔的話 Windows 不准搬,只能退回
+                    # 複製(慢、而且原檔刪不掉)。`close()` 是冪等的,底下 `finally` 再叫一次無妨。
+                    try:
+                        live.close()
+                    except Exception:
+                        logger.exception("保音軌之前收拾增量轉錄失敗")
+                    self._rec_salvaged = (
+                        live_scribe.salvage_tracks(tracks, out_dir, stem), len(tracks))
+                    raise
             finally:
                 # ⚠️ **收尾走哪條路都要 close**(成功、報錯、按停止都算):它收的
                 # 是講者分析**子行程**、暫存目錄與那個鎖檔。漏收的症狀有三層,而
@@ -4853,12 +4946,57 @@ class App(tk.Tk):
                 # ⚠️ `close()` 刻意做成冪等,放 `finally` 兜底不怕重複呼叫。
                 live.close()
 
+        def finish(say) -> None:
+            # 收尾再套一次(同網頁版 `_finish_recording`):錄音中使用者可能改過
+            pipeline.apply_worker_count(cores)
+            result = live_scribe.run_live_finish(
+                tracks, live, out_dir, stem, num_speakers=speakers,
+                on_stage=lambda stage, frac: say(("run_stage", (stage, frac))),
+            )
+            wavs = [Path(p) for p in result.outputs
+                    if str(p).lower().endswith(".wav")]
+            # 首行講錄音檔存在哪(同網頁版 `_finish_recording`),**不講執行裝置**:
+            # 收尾不是一次跑完整條管線,`run_live_finish` 給的 device 是空字串——
+            # 先前照抄檔案轉檔那句,畫面上就是「執行裝置:・」(2026-09-02 使用者
+            # 截圖對照網頁版抓到的)。
+            preview = (f"(錄音檔已存於 output 資料夾:"
+                       f"{'、'.join(p.name for p in wavs)})\n\n{result.preview}")
+            if not pending.anyone_to_name(result.speakers,
+                                          result.speaker_hints or {}):
+                preview = f"{NO_SPEECH_NOTE}\n\n{preview}"
+            say(("run_preview", preview))
+            # 試聽剪**對應的音軌**(`speaker_sources`:線上會議的現場講者剪麥克風軌、
+            # 遠端講者剪系統軌,剪錯軌只會聽到回音版或無聲)。⚠️ **要在刪錄音工作目錄
+            # 之前剪**——軌檔就住在那裡。先前一律從合成後的立體聲檔剪、而且是第一次
+            # 按試聽才剪,雙軌合成失敗那條(`stem.wav` 根本不存在)就整批靜默失敗。
+            clips = (naming_core._cut_speaker_clips(
+                         Path(tracks[0].path), result.speaker_hints or {},
+                         sources=result.speaker_sources)
+                     if result.speaker_hints else {})
+            # 核對的來源只能用 output\ 裡的成品音檔:`speaker_sources` 指的是錄音
+            # 工作目錄裡的軌檔,而那個目錄底下幾行就整個刪掉了(同網頁版)。
+            audit_src = wavs[0] if wavs else None
+            say(("named", dict(
+                result=result, src=audit_src,
+                audit=(naming_core._audit_payload(result, audit_src, sources={})
+                       if audit_src else {}),
+                clips=clips)))
+            # 音檔已進 output/、試聽片段已剪出:錄音工作目錄功成身退(同網頁版)。放
+            # 最後:前面任何一步炸掉都還留著原始素材。⚠️ **先前這裡沒刪**——每一場
+            # 都把整場的原始 wav 留在 `recordings` 底下(2026-09-02 查到八場),而
+            # 啟動時的 `cleanup_stale_temp` 刻意不掃那裡(錄音不能重來)。
+            if rec_dir is not None:
+                shutil.rmtree(rec_dir, ignore_errors=True)
+
         self._run_job(work, self._rec_done)
 
     def _rec_done(self, error) -> None:
         """收尾結束(成功、報錯、停止都走這裡),所以防睡眠一定會解除。"""
         power.stay_awake_end()
         flag = self._work_outcome(error, naming=True)
+        # 保音軌的結果與錄音工作目錄要在 `clear()` 之前取出來:沒存成時要講原始檔的完整路徑
+        note = salvage_note(self._rec_salvaged, self._rec.get("dir"))
+        self._rec_salvaged = None
         self._rec.clear()
         self._busy["rec"] = False
         self._rec_finishing = False
@@ -4869,15 +5007,18 @@ class App(tk.Tk):
             self._rec_status.configure(text="收尾完成,逐字稿在下面。")
             self._stage("完成。")
             self._run_open.configure(state="normal")
+        elif isinstance(error, Cancelled):
+            # ⚠️ **自己按的「中止收尾」不是出錯**(2026-09-15 補):先前這裡沒有這一支,
+            # `Cancelled` 落到最後的兜底——畫面寫「收尾時出錯」、紀錄檔多一段堆疊,而
+            # 按下去那一刻 `_work_abort` 才剛講過錄音檔會留著。
+            self._rec_status.configure(text=REC_ABORTED + note)
+            self._stage("已依要求停止。")
         elif isinstance(error, UserFacingError):
-            # 自家的錯誤(錄音太短之類)照原話講;原始音檔沒有被刪
-            self._rec_status.configure(
-                text=f"{error}。原始音檔留在 recordings 資料夾。")
+            # 自家的錯誤照原話講。「錄音太短」在保音軌之前就擋下,`note` 是空的
+            self._rec_status.configure(text=f"{error}。{note}")
         else:
             logger.exception("錄音收尾失敗", exc_info=error)
-            self._rec_status.configure(
-                text="收尾時出錯,詳情見紀錄檔(logs 資料夾)。"
-                     "⚠ 原始音檔還在,可以用「轉錄音檔」重轉一次。")
+            self._rec_status.configure(text=REC_FAILED + note)
         winui.flash_taskbar(self)       # 理由見 `_run_done` 最後那一行
 
     # ---- 命名區(轉完之後才出現)------------------------------------------ #
@@ -6156,11 +6297,11 @@ class App(tk.Tk):
         self._doc_src.bind("<FocusOut>", lambda _e: self._doc_ph_show())
         self._doc_ph_show()
 
-        # ---- 選檔鈕列(卡片外;網頁版:兩顆等寬、「清空」照內容寬)----
+        # ---- 選檔鈕列(卡片外;兩顆與底下的動作列同寬對齊、「清空」照內容寬)----
+        # ⚠️ 原本照網頁版是兩欄 `uniform` 平分整列,而動作列 2026-09-13 收窄成固定寬之後,
+        # 上排就比下排長一截(這台 289 對 270),2026-09-15 使用者圈出來要對齊。
         row = ttk.Frame(inner, style="Page.TFrame")
         row.pack(fill="x", pady=(gap, 0))
-        row.columnconfigure(0, weight=1, uniform="pick")
-        row.columnconfigure(1, weight=1, uniform="pick")
         self._doc_pick_btns = (
             HandButton(row, text="選擇檔案…", style=skin.CTA_PAGE_STYLE,
                        command=self._doc_pick_files),
@@ -6171,10 +6312,7 @@ class App(tk.Tk):
         )
         for _btn in self._doc_pick_btns:        # 轉檔中一併鎖住(見 `_data_lock`)
             self._lockable(_btn)
-        self._doc_pick_btns[0].grid(row=0, column=0, sticky="ew", padx=(0, gap // 2))
-        self._doc_pick_btns[1].grid(row=0, column=1, sticky="ew",
-                                    padx=(gap - gap // 2, 0))
-        self._doc_pick_btns[2].grid(row=0, column=2, padx=(gap, 0))
+        self._action_slot(row, *self._doc_pick_btns[:2], tail=self._doc_pick_btns[2])
         # 「已選 N 個檔案」:空的時候整行收起來(見 `_doc_refresh_summary`),擠在選檔鈕與
         # 動作列之間,所以要 `before=` 動作列
         self._doc_summary = self._wrap(
@@ -6194,6 +6332,8 @@ class App(tk.Tk):
         self._doc_open = HandButton(bar, text="輸出資料夾…", style=skin.SKIP_PAGE_STYLE,
                                     state="disabled", command=self._doc_open_dirs)
         self._action_slot(bar, self._doc_run, self._doc_open)
+        # 窄視窗的退路:選檔鈕列放不下「清空」時,這兩列一起縮短、維持對齊(`_slot_fit`)
+        self._slot_shrink(row, bar, tail=self._doc_pick_btns[2])
 
         # ---- 進階參數設定:三個選項(網頁版的 Accordion,預設收著)----
         self._doc_adv = self._fold(
@@ -6596,6 +6736,7 @@ class App(tk.Tk):
         self._help_body = body
         body.bind("<<Copy>>", self._help_copy)   # 複製時剝掉斷點用的空白(見 `_help_run`)
         self._help_photo = None          # ⚠️ 圖片的參照要自己留著,否則被 GC 掉就不見了
+        self._help_links: list[str] = []  # 畫到第幾條連結(tag 名的流水號,見 `_help_link`)
         for name, opts in (
             # 字級照網頁版量的(@150% 墨跡高:大標 33、小標 23~24、內文 21 實體 px;Tk 17pt
             # 的墨跡約 31、12pt 約 22、10pt 約 21)。大標的 spacing1 是整頁最上面那段留白;
@@ -6619,6 +6760,9 @@ class App(tk.Tk):
             # 行內粗體與表格沒跟」。
             ("bold", dict(font=(self.fam, HELP_PT[""], "bold"))),
             ("code", dict(font=(MONO_FAMILY, HELP_PT[""]), background=self.pal["btn_off"])),
+            # 裸網址(`helpmd` 的 `link`):點了用預設瀏覽器開(`_help_link`)。⚠️ **藍字
+            # 底線兩個都要**——深色皮膚的藍在深底上對比本來就低,只有顏色的話看不出它可以點。
+            ("link", dict(foreground=self.pal["accent"], underline=True)),
             ("block", dict(font=(MONO_FAMILY, HELP_PT[""]), background=self.pal["btn_off"],
                            lmargin1=self.px(SP_MD), lmargin2=self.px(SP_MD),
                            spacing1=self.px(SP_XS), spacing3=self.px(SP_XS))),
@@ -6854,8 +6998,50 @@ class App(tk.Tk):
                     body.insert("end", "・", (tag, gap))
                 for span in block.spans:
                     tags = tuple(t for t in (tag, gap, span.style) if t)
+                    start = body.index("end-1c")
                     self._help_insert(span.text, tags)
+                    if span.style == "link":
+                        self._help_link(span.text, start)
             body.insert("end", "\n")
+
+    def _help_link(self, url: str, start: str) -> None:
+        r"""把剛插進去的那一段標成可以點的連結(`start` 到目前的結尾)。
+
+        (2026-09-16 使用者:說明最後的下載網址「做成可點的連結」。)
+        ⚠️ **每一條網址要有自己的 tag**:`tag_bind` 綁的是整個 tag,共用一個的話點哪一條
+        都開同一個網址。藍字底線那套樣式仍然掛在共用的 `link` 上,這裡只管「點了開誰」。
+        ⚠️ **綁 `<ButtonRelease-1>` 而且要讓開選取**:綁 `<Button-1>` 的話,想用滑鼠把網址
+        拉起來複製的人**一按下去就被丟進瀏覽器**——而「選起來自己抄」本來就是這段唯一的
+        用法(2026-09-16 加連結之前就是這樣用的),不能因為多了連結反而沒了。
+        ⚠️ **內容區是 `disabled` 的**(唯讀是這樣做的),tag 的滑鼠事件照樣進得來(實測);
+        游標得自己換——Text 本身釘在 `arrow`,而 `tag_configure` 沒有 `cursor` 這個選項。"""
+        body = self._help_body
+        name = f"link{len(self._help_links)}"
+        self._help_links.append(url)
+        body.tag_add(name, start, "end-1c")
+
+        body.tag_bind(name, "<ButtonRelease-1>",
+                      lambda _e, u=url: self._help_link_click(u))
+        body.tag_bind(name, "<Enter>", lambda _e: body.configure(cursor="hand2"))
+        body.tag_bind(name, "<Leave>", lambda _e: body.configure(cursor="arrow"))
+
+    def _help_link_click(self, url: str) -> None:
+        """放開滑鼠的那一下:是點連結就開,是拉選字就讓開(理由見 `_help_link`)。"""
+        with contextlib.suppress(tk.TclError):          # 沒有選取時 `sel.first` 會拋
+            if self._help_body.index("sel.first") != self._help_body.index("sel.last"):
+                return
+        self._open_url(url)
+
+    def _open_url(self, url: str) -> None:
+        """用**預設瀏覽器**開一個網址(說明裡的下載連結)。
+
+        ⚠️ **開不起來只記 log,不彈訊息**:網址就畫在使用者眼前、選起來就抄得到
+        (`_help_copy`),這時再蓋一個對話框上去只是擋住它。⚠️ 不要改用
+        `os.startfile`:那條路徑 spec 只授權給「本程式自己產出的資料夾」(`doctab`)。"""
+        try:
+            webbrowser.open(url)
+        except Exception:
+            logger.exception("開啟網址失敗:%s", url)
 
     @staticmethod
     def _help_gap(block, nxt) -> str:
@@ -7012,7 +7198,7 @@ class App(tk.Tk):
         ⚠️ **錄音與轉檔要分開講**:代價不一樣。錄音是「這一場沒了、而且不能重來」,
         轉檔是「時間白花了、檔案還在」——講同一句話會讓人用錯的心態按下去。
         ⚠️ **錄音的收尾是第三種,不能混進前兩種**(2026-09-04 使用者指定補上):按過
-        「停止並轉檔」之後 `rec` 與 `run` 兩個旗標**同時**舉著(見 `_rec_stop`),而
+        「停止錄音」之後 `rec` 與 `run` 兩個旗標**同時**舉著(見 `_rec_stop`),而
         那時收音早就停了——照舊那句講就是三句話全錯:「還在錄音中」(沒有)、「已錄
         62:05」(數字還跟著收尾一路往上跳)、「現在關閉會停止收音」(沒有收音可停)。
         真正的代價是**這一趟的逐字稿沒了,而聲音檔還在**。"""
@@ -7020,13 +7206,15 @@ class App(tk.Tk):
             # 收尾中就算到收音停止那一刻為止(見 `_rec_t1`)
             secs = int((self._rec_t1 or time.monotonic()) - self._rec_t0)
             clock = f"{secs // 60:02d}:{secs % 60:02d}"
+            # ⚠️ **講 output 不講 recordings**(2026-09-15):關閉時會先把音軌搬進 output
+            # (`_close_salvage`),而 recordings 在 `%LOCALAPPDATA%` 底下,同仁找不到。
             if self._rec_t1:
                 return (f"錄音已經停止(共 {clock}),正在轉成逐字稿。\n\n"
-                        "現在關閉會中斷,這一趟的逐字稿不會產生。聲音檔留在 recordings "
+                        "現在關閉會中斷,這一趟的逐字稿不會產生。聲音檔會存進 output "
                         "資料夾,之後要用「轉錄音檔」自己轉一次。\n\n"
                         "確定要關閉嗎?")
             return (f"還在錄音中(已錄 {clock})。\n\n"
-                    "現在關閉會停止收音。已經錄到的聲音會存進 recordings 資料夾,"
+                    "現在關閉會停止收音。已經錄到的聲音會存進 output 資料夾,"
                     "但不會轉成逐字稿——之後要用「轉錄音檔」自己轉一次。\n\n"
                     "確定要關閉嗎?")
         if self._busy["run"] or self._busy["doc"]:
@@ -7091,9 +7279,10 @@ class App(tk.Tk):
         檔案任何時刻都是合法 WAV),但會白白丟掉最後那不到兩秒。"""
         cancel.request()             # 轉檔那兩條會在下一個段落邊界停下來
         recorder, live = self._rec.get("recorder"), self._rec.get("live")
+        tracks = list(self._rec.get("tracks") or [])     # 收尾中:`_rec_stop` 記下的
         if recorder is not None:
             try:
-                recorder.stop()
+                tracks = recorder.stop() or tracks
             except Exception:
                 logger.exception("關閉時停止收音失敗")
         if live is not None:
@@ -7101,6 +7290,10 @@ class App(tk.Tk):
                 live.close()
             except Exception:
                 logger.exception("關閉時收拾增量轉錄失敗")
+        try:
+            self._close_salvage(tracks)
+        except Exception:
+            logger.exception("關閉時保存錄音檔失敗")
         try:
             power.stay_awake_end()
         except Exception:
@@ -7111,6 +7304,38 @@ class App(tk.Tk):
             self._taskbar_end()
         except Exception:
             logger.debug("關閉時清除工作列進度失敗", exc_info=True)
+
+    def _close_salvage(self, tracks: list) -> None:
+        r"""錄音中/收尾中關視窗:先把音軌保進 output,再讓視窗關掉(2026-09-15 使用者指定)。
+
+        同「收尾沒做完」那一條(`live.salvage_tracks`,`docs/spec/01` §1.3 原則 4):先前關視窗
+        時音檔只留在 `%LOCALAPPDATA%` 底下的 recordings,確認框也這樣講,同仁找不到。
+        ⚠️ **收尾中關掉,先等收尾那條執行緒自己保**(最多 `CLOSE_SALVAGE_WAIT_SEC`):`_shutdown`
+        已經要求取消、收掉了增量轉錄,它停下來就會走 `_rec_stop` 的失敗路徑保音軌——兩邊
+        一起搬同一批檔沒有好處。等不到(卡在引擎的長呼叫裡,軌檔可能還被它開著)才由這裡保;
+        萬一兩邊真的撞在一起,先搬走的那邊贏,另一邊找不到來源就算了,而退回複製的那條先寫暫存檔
+        再換名,output 裡不會出現寫到一半的檔。
+        ⚠️ **軌檔已經不在的不重保**:收尾那條搬走了、或收尾成功後刪了錄音工作目錄,都代表音檔
+        早已進 output——再保只會在紀錄檔留一串「沒能存進」。
+        ⚠️ **不到 2 秒的不保**(同「錄音太短」那條)。
+        ⚠️ **等待與搬檔之前先把視窗藏起來**:使用者已經按了「關閉」,一個凍住的視窗看起來就是
+        當掉。同一顆磁碟上搬是瞬間的,但搬不動退回複製時(不同磁碟、檔案被佔用),長會議的
+        音軌(約 115MB/小時)要幾秒。"""
+        stem = self._rec.get("stem")
+        tracks = [t for t in tracks if Path(t.path).exists()]
+        if not stem or not tracks or max(t.duration for t in tracks) < 2.0:
+            return
+        self.withdraw()
+        job = self._job_thread
+        if self._rec_finishing and job is not None and job.is_alive():
+            job.join(CLOSE_SALVAGE_WAIT_SEC)
+            done = self._rec_salvaged
+            if done is not None and len(done[0]) == done[1]:
+                return                           # 收尾那條已經全部保好了
+            tracks = [t for t in tracks if Path(t.path).exists()]
+            if not tracks:
+                return                           # 等的時候收尾做完了(工作目錄已刪)
+        live_scribe.salvage_tracks(tracks, OUTPUT_DIR, stem)
 
     # ---- 切頁 ----------------------------------------------------------- #
     def _show(self, key: str) -> None:

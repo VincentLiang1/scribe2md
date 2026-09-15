@@ -16,12 +16,19 @@ markdown-it 數過,實際用到的只有**七種**語法:
 | 程式碼區塊 | 2 | |
 | 行內粗體 | 280 | |
 | 行內 code | 68 | |
+| 裸網址 | 1 | **2026-09-16 加的第八種**,見下 |
 
-**完全沒用到**連結、斜體、有序清單、內嵌圖片、刪除線。所以這裡要蓋住的是七種語法
+**完全沒用到**斜體、有序清單、內嵌圖片、刪除線。所以這裡要蓋住的是八種語法
 ——多寫的每一種都是沒有人用的程式碼,而它跟刻意留的東西長得一模一樣。
-⚠️ **哪天說明文字用了第八種語法,這裡會安靜地把它當成普通文字印出來**(例如
+⚠️ **哪天說明文字用了第九種語法,這裡會安靜地把它當成普通文字印出來**(例如
 `[連結](網址)` 會原樣顯示中括號)。`tests/test_helpmd.py` 反向守著:掃真的那十篇,
 出現沒支援的語法就紅。
+
+⚠️ **連結認的是「裸網址」,不是 `[字](網址)`**(2026-09-16 使用者要下載最新版的網址
+可以點):說明文字裡只有一條網址,而**看得見的網址本身就是最好的連結文字**——同仁
+不點也抄得到,不必先知道「藍字底下藏著什麼」。Markdown 的連結語法照樣列在
+`UNSUPPORTED` 裡,寫了會紅。⚠️ **網址不要包反引號**:那是 `code`、先切,包了就變回
+一段不能點的等寬字(`tests/test_help_text.py` 釘著說明裡那一條)。
 
 ⚠️ **不要改用 markdown-it 之類的套件**:它現在是 gradio 的傳遞相依,而 gradio 正要
 從本 repo 移除——真要用就得在 `pyproject` 明寫一行,為了七種語法多一個相依不划算。
@@ -46,7 +53,11 @@ def plain(text: str) -> str:
 
 @dataclass(frozen=True)
 class Span:
-    """一段行內文字與它的樣式。`style` 是 `""`(一般)/`"bold"`/`"code"`。"""
+    """一段行內文字與它的樣式。
+
+    `style` 是 `""`(一般)/`"bold"`/`"code"`/`"link"`。⚠️ `link` 的 `text` **就是網址
+    本身**——這個子集只認裸網址,所以不必另外帶一個 `href`(見模組說明那條)。
+    """
 
     text: str
     style: str = ""
@@ -67,21 +78,31 @@ class Block:
     text: str = ""
 
 
-# 行內:`code` 先切,粗體其次。⚠️ **順序不能反**:反引號裡面的 `**` 是**字面值**
-# (說明文字裡真的有一句在講星號本身),先解粗體會把它吃掉。
-_INLINE = re.compile(r"`([^`]+)`|\*\*(.+?)\*\*")
+# 行內:`code` 先切,粗體其次,裸網址最後。⚠️ **順序不能反**:反引號裡面的 `**` 是
+# **字面值**(說明文字裡真的有一句在講星號本身),先解粗體會把它吃掉;網址擺在最後
+# 是同一條——`code` 裡的網址是要「原樣給人看的字」,不是要點的連結。
+# ⚠️ **網址的字元集要自己收兩道**:①**只認 ASCII**(`\S+` 或 `\w` 都會把貼在網址後面的
+# 中文整句吃進去——說明文字裡「…latest」「…latest。」正是常態,點下去就是 404);
+# ②**結尾另一套**:句尾的 `.`／`,`／`)` 是句子的標點,不是網址的一部分(代價是
+# 真的以 `)` 收尾的網址會少一個字,說明裡沒有那種,要用時改包成 `code`)。
+_URL_CHARS = r"A-Za-z0-9._~:/?#@!$&*+,;=%()'\[\]-"   # 網址收得下的字元(RFC 3986,**只有 ASCII**)
+_URL_END = r"A-Za-z0-9_~/#@$&*+=%-"                  # 結尾不收句讀與括號:那是句子的,不是網址的
+_URL = rf"https?://[{_URL_CHARS}]*[{_URL_END}]"
+_INLINE = re.compile(rf"`([^`]+)`|\*\*(.+?)\*\*|({_URL})")
 
 
 def spans(text: str) -> tuple[Span, ...]:
-    """把一行文字切成 (文字, 樣式) 的序列。"""
+    """把一行文字切成 (文字, 樣式) 的序列。`style` 多一種 `link`(裸網址,見模組說明)。"""
     text = plain(text)
     out: list[Span] = []
     pos = 0
     for m in _INLINE.finditer(text):
         if m.start() > pos:
             out.append(Span(text[pos:m.start()]))
-        out.append(Span(m.group(1), "code") if m.group(1) is not None
-                   else Span(m.group(2), "bold"))
+        code, bold, url = m.groups()
+        out.append(Span(code, "code") if code is not None
+                   else Span(bold, "bold") if bold is not None
+                   else Span(url, "link"))
         pos = m.end()
     if pos < len(text):
         out.append(Span(text[pos:]))
