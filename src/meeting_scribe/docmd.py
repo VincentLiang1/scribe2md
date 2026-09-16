@@ -65,6 +65,10 @@ KIND_LEGACY_UPGRADE = "legacy_upgrade"
 KIND_ATTACHMENT = "attachment"
 KIND_DEPTH_LIMIT = "depth_limit"
 KIND_CYCLE = "cycle"
+# 網頁程式(`<script>`)裡的資料:AI 做的單檔簡報把內文放在 JS 物件裡、
+# 由程式畫出來(見 docscript)。照資料原樣列出時是**告知**(lossy=False,
+# 同 side_by_side_layout 的「已還原」);夾在程式碼裡讀不出來的才算失真
+KIND_SCRIPT_DATA = "script_data"
 
 NOTE_OPEN, NOTE_CLOSE = "〔", "〕"
 

@@ -104,6 +104,12 @@ MAX_CONTENT = 1176
 # 共用的間距尺規(三個 repo 同一組值,理由見檔頭)。
 SP_XS, SP_SM, SP_MD, SP_LG, SP_XL = 4, 8, 12, 16, 24
 PAGE_PAD, CARD_PAD, CARD_GAP = 20, SP_XL, 20
+# 「現場收音」那行狀態上下各留多少(卡片 → 狀態 → 停止錄音鈕)。
+# ⚠️ **是 `CARD_GAP` 與 `SP_SM` 平分,不是另挑一個數**(2026-09-16 使用者圈出來:「讓文字
+# 上方及下方的空白相等」):原本上面吃動作列的 `CARD_GAP`、下面只有 `SP_SM`,150% 實拍
+# 墨跡上 32 下 14 實體 px。兩段加起來與原本相同,所以是那行字往上移、鈕不跟著往上跑
+# (同日字級 9 → 10 粗體,字框高了 2 px,鈕只因此往下 2 px;改完實拍上 24 下 23)。
+REC_STATUS_GAP = (CARD_GAP + SP_SM) // 2
 
 # 分頁列那顆 emoji 要往上推幾個邏輯像素,才會與旁邊的中文字對齊。
 # ⚠️ **它不是憑感覺調的**:emoji 走 Segoe UI Emoji 的後備字型,基線與
@@ -344,7 +350,7 @@ REC_IDLE = "尚未開始錄音。"
 # 按了「停止錄音」之後、收尾跑完之前那一句(同網頁版的 `_REC_FINISHING_MD`,
 # 只把方位詞換成這一版的版面:網頁版預覽在右邊,這裡在下面)。
 # ⚠️ **一定要有這句、而且計時器要停**:先前那行字整個收尾期間都還寫著「● 錄音中・
-# 已錄 62:05」而且**數字繼續往上跳**——收音其實早就停了(`_rec_tick` 只看
+# 已錄 1:02:05」而且**數字繼續往上跳**——收音其實早就停了(`_rec_tick` 只看
 # `_rec` 裡的 recorder,而它要到 `_rec_done` 才清掉)。長會議的收尾要跑幾十分鐘,
 # 那段時間畫面等於在說謊,而使用者唯一的判讀是「它還在錄」。
 # ⚠️ **不寫 Markdown 的粗體記號**:狀態行是普通的 ttk.Label,`**` 會原樣畫出來。
@@ -749,6 +755,9 @@ STYLES = (
     # ⚠️ **底色是 `page` 不是 `card`**:`ttk.Label` 是實色底,坐在視窗底上卻塗卡片白,
     # 就是一塊白矩形浮在灰底上——那與「這一行的背景髒了」長得一模一樣。
     ("PageStatus.TLabel", "page", "muted", 9, False),
+    # 「現場收音」那一行狀態:大一號、粗體(2026-09-16 使用者圈出來指定)。⚠️ **要自己一個,
+    # 不是改 `PageStatus`**:那一款文件頁的「已選幾個」與底下備註也在穿,使用者圈的只有這一行。
+    ("RecStatus.TLabel", "page", "muted", 10, True),
     # ⚠️ **警告要有自己的顏色,不是把字加粗**:網頁版是 `**…**`,而 Tk 畫不出
     # Markdown(會原樣印出四個星號)。兩種警告(詞表超出預算、替換規則缺新詞)
     # 的共同點是**使用者不會自己發現**,所以它要跳出來。
@@ -3992,7 +4001,7 @@ class App(tk.Tk):
             if k == key:
                 box.pack(fill="x", pady=(self.px(SP_XL), 0))
                 if card_packed:
-                    bar.pack(fill="x", pady=(self.px(CARD_GAP), 0))
+                    self._bar_pack(k, bar)
             else:
                 box.pack_forget()
                 bar.pack_forget()
@@ -4000,6 +4009,15 @@ class App(tk.Tk):
             self._speakers_box.pack_forget()
         else:
             self._speakers_box.pack(fill="x", pady=(self.px(SP_XL), 0))
+
+    def _bar_pack(self, key: str, bar: ttk.Frame) -> None:
+        r"""把某個模式的動作列放到大卡底下(切模式、命名收工兩條路共用)。
+
+        ⚠️ **收音那一列頂端有一行狀態**,它上面的空白要與底下到鈕的那段相等(`REC_STATUS_GAP`);
+        另外兩列頂端就是鈕,照樣隔 `CARD_GAP`。⚠️ 兩條路各寫各的 pady 時,只改到一條的
+        症狀是「命名完回來那行字又沉下去」——所以只寫在這裡。"""
+        gap = REC_STATUS_GAP if key == "rec" else CARD_GAP
+        bar.pack(fill="x", pady=(self.px(gap), 0))
 
     # ---- 轉現成的錄音、錄影 ---------------------------------------------- #
     def _file_build(self, parent) -> ttk.Frame:
@@ -4401,14 +4419,15 @@ class App(tk.Tk):
         整個凍結——那就是掉音訊。`power.stay_awake_begin()` 在開始時舉旗、收尾解除。"""
         bar = ttk.Frame(parent, style="Page.TFrame")
         self._rec_status = self._wrap(
-            ttk.Label(bar, text=REC_IDLE, style="PageStatus.TLabel",
+            ttk.Label(bar, text=REC_IDLE, style="RecStatus.TLabel",
                       justify="left"))
         # ⚠️ 狀態列自己一列、**跨滿四欄**(`_action_slot` 排出來的:鈕｜縫｜鈕｜剩餘):
         # 它是那顆鈕的說明,不是第三顆鈕。⚠️ **少跨一欄就會把縫撐開**:錄音中那行字很長
         # (情境、已錄時間、背景轉錄進度),而跨的欄裡若沒有 `weight=1` 那一欄,grid 會把
         # 多出來的寬度塞給縫——「⚙ 進階參數設定…」於是被推往右邊,錄得越久推得越遠。
+        # 上方那一段由 `_bar_pack` 給(同是 `REC_STATUS_GAP`),兩段相等這行字才在正中間
         self._rec_status.grid(row=0, column=0, columnspan=4, sticky="w",
-                              pady=(0, self.px(SP_SM)))
+                              pady=(0, self.px(REC_STATUS_GAP)))
         self._rec_go = self._action_btn(bar, "rec", REC_ACTION)
         self._action_slot(bar, self._rec_go, self._adv_button(bar), row=1)
         self._slot_shrink(bar)                  # 視窗窄到放不下時兩顆一起縮
@@ -4800,14 +4819,17 @@ class App(tk.Tk):
         「● 錄音中・已錄 …」,而且數字繼續加——收音早就停了。"""
         if not self._rec.get("recorder") or self._rec_t1:
             return
-        secs = int(time.monotonic() - self._rec_t0)
+        secs = time.monotonic() - self._rec_t0
         live = self._rec.get("live")
         done = live.transcribed_until() if live is not None else 0.0
-        tail = (f"背景轉錄:已完成至 {int(done) // 60:02d}:{int(done) % 60:02d}"
+        # ⚠️ **時間一律走 `pipeline.mmss`,不准自己 `// 60`**(2026-09-16 使用者回報):
+        # 移植網頁版時把它寫成就地的「分:秒」,分鐘不進位,錄到三小時就顯示「已錄 187:44」。
+        # 網頁版三處都是叫 `pipeline.mmss`,下面的即時預覽也是——只有這裡漏了。
+        tail = (f"背景轉錄:已完成至 {pipeline.mmss(done)}"
                 if done > 0 else "背景轉錄暖機中…")
         self._rec_status.configure(
             text=f"● 錄音中({self._rec.get('scene')})・已錄 "
-                 f"{secs // 60:02d}:{secs % 60:02d}。{tail}")
+                 f"{pipeline.mmss(secs)}。{tail}")
         if live is not None:
             self._rec_live_preview(live)
         self.after(1000, self._rec_tick)
@@ -5433,7 +5455,7 @@ class App(tk.Tk):
             self._scroll_top("run")
             return
         self._run_card.pack(fill="x")
-        bars[self._mode].pack(fill="x", pady=(self.px(CARD_GAP), 0))
+        self._bar_pack(self._mode, bars[self._mode])
         self._scroll_top("run")
 
     def _naming_hide(self) -> None:
@@ -5742,10 +5764,10 @@ class App(tk.Tk):
         tree.tag_configure("odd", background=(AUDIT_ZEBRA_DARK if self._dark()
                                               else AUDIT_ZEBRA_LIGHT))
         for i, row in enumerate(self._audit_rows):
-            mins, secs = divmod(int(row.start), 60)
+            # 時間走 `pipeline.mmss`:自己 `divmod(…, 60)` 的話一小時之後會寫成「75:12」
             tree.insert("", "end", iid=str(i), tags=("odd",) if i % 2 else (),
                         values=(AUDIT_UNPICKED, naming_core._ROW_PLAY,
-                                f"{mins:02d}:{secs:02d}", f"{row.seconds:.0f} 秒", row.text))
+                                pipeline.mmss(row.start), f"{row.seconds:.0f} 秒", row.text))
             var = tk.BooleanVar(value=False)
             var.trace_add("write", lambda *_a, n=i: self._audit_paint_pick(n))
             self._audit_picks[i] = var
@@ -7242,12 +7264,11 @@ class App(tk.Tk):
         ⚠️ **錄音的收尾是第三種,不能混進前兩種**(2026-09-04 使用者指定補上):按過
         「停止錄音」之後 `rec` 與 `run` 兩個旗標**同時**舉著(見 `_rec_stop`),而
         那時收音早就停了——照舊那句講就是三句話全錯:「還在錄音中」(沒有)、「已錄
-        62:05」(數字還跟著收尾一路往上跳)、「現在關閉會停止收音」(沒有收音可停)。
+        1:02:05」(數字還跟著收尾一路往上跳)、「現在關閉會停止收音」(沒有收音可停)。
         真正的代價是**這一趟的逐字稿沒了,而聲音檔還在**。"""
         if self._busy["rec"]:
             # 收尾中就算到收音停止那一刻為止(見 `_rec_t1`)
-            secs = int((self._rec_t1 or time.monotonic()) - self._rec_t0)
-            clock = f"{secs // 60:02d}:{secs % 60:02d}"
+            clock = pipeline.mmss((self._rec_t1 or time.monotonic()) - self._rec_t0)
             # ⚠️ **講 output 不講 recordings**(2026-09-15):關閉時會先把音軌搬進 output
             # (`_close_salvage`),而 recordings 在 `%LOCALAPPDATA%` 底下,同仁找不到。
             if self._rec_t1:

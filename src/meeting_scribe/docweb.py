@@ -8,14 +8,16 @@ multipart/related,用標準函式庫的 `email` 就能拆——零額外相依�
 連結原樣保留並下標記,讓使用者知道那裡有東西沒帶進來。
 """
 import base64
+import hashlib
 import logging
 import html as html_mod
 import re
 import urllib.parse
+from dataclasses import dataclass, field
 from email import message_from_bytes, policy
 from pathlib import Path
 
-from meeting_scribe import docimage, doctext, docmd
+from meeting_scribe import docimage, docmd, docscript, doctext
 from meeting_scribe.docmd import AssetsDir, Block, Heading, Image, Note, Para, Table
 from meeting_scribe.errors import UserFacingError
 
@@ -45,6 +47,19 @@ _CONTAINER_TAGS = [
 _ALL_BLOCK = frozenset(_BLOCK_TAGS + _CONTAINER_TAGS)
 # rowspan/colspan 的展開上限:壞掉或惡意的 HTML 會寫 rowspan="999999"
 _MAX_SPAN = 200
+
+# `<script>` 讀出來的內容(見 docscript)要排回**它在文件裡的位置**:走訪
+# 之前先把 script 換成這個佔位標籤,輪到它時再放進去。head 裡的 script
+# 沒有位置可言,排在最前面(AI 做的單檔簡報正是把整份內容放在 head)
+_SCRIPT_SLOT = "meeting-scribe-script"
+# 只讀 JavaScript。`application/json`(Next.js 的 __NEXT_DATA__ 之類)是頁面
+# 已經畫在標籤裡的資料,再收一次就重複;`text/template` 是 HTML 樣板不是程式
+_JS_TYPES = frozenset({
+    "", "text/javascript", "application/javascript", "module",
+    "text/ecmascript", "application/ecmascript",
+})
+# 網頁裡內嵌網頁的層數上限(簡報外殼 → 一頁 → …):壞掉或惡意的檔案可以無限套
+_MAX_EMBED_DEPTH = 3
 
 
 def _ensure_bs4():
@@ -252,13 +267,97 @@ def _img_block(
     return [], False
 
 
+@dataclass
+class _Embed:
+    """內嵌網頁遞迴時一路帶下去的狀態。
+
+    seen:已經列過的資料(指紋 → 第一次出現的頁名)。AI 做的簡報每一頁是
+    一份獨立網頁,**共用的資料檔會在每一頁各嵌一次**——實測一份 12 頁的
+    簡報,兩頁各嵌了同一批約 10 萬字的需求/設計文件,不去重的話 md 裡整份
+    出現兩次(RAG 會切出兩組一模一樣的 chunk)。"""
+    depth: int = 0
+    page: str = ""
+    seen: dict[str, str] = field(default_factory=dict)
+
+
+def _script_blocks(
+    tag, assets: AssetsDir, resources: dict[str, bytes], base: Path,
+    ocr_enabled: bool, embed: _Embed,
+) -> list[Block]:
+    """一個 `<script>` 裡的內容(內嵌的整頁網頁、資料)→ Blocks。"""
+    if tag.get("src") or (tag.get("type") or "").strip().lower() not in _JS_TYPES:
+        return []
+    js = tag.string or ""
+    if not any(q in js for q in "\"'`"):
+        return []
+    depth = embed.depth
+
+    def on_page(label: str, page: str) -> list[Block]:
+        if depth + 1 > _MAX_EMBED_DEPTH:
+            return [Note(
+                f"「{docmd.one_line(label)}」是網頁裡再內嵌的網頁,層數太深,沒有轉出來",
+                docmd.KIND_DEPTH_LIMIT,
+            )]
+        # 每一頁一個標題:RAG 切塊後才知道這段出自哪一頁(render 規則 2)
+        title = docmd.one_line(docscript.html_title(page) or label)
+        inner = _Embed(depth + 1, title, embed.seen)
+        return [Heading(depth + 1, title)] + _html_blocks(
+            page, assets, resources, base, ocr_enabled, inner,
+        )
+
+    blocks: list[Block] = []
+    minified: bool | None = None  # 只在真的有文字資料時才付這一趟
+    for lit in docscript.scan(js):
+        # 讀不出來的文字也算「有東西要說」:整批夾在算式裡的資料沒有一格
+        # 看得懂,不算進來的話它會連失真標記都沒有
+        text = docscript.has_prose(lit) or bool(docscript.skipped_prose(lit))
+        if text and minified is None:
+            minified = docscript.is_minified(js)
+        if not (docscript.has_pages(lit) or (text and not minified)):
+            continue
+        key = hashlib.sha1(f"{lit.name}\0{lit.value!r}".encode("utf-8", "surrogatepass")).hexdigest()
+        if key in embed.seen:
+            first = embed.seen[key]
+            blocks.append(Note(
+                f"網頁程式裡的資料「{lit.name}」與前面"
+                + (f"「{first}」那一頁" if first else "出現過的")
+                + "完全相同,不重複列出",
+                docmd.KIND_SCRIPT_DATA, lossy=False,
+            ))
+            continue
+        embed.seen[key] = embed.page
+        blocks.extend(docscript.literal_blocks(lit, on_page, depth, text_ok=not minified))
+    return blocks
+
+
 def _html_blocks(
     html: str, assets: AssetsDir, resources: dict[str, bytes], base: Path,
-    ocr_enabled: bool = True,
+    ocr_enabled: bool = True, embed: _Embed | None = None,
 ) -> list[Block]:
+    """HTML → Blocks。embed 是內嵌網頁的遞迴狀態(外層網頁不必給):標題整體
+    往下推 depth 層,讓內嵌的每一頁排在「這一頁」的標題底下。"""
+    embed = embed or _Embed()
+    depth = embed.depth
     mod = _ensure_bs4()
     soup = mod.BeautifulSoup(html, "lxml")
-    for junk in soup(["script", "style", "noscript"]):
+    # 註解一律先拿掉:`_own_md` 收容器「自己的文字」時,bs4 的 Comment 節點
+    # 用 str() 取出來就是**不帶 `<!-- -->` 的註解內文**——開發者寫給自己看的
+    # 「卡片由頁尾腳本動態插入」會變成一段正文(2026-09-17 那份簡報每頁都有)
+    for comment in soup.find_all(string=lambda s: isinstance(s, mod.element.PreformattedString)):
+        comment.extract()
+    lead: list[Block] = []  # head 裡的 script 讀出來的內容
+    slots: dict[str, list[Block]] = {}
+    for i, script in enumerate(soup.find_all("script")):
+        found = _script_blocks(script, assets, resources, base, ocr_enabled, embed)
+        if found and script.find_parent("body") is not None and script.find_parent("table") is None:
+            slot = soup.new_tag(_SCRIPT_SLOT)
+            slot["data-i"] = str(i)
+            script.replace_with(slot)
+            slots[str(i)] = found
+        else:
+            lead.extend(found)
+            script.decompose()
+    for junk in soup(["style", "noscript"]):
         junk.decompose()
 
     blocks: list[Block] = []
@@ -266,13 +365,15 @@ def _html_blocks(
     spanned_any = False
     root = soup.body or soup
     # root 自己也要算一份:文字直接掛在 <body> 底下的頁面 find_all 看不到
-    for tag in [root] + root.find_all(_BLOCK_TAGS + _CONTAINER_TAGS):
+    for tag in [root] + root.find_all(_BLOCK_TAGS + _CONTAINER_TAGS + [_SCRIPT_SLOT]):
         # 祖先有 table 就跳過:格內的段落已經在表格裡了,巢狀表格則由
         # 外層的 get_text 攤平——兩種情況同一條規則
         if tag.find_parent("table") is not None:
             continue
         name = tag.name.lower()
-        if name == "table":
+        if name == _SCRIPT_SLOT:
+            blocks.extend(slots.get(tag.get("data-i", ""), []))
+        elif name == "table":
             rows, spanned = _table_rows(tag)
             spanned_any = spanned_any or spanned
             if rows:
@@ -284,7 +385,7 @@ def _html_blocks(
         elif name in ("h1", "h2", "h3", "h4", "h5", "h6"):
             text = tag.get_text(" ", strip=True)
             if text:
-                blocks.append(Heading(int(name[1]), text))
+                blocks.append(Heading(int(name[1]) + depth, text))
         elif name in ("p", "pre"):
             # 這兩個不會包住區塊元素(lxml 會把誤寫的結構拆掉),整段交給
             # markdownify 才留得住 pre 的換行與 p 的行內格式
@@ -309,7 +410,7 @@ def _html_blocks(
         notes.append(Note(
             "表格中的跨欄/跨列儲存格已展開成重複值", docmd.KIND_MERGED_CELLS,
         ))
-    return notes + blocks
+    return notes + lead + blocks
 
 
 # 這些的內容本來就不該出現在輸出裡(_html_blocks 也是先 decompose 掉)。
@@ -319,9 +420,15 @@ _NON_CONTENT_RE = re.compile(
     r"<!--.*?-->|<(script|style|noscript|head)\b[^>]*>.*?</\1\s*>", re.S | re.I,
 )
 _TAG_RE = re.compile(r"<[^>]+>")
+_SCRIPT_BODY_RE = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.S | re.I)
+# JS 的三種字串。稽核刻意**不用** docscript 的詞法分析去找內嵌網頁(同下面
+# 不用 bs4 的理由:reader 漏的,對照側不能跟著漏)
+_JS_STRING_RE = re.compile(
+    r'"((?:[^"\\\n]++|\\.)*+)"|\'((?:[^\'\\\n]++|\\.)*+)\'|`((?:[^`\\]++|\\.)*+)`', re.S,
+)
 
 
-def _visible_texts(html: str) -> list[str]:
+def _visible_texts(html: str, depth: int = 0) -> list[str]:
     """網頁上「看得到的文字」,一段連續的文字算一筆。
 
     **刻意用 regex 剝標籤、不用 bs4**:自我稽核要的是一份**與 reader 無關**
@@ -334,9 +441,20 @@ def _visible_texts(html: str) -> list[str]:
     比對必定找不到。實測一份正常轉出來的電子書噴 2,312 筆假落差,逐筆查
     全部都在輸出裡。切到葉節點就沒有這個對不齊的問題(代價是被行內標籤
     切碎的短句會低於 GAP_MIN_CHARS 而不列入比對,那是可接受的靈敏度損失)。
+
+    **script 字串裡的整頁網頁也算看得到的文字**(放映時會灌進 iframe,見
+    docscript):不算的話,整份簡報漏轉時稽核會跟著說「什麼都沒少」——
+    2026-09-17 那份 13 頁的簡報就是 `lossy: 0`。資料字面值不在此列:它們
+    跟 UI 文案(「載入失敗」)在原始碼裡長得一樣,列進來只會整批誤報。
     """
-    body = _NON_CONTENT_RE.sub(" ", html)
     out: list[str] = []
+    if depth < _MAX_EMBED_DEPTH:
+        for script in _SCRIPT_BODY_RE.findall(html):
+            for m in _JS_STRING_RE.finditer(script):
+                text = docscript.unescape(next(g for g in m.groups() if g is not None))
+                if docscript.is_html_document(text):
+                    out.extend(_visible_texts(text, depth + 1))
+    body = _NON_CONTENT_RE.sub(" ", html)
     for chunk in _TAG_RE.split(body):
         text = html_mod.unescape(chunk).strip()
         if text:
