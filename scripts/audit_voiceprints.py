@@ -44,8 +44,8 @@ from meeting_scribe import stdio, voiceprints  # noqa: E402
 # 報告與名字都是中文,輸出常被導向檔案(那時 stdout 退回 cp950)
 stdio.force_utf8()
 
-# ⚠️ **判準本身住在 `voiceprints.py`,不在這裡**:網頁介面的「健檢」
-# (data_tabs.vp_health_report)與這支命令列吃的是同一份,兩邊各寫一套的話,
+# ⚠️ **判準本身住在 `voiceprints.py`,不在這裡**:介面上的「健檢」
+# (`voiceprints.suspects`)與這支命令列吃的是同一份,兩邊各寫一套的話,
 # 使用者在畫面上看到的「可疑」與這裡算出來的會不一樣。門檻的實測來源
 # (為什麼是 0.20)寫在那邊的常數註解。這支只負責**報告怎麼排版**與 CLI。
 _MISFILED_MARGIN = voiceprints._MISFILED_MARGIN

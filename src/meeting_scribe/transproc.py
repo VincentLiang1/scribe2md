@@ -6,7 +6,7 @@ r"""轉錄子行程的父端(協定與「為什麼要獨立行程」見 transwor
   上下,批次一整個資料夾若每檔重開一支,光編譯就把轉檔時間吃掉。
   diarproc 綁定「一場錄音」的增量狀態所以錄完就死,這支沒有狀態。
 - **子行程降到 below-normal,父行程不降**:整個改動的目的就是這一條
-  ——讓吃 CPU 的東西讓路,而 gradio 的網頁伺服器(在父行程)隨時回應。
+  ——讓吃 CPU 的東西讓路,而視窗(在父行程)隨時回應。
 - **失敗不重啟、直接往上拋**:轉錄是轉檔的主線,重跑一次要幾十分鐘,
   默默重試只會讓使用者多等一輪還不知道發生什麼事。OCR 那支重啟是因為
   「一張圖失敗只影響一張圖」,這裡不成立。
@@ -82,8 +82,8 @@ class TransProcess:
             _worker_cmd(self._threads),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace",
-            # ⚠️ 這一行就是整個改動的目的:**只降子行程**。父行程(含 gradio
-            # 網頁伺服器)維持一般優先權,滿載時介面照樣回應。
+            # ⚠️ 這一行就是整個改動的目的:**只降子行程**。父行程(視窗本體)
+            # 維持一般優先權,滿載時介面照樣回應。
             # 優先權會被孫行程繼承(uv 環境下 sys.executable 是跳板,
             # 真正載模型的是它的子行程——ocr.py 實測兩層都從 8 降到 6)
             creationflags=_CREATE_NO_WINDOW | power.BELOW_NORMAL_PRIORITY_CLASS,

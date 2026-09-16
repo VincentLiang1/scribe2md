@@ -96,10 +96,10 @@ def _all_names() -> list[str]:
 
     ⚠️ **有聲紋卻不在名單上的人一定要列進來**(2026-08-15 code review 抓到
     命名下拉與改掛下拉都少了這一半):名單與聲紋庫是兩份資料,而
-    `data_tabs.orphan_names` 那整套安全網存在的理由,正是「這種狀態真的會
+    `roster.orphan_names` 那整套安全網存在的理由,正是「這種狀態真的會
     發生」(改名只改一邊、用記事本編過名單、半途而廢的改名)。選單裡找不到
     就只能自己打字,而打錯一個字就是聲紋庫裡多一個人——那正是這些下拉
-    要防的事。`_choice_layout` 的註解早就寫著這條規則,只是它靠 rivals
+    要防的事。`rival_order` 的註解早就寫著這條規則,只是它靠 rivals
     才做得到,沒有進候選的那些人漏在外面。"""
     return list(dict.fromkeys(
         [*attendees.load(), *voiceprints_store.known_names()]))
@@ -122,7 +122,7 @@ def _reassign_choices(spk, name_values, audit) -> list[str]:
     ⚠️ **排除當前這一位**:改掛的意思是「這幾段其實不是他」,把他自己排在
     第一個只會擋路。
 
-    ⚠️ 同樣**不加標記**,理由見 `_choice_layout`:選項字串就是寫進逐字稿的名字。
+    ⚠️ 同樣**不加標記**,理由見 `rival_order`:選項字串就是寫進逐字稿的名字。
     標示做在視覺層——原生視窗拿 `reassign_order` 回的筆數塗琥珀底
     (`desktop.App._mark_rivals`,使用者 2026-09-02:改掛的下拉要跟命名欄那個
     「相同的邏輯,將可能的放最前面,並標示黃色」)。"""

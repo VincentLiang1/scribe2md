@@ -48,7 +48,7 @@ def parse_rules(text: str) -> tuple[list[tuple[str, str]], list[str]]:
     """解析替換表內容,回傳 (規則, 缺「新詞」的壞行)。
 
     唯一的解析實作:轉換用的 _load_rules 與詞表分頁的統計/壞行點名
-    (data_tabs.replace_status)都用這一份,格式變更不會兩邊走鐘。"""
+    (wordlists.replace_status)都用這一份,格式變更不會兩邊走鐘。"""
     rules: list[tuple[str, str]] = []
     bad: list[str] = []
     for line in text.splitlines():

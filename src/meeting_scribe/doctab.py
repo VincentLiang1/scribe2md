@@ -1,13 +1,13 @@
-r"""「文字、圖像→MD」分頁的事件處理(app.build_ui 只負責接線)。
+r"""「文字、圖像→MD」分頁的事件處理(`desktop.py` 只負責接線)。
 
-分工同 `data_tabs.py`:**本模組不建任何 UI 元件**;需要狀態機(鎖介面、
-互斥旗標、進度)的部分留在 app.py。與 data_tabs 的差別是這裡連 gradio
-都不 import——按鈕亮暗改由 app 決定之後,本模組只剩純函式,錯誤一律
-`UserFacingError`(同 docsrc 的作風)。
+分工同 `roster.py`／`wordlists.py`:**本模組不建任何 UI 元件**,也不 import
+任何 UI 模組;需要狀態機(鎖介面、互斥旗標、進度)的部分留在 `desktop.py`。
+判準不是「講的是不是同一件事」,是**「換一套 UI 要不要改」**——本模組只剩
+純函式,錯誤一律 `UserFacingError`(同 docsrc 的作風)。
 
 把關錯誤在這裡一律**回傳說明文字**而不是拋例外:選檔階段還沒開始做事,
-用彈窗打斷太重。真正開始轉檔之後的錯誤才走 gr.Error,那是 app._doc_convert
-的事。
+用彈窗打斷太重。真正開始轉檔之後的錯誤才由 UI 層顯示,那是
+`desktop.App._doc_start` 的事。
 """
 import logging
 import os
@@ -33,7 +33,7 @@ def preview_summary(text, recursive: bool = True) -> str:
     可按,按下去才把關。理由是**貼上路徑時前端不一定會觸發 input 事件**
     ——按鈕沒亮會讓人以為工具壞了,而「按了才知道錯在哪」對使用者反而
     直觀(錯誤訊息會講清楚是空的、找不到、還是格式不支援)。
-    這裡只做即時回饋,不是把關;真正的把關在 app._doc_convert 那一步。
+    這裡只做即時回饋,不是把關;真正的把關在 `desktop.App._doc_start` 那一步。
     """
     if not str(text or "").strip():
         return ""
@@ -169,9 +169,9 @@ def _allow_foreground() -> bool:
 def open_output_dirs(dirs) -> None:
     """用檔案總管開啟輸出資料夾(只開最上層的那幾個)。
 
-    成立前提同 srcfile 的原生對話框:App 只綁 127.0.0.1(spec §7),瀏覽器
-    與伺服器必在同一台機器——所以「伺服器端開一個視窗」使用者才看得到。
-    真做成 Server 版時這個功能整組不成立。
+    成立前提同 srcfile 的原生對話框:程式與使用者在**同一台機器**上——所以
+    「程式開一個檔案總管視窗」使用者才看得到。真做成 Server 版時這個功能
+    整組不成立。
 
     **成功時不發任何提示**(使用者 2026-08-01 指定拿掉右上角的 toast):
     工作列本來就會提醒,而完整路徑已經印在批次報告裡了——「使用者找得到

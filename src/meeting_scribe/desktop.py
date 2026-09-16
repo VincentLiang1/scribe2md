@@ -867,6 +867,15 @@ ACTION_STOPPING = "停止中…"
 # 開錄之後隔多久才讓那顆鈕按得下去(防誤按,見 `App._rec_arm`)。⚠️ **不要再拉長**:
 # 真的按錯情境(開會前試按)兩秒就夠了,而超過這個長度會變成「按了停止沒反應」。
 REC_ARM_DELAY_MS = 2000
+# 按下「停止錄音」之後隔多久才讓「■ 中止收尾」按得下去(防誤按,見 `App._rec_finish_arm`)。
+# ⚠️ **這是同一顆鈕的第二段風險,2026-09-16 使用者真的誤按之後才補**:上面那道只套在
+# 「錄音中」那一態,而 `_rec_stop` 開頭就把同一位置的鈕翻成可按的「■ 中止收尾」——手滑
+# 連按第二下,一整場會議的收尾就沒了。⚠️ **比上面那道長,而且不共用同一個數字**:
+# `_rec_stop` 緊接著的 `recorder.stop()`(補零/修剪、標頭回填)會**擋住主執行緒**好幾秒,
+# 畫面凍著,而那段時間排進佇列的點擊等主執行緒回來照樣會送到這顆鈕上——「怎麼沒反應?
+# 再點一下」正好落在兩秒之後。⚠️ **代價不對稱**:真的想中止的人不差這五秒(收尾要跑
+# 幾十分鐘,而他剛按完停止、眼睛正在看狀態列),誤按卻是白等一整場。
+REC_FINISH_ARM_DELAY_MS = 5000
 # 錄音收尾中關視窗時,最多等收尾那條執行緒自己把音軌保好幾秒(見 `App._close_salvage`)。
 # ⚠️ **不要拉長**:等的時候視窗已經藏起來、行程還在,拉長只是讓「關了但還沒真的結束」那段
 # 變久;等不到也不會丟音軌——由關視窗那一側自己保。
@@ -893,7 +902,7 @@ def action_button(texts: ActionText, phase: str,
     | --- | --- | --- | --- |
     | `idle` | 開始那句 | 藍 | 看 `ready` |
     | `busy` | 停止那句 | 深紅 | 看 `ready`(錄音開頭兩秒是 `False`,見 `_rec_arm`) |
-    | `finish` | 中止收尾 | 深紅 | 看 `ready` |
+    | `finish` | 中止收尾 | 深紅 | 看 `ready`(收尾開頭五秒是 `False`,見 `_rec_finish_arm`) |
     | `stopping` | 停止中… | 深紅 | **一律鎖** |
 
     ⚠️ **這一支是那顆鈕唯一的真值來源**,而且是純函式——它測得動,`configure` 散在
@@ -1270,6 +1279,10 @@ class App(tk.Tk):
         # 位置**,手滑按兩下就是一場會議沒了(而錄音不能重來),所以開錄後兩秒才解鎖
         # (2026-09-12 使用者指定,見 `_rec_arm`)。
         self._rec_armed = True
+        # 「■ 中止收尾」解鎖了沒。⚠️ **與上面那個分開**:同一顆鈕的第二段風險——按下
+        # 「停止錄音」之後它在原地翻成「中止收尾」,第二下就放棄一整場的收尾
+        # (2026-09-16 使用者真的誤按,見 `_rec_finish_arm`)。
+        self._rec_abort_armed = True
         # 收尾沒做完時保住了哪些音軌:(存好的檔, 應該有幾條);`None` = 沒走到保音軌那一步
         # (成功、或「錄音太短」在那之前就擋下)。工作執行緒寫、`_rec_done` 在主執行緒讀——
         # 讀的時候工作執行緒已經結束了(`_run_job` 的收尾排在它後面),不必上鎖。
@@ -3009,9 +3022,16 @@ class App(tk.Tk):
                 continue
             btn, texts = entry
             phase = self._action_phase(key)
-            # ⚠️ **兩秒的防誤按只鎖「錄音中的那顆停止」**:套到 `idle` 上就是「錄完一場
-            # 之後開始錄音是灰的」——而解鎖它的 `after` 早就跑完了,再也不會有人來開。
-            ready = self._rec_armed if (key == "rec" and phase == "busy") else True
+            # ⚠️ **兩道防誤按各鎖一態,而且都只鎖錄音那一組**:套到 `idle` 上就是「錄完
+            # 一場之後開始錄音是灰的」——而解鎖它的 `after` 早就跑完了,再也不會有人來開。
+            # 兩道分別是開錄後兩秒的「■ 停止錄音」(`_rec_arm`)與按下停止後五秒的
+            # 「■ 中止收尾」(`_rec_finish_arm`);⚠️ **第二道不可以省著跟第一道共用旗標**:
+            # `_rec_stop` 開頭就翻到 `finish`,共用的話那時它還是上一道解鎖後的 `True`。
+            ready = True
+            if key == "rec" and phase == "busy":
+                ready = self._rec_armed
+            elif key == "rec" and phase == "finish":
+                ready = self._rec_abort_armed
             text, style, on = action_button(texts, phase, ready)
             btn.configure(text=text, style=style,
                           state="normal" if on else "disabled")
@@ -3059,6 +3079,18 @@ class App(tk.Tk):
         ⚠️ **只鎖畫面上那顆,不動 `_rec` 那條路**:收音本身早就開始了,這兩秒鎖的是
         「停」不是「錄」。"""
         self._rec_armed = True
+        self._action_refresh("rec")
+
+    def _rec_finish_arm(self) -> None:
+        r"""按下停止五秒後解鎖「■ 中止收尾」(2026-09-16 使用者誤按之後指定的第二道防誤按)。
+
+        ⚠️ **同一顆鈕的第二段風險**:`_rec_arm` 擋的是「開始→停止」那一跳,而按下停止之後
+        `_rec_stop` 又在**同一個位置**翻出一顆可按的「■ 中止收尾」——手滑第二下放棄的是
+        一整場會議的收尾(幾十分鐘)。⚠️ **要擋的不只是連點**:`_rec_stop` 緊接著的
+        `recorder.stop()` 會擋住主執行緒好幾秒,畫面凍著,那段時間排進佇列的點擊等主執行緒
+        回來照樣送到這顆鈕上(而 Tk 不會把點擊送給已經 `disabled` 的鈕,所以鎖著就等於丟掉)。
+        ⚠️ **收尾結束後的復位在 `_rec_done`**,不靠這一支——它可能在收尾早早失敗之後才跑到。"""
+        self._rec_abort_armed = True
         self._action_refresh("rec")
 
     def _run_job(self, work, done) -> None:
@@ -4892,7 +4924,13 @@ class App(tk.Tk):
         # ⚠️ **旗標要在這裡舉**:那顆鈕從「■ 停止錄音」翻成「■ 中止收尾」靠它
         # (`_action_phase`),而收尾期間 `rec` 與 `run` 兩個 `_busy` 同時舉著、分不出來。
         self._rec_finishing = True
+        # ⚠️ **翻過去的當下先鎖五秒**(防誤按,見 `_rec_finish_arm`):新的長相落在剛剛
+        # 按過「停止錄音」的同一個位置,手滑第二下就是放棄一整場會議的收尾。
+        # ⚠️ **兩行的順序不能顛倒**:`_action_refresh` 要在旗標都放好之後才跑,不然它
+        # 讀到的還是上一態的值、那顆鈕會先亮一格。
+        self._rec_abort_armed = False
         self._action_refresh("rec")
+        self.after(REC_FINISH_ARM_DELAY_MS, self._rec_finish_arm)
         self._rec_status.configure(text="正在停止收音…")
         self.update_idletasks()      # `stop()` 會擋住主執行緒(補零/修剪),先把這句畫出來
         tracks = self._rec["recorder"].stop()
@@ -5001,6 +5039,10 @@ class App(tk.Tk):
         self._busy["rec"] = False
         self._rec_finishing = False
         self._rec_armed = True          # 下一場的防誤按由 `_rec_start` 自己再放下
+        # ⚠️ **這一個一定要在這裡放回來**:收尾若在五秒內就結束(錄音太短、開頭就報錯),
+        # `_rec_finish_arm` 那個 `after` 還沒跑到——不放回來的話下一場按下停止時,
+        # `_rec_stop` 之前的那一瞬間它還是 `False`(下一場自己會再放下,見那一支)。
+        self._rec_abort_armed = True
         self._run_lock(False, flag)     # 這一支順手清 `_stopping` 並更新四顆鈕
         self._run_bar.configure(value=0)
         if error is None:

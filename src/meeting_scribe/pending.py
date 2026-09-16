@@ -8,8 +8,9 @@ gradio session 裡:電腦睡眠、斷線、關瀏覽器都會讓 session 被判�
 (paths.appdata_root,同 AI 模型的存放區),不進 repo。
 
 本模組是純儲存層:鍵一律是講者標籤(int,UNKNOWN_SPEAKER=-1 也是一鍵),
-UI 端的欄位順序/更新組裝在 app。pending 目錄必須列進 launch(allowed_paths=)
-——試聽片段的落地副本要能被 gradio 供應(app.main 負責)。
+UI 端的欄位順序/更新組裝在 `desktop.py`。⚠️ **原生視窗直接開本機路徑,不必
+再把 pending 目錄登記給任何人**(gradio 版要列進 `launch(allowed_paths=)`
+才供應得了試聽片段,那條 2026-09-05 隨介面一起走了)。
 """
 import json
 import logging
