@@ -104,12 +104,6 @@ MAX_CONTENT = 1176
 # 共用的間距尺規(三個 repo 同一組值,理由見檔頭)。
 SP_XS, SP_SM, SP_MD, SP_LG, SP_XL = 4, 8, 12, 16, 24
 PAGE_PAD, CARD_PAD, CARD_GAP = 20, SP_XL, 20
-# 「現場收音」那行狀態上下各留多少(卡片 → 狀態 → 停止錄音鈕)。
-# ⚠️ **是 `CARD_GAP` 與 `SP_SM` 平分,不是另挑一個數**(2026-09-16 使用者圈出來:「讓文字
-# 上方及下方的空白相等」):原本上面吃動作列的 `CARD_GAP`、下面只有 `SP_SM`,150% 實拍
-# 墨跡上 32 下 14 實體 px。兩段加起來與原本相同,所以是那行字往上移、鈕不跟著往上跑
-# (同日字級 9 → 10 粗體,字框高了 2 px,鈕只因此往下 2 px;改完實拍上 24 下 23)。
-REC_STATUS_GAP = (CARD_GAP + SP_SM) // 2
 
 # 分頁列那顆 emoji 要往上推幾個邏輯像素,才會與旁邊的中文字對齊。
 # ⚠️ **它不是憑感覺調的**:emoji 走 Segoe UI Emoji 的後備字型,基線與
@@ -347,8 +341,13 @@ def cores_info() -> str:
 # 還沒開始錄音時狀態列那一句(同網頁版的 `_REC_IDLE_MD`)。
 REC_IDLE = "尚未開始錄音。"
 
-# 按了「停止錄音」之後、收尾跑完之前那一句(同網頁版的 `_REC_FINISHING_MD`,
-# 只把方位詞換成這一版的版面:網頁版預覽在右邊,這裡在下面)。
+# 錄音狀態列前面那顆色點的直徑(邏輯 px),與它和字之間的縫(2026-09-17 使用者選案 D)。
+# 顏色跟著狀態換,對照表在 `App._rec_say`。
+REC_DOT, REC_DOT_GAP = 8, SP_SM
+
+# 按了「停止錄音」之後、收尾跑完之前那一句(同網頁版的 `_REC_FINISHING_MD`)。
+# ⚠️ **「下方」是對的**:狀態列坐在右邊預覽卡的標題底下(2026-09-17 選案 D),進度列與
+# 預覽框就在它下面。2026-09-01 到 09-17 之間狀態列在左欄,那段時間這個方位詞其實是錯的。
 # ⚠️ **一定要有這句、而且計時器要停**:先前那行字整個收尾期間都還寫著「● 錄音中・
 # 已錄 1:02:05」而且**數字繼續往上跳**——收音其實早就停了(`_rec_tick` 只看
 # `_rec` 裡的 recorder,而它要到 `_rec_done` 才清掉)。長會議的收尾要跑幾十分鐘,
@@ -751,13 +750,13 @@ STYLES = (
     # 的欄位名是深色粗體的小標,比卡片標題小一號、比說明小字深一階。
     ("Field.TLabel", "card", "ink", 10, True),
     ("Status.TLabel", "card", "muted", 9, False),    # 存檔之後那一句
-    # 卡片**外面**那一句(錄音狀態列,2026-09-01 隨主要動作鈕一起搬出卡片)。
+    # 卡片**外面**的說明(文件頁的「已選幾個」與底下備註)。
     # ⚠️ **底色是 `page` 不是 `card`**:`ttk.Label` 是實色底,坐在視窗底上卻塗卡片白,
     # 就是一塊白矩形浮在灰底上——那與「這一行的背景髒了」長得一模一樣。
     ("PageStatus.TLabel", "page", "muted", 9, False),
-    # 「現場收音」那一行狀態:大一號、粗體(2026-09-16 使用者圈出來指定)。⚠️ **要自己一個,
-    # 不是改 `PageStatus`**:那一款文件頁的「已選幾個」與底下備註也在穿,使用者圈的只有這一行。
-    ("RecStatus.TLabel", "page", "muted", 10, True),
+    # 「現場收音」那一行狀態:大一號、粗體(2026-09-16 使用者圈出來指定)。⚠️ **底色是 `card`**:
+    # 2026-09-17 選案 D 從卡外搬進右邊預覽卡,坐的是卡片白(同上面那條實色底的理由,反過來)。
+    ("RecStatus.TLabel", "card", "muted", 10, True),
     # ⚠️ **警告要有自己的顏色,不是把字加粗**:網頁版是 `**…**`,而 Tk 畫不出
     # Markdown(會原樣印出四個星號)。兩種警告(詞表超出預算、替換規則缺新詞)
     # 的共同點是**使用者不會自己發現**,所以它要跳出來。
@@ -1734,6 +1733,10 @@ class App(tk.Tk):
         self._cols[key] = cols
         self._scrolls[key] = cols
         self._shares[left] = (RUN_LEFT, self.px(CARD_GAP))
+        # 右欄也要登記(2026-09-17 錄音狀態列搬進右邊預覽卡時補的):先前右欄沒有會換行的字,
+        # 沒登記也沒事;不登記的話那裡的字照整頁寬換行,句尾被卡片右緣無聲裁掉。
+        # `_col_width` 取整往下,算出來不會比 `_refit_columns` 給的欄寬寬。
+        self._shares[right] = (1 - RUN_LEFT, self.px(CARD_GAP))
         canvas.bind("<Configure>", lambda _e: self._scroll_refit(cols))
         inner.bind("<Configure>", lambda _e: self._scroll_refit(cols))
         self._refit_columns(self.px(WIN_W) - self.px(PAGE_PAD) * 2)
@@ -3074,9 +3077,9 @@ class App(tk.Tk):
         if key == "doc":
             self._doc_say("正在停止…(會先把手上這一份做完)")
         elif key == "rec":
-            self._rec_status.configure(
-                text="正在停止…(算完手上這一段就停)。這一趟的逐字稿會放棄,"
-                     "錄音檔會存到 output 資料夾,之後可以用「轉錄音檔」重轉。")
+            self._rec_say("正在停止…(算完手上這一段就停)。這一趟的逐字稿會放棄,"
+                          "錄音檔會存到 output 資料夾,之後可以用「轉錄音檔」重轉。",
+                          "warn")
         else:
             self._stage("正在停止…(引擎會在下一個段落邊界停下)")
 
@@ -3915,12 +3918,14 @@ class App(tk.Tk):
 
         # ---- 右欄:結果 --------------------------------------------------- #
         run = ttk.Frame(right, style="Card.TFrame", padding=self.px(CARD_PAD))
-        # ⚠️ **不要 `expand=True`**(2026-09-01):撐滿的話這張卡會一路長到視窗底,而
-        # 裡面只有 20 行的預覽框——多出來的全是空灰。網頁版量到的右欄卡片是 475 邏輯
-        # px、**比左欄還短一點**,使用者滿意的正是那個比例;原生版先前是 784。
+        # ⚠️ **不要 `expand=True`**(2026-09-01):撐滿的話這張卡會一路長到視窗底,多出來的
+        # 全是空灰。⚠️ **高度跟著左邊大卡走**(2026-09-17 使用者:「卡片底部跟左邊的卡片對齊,
+        # 不要一高一低」),見 `_preview_fit`——三個模式的大卡高度不同,寫死行數只對得齊一種。
         run.pack(fill="x")
+        self._run_result = run
         head = ttk.Frame(run, style="CardBody.TFrame")
         head.pack(fill="x")
+        self._run_head = head
         # ⚠️ 標題括號裡那句照網頁版:進度就畫在這張卡上,不講的話使用者按下開始之後
         # 會盯著左欄等一個不會出現的進度條。
         ttk.Label(head, text="逐字稿預覽(轉檔進度顯示於此)",
@@ -3939,6 +3944,8 @@ class App(tk.Tk):
                                         self._run_dirs if self._run_dirs is not None
                                         else [str(OUTPUT_DIR)]))
         self._run_open.pack(side="right")
+        # 錄音狀態列(只在「現場收音」模式 pack,見 `_mode_show`;排在標題與進度那組之間)
+        self._rec_status_build(run)
         # 階段文字與進度條:**閒置時整組收起來**(2026-09-01,對齊網頁版的乾淨畫面)。
         # ⚠️ **不是刪掉**——原生版沒有黑視窗,第一次轉檔那 2-3 GB 的模型下載進度與長
         # 階段的心跳訊息**只剩這裡出得來**(`docs/dev/native-ui.md` §4,那是硬需求)。
@@ -3955,7 +3962,8 @@ class App(tk.Tk):
         # ⚠️ **高度要寫死**(同網頁版的 `lines=20`,它的註解:「不讓預覽把頁面
         # 撐滿」):`tk.Text` 不給 height 就是**預設 24 行**,實測請求 564px——
         # 單欄時它一個人就把命名區擠成 1px。行數寫死之後,多的空間由 `expand`
-        # 給它,少的時候它自己縮,而不是把別人擠掉。
+        # 給它,少的時候它自己縮,而不是把別人擠掉。⚠️ 2026-09-17 起卡片高度平常跟著左邊大卡
+        # (`_preview_fit`),這個行數只在命名中(大卡收起來、卡片回到自己的高度)才決定高度。
         self._run_preview = tk.Text(pwrap, font=(self.fam, 9), relief="flat", bd=0,
                                     highlightthickness=0, wrap="word", state="disabled",
                                     height=PREVIEW_LINES,
@@ -3966,6 +3974,12 @@ class App(tk.Tk):
         self._run_preview.configure(yscrollcommand=pbar.set)
         pbar.pack(side="right", fill="y")
         self._run_preview.pack(side="left", fill="both", expand=True)
+        # 兩張卡底緣對齊:大卡換了高度(切模式、選了檔摘要多一行、視窗拉窄字多換一行)、
+        # 或右欄換了高度(拉視窗,上限跟著變)就重算。⚠️ **綁在這兩個元件自己身上,不綁視窗**
+        # (視窗上的 `<Configure>` 會收到每一個子元件的,見 `_refit_wraps`)。⚠️ 用 lambda
+        # 包一層,測試換掉 `_preview_fit` 才接得到(同 `_slot_shrink`)。
+        self._run_card.bind("<Configure>", lambda _e: self._preview_fit(), add="+")
+        right.bind("<Configure>", lambda _e: self._preview_fit(), add="+")
 
         self._mode_show(RUN_MODES[0][0])
         # 上次沒做完的命名(關視窗、當機、隔天再開)在這裡接回來——同網頁版的
@@ -4001,7 +4015,7 @@ class App(tk.Tk):
             if k == key:
                 box.pack(fill="x", pady=(self.px(SP_XL), 0))
                 if card_packed:
-                    self._bar_pack(k, bar)
+                    self._bar_pack(bar)
             else:
                 box.pack_forget()
                 bar.pack_forget()
@@ -4009,15 +4023,46 @@ class App(tk.Tk):
             self._speakers_box.pack_forget()
         else:
             self._speakers_box.pack(fill="x", pady=(self.px(SP_XL), 0))
+        # 錄音狀態列(右邊預覽卡的標題底下)只屬於收音模式。⚠️ `after=` 不能省:它要排在
+        # 標題與進度那組之間,不指定就掉到預覽框後面(同 `_say` 的 `before=`)。
+        if key == "rec":
+            self._rec_status_row.pack(fill="x", after=self._run_head,
+                                      pady=(self.px(SP_MD), self.px(SP_XS)))
+        else:
+            self._rec_status_row.pack_forget()
 
-    def _bar_pack(self, key: str, bar: ttk.Frame) -> None:
+    def _preview_fit(self) -> None:
+        r"""右邊「逐字稿預覽」卡的高度 = 左邊大卡的高度,兩張卡的底緣對齊。
+
+        (2026-09-17 使用者:「右邊的逐字稿預覽視窗卡片高度,請調少幾列讓卡片底部跟左邊的卡片
+        對齊,不要一高一低」。)⚠️ **不是改 `PREVIEW_LINES`**:三個模式的大卡高度不同(150%
+        實拍:收音 508、轉錄音檔 674、重設講者 448 實體 px),寫死行數只對得齊其中一種;
+        卡片釘高之後,預覽框吃剩下的空間(它 `expand`),進度那組浮出來時縮的也是它。
+        ⚠️ **問 `winfo_reqheight()` 不問 `winfo_height()`**:大卡在左欄裡照請求高度排、兩者
+        相等,而請求值不必等視窗 map(測試量得到)。
+        ⚠️ **不會回授**:改的只有右卡的高度,右欄關了傳播(`_two_columns`),左邊大卡也不讀它。
+        ⚠️ **上限是右欄高**:左欄會捲、右欄不會,大卡比視窗還長時(200% 的「轉錄音檔」)照抄
+        它的高度,右卡的下緣圓角會被右欄裁掉。
+        ⚠️ **命名中大卡收起來了**:右卡放回自己的高度(預覽框 `PREVIEW_LINES` 行)——命名時
+        正是要對著逐字稿填名字,不該停在上一個模式的高度。"""
+        card, result = self._run_card, self._run_result
+        if not card.winfo_manager():
+            result.pack_propagate(True)
+            return
+        height = card.winfo_reqheight()
+        room = result.master.winfo_height()
+        if room > 1:
+            height = min(height, room)
+        result.pack_propagate(False)
+        result.configure(height=height)
+
+    def _bar_pack(self, bar: ttk.Frame) -> None:
         r"""把某個模式的動作列放到大卡底下(切模式、命名收工兩條路共用)。
 
-        ⚠️ **收音那一列頂端有一行狀態**,它上面的空白要與底下到鈕的那段相等(`REC_STATUS_GAP`);
-        另外兩列頂端就是鈕,照樣隔 `CARD_GAP`。⚠️ 兩條路各寫各的 pady 時,只改到一條的
-        症狀是「命名完回來那行字又沉下去」——所以只寫在這裡。"""
-        gap = REC_STATUS_GAP if key == "rec" else CARD_GAP
-        bar.pack(fill="x", pady=(self.px(gap), 0))
+        三列頂端都是鈕,一律隔 `CARD_GAP`。(2026-09-16 到 09-17 之間收音那一列頂端還有一行
+        狀態、另給一個間距,狀態列搬進右邊預覽卡之後拿掉了。)⚠️ 兩條路各寫各的 pady 時,
+        只改到一條的症狀是「命名完回來那一列位置不一樣」——所以只寫在這裡。"""
+        bar.pack(fill="x", pady=(self.px(CARD_GAP), 0))
 
     # ---- 轉現成的錄音、錄影 ---------------------------------------------- #
     def _file_build(self, parent) -> ttk.Frame:
@@ -4097,7 +4142,7 @@ class App(tk.Tk):
         return btn
 
     def _action_slot(self, bar: ttk.Frame, btn: ttk.Button, second: ttk.Button,
-                     row: int = 0, tail: ttk.Button | None = None) -> None:
+                     tail: ttk.Button | None = None) -> None:
         r"""把主要動作鈕與它右邊那顆擺成**兩顆同寬、靠左**(`ACTION_BTN_W`)。
 
         ⚠️ **寬度是固定值,不是「整列的一半」**(2026-09-13 使用者又收窄一次):先前
@@ -4114,14 +4159,14 @@ class App(tk.Tk):
         是同一個數字,各寫各的,下次調 `ACTION_BTN_W` 只會動到其中一列。
         視窗窄到放不下時前兩顆縮短(`_slot_fit`,由呼叫端用 `_slot_shrink` 接上):轉檔頁
         三組各自縮,文件頁兩列一起縮、「清空」照樣露出來。"""
-        btn.grid(row=row, column=0, sticky="ew", padx=0)
+        btn.grid(row=0, column=0, sticky="ew", padx=0)
         # ⚠️ **兩顆之間的縫要自己一欄,不可以用第二顆的 `padx`**:`padx` 吃在**欄寬
         # 裡**,那顆鈕於是只剩 `minsize` 減掉那道縫(實拍量到 180 對 160,而兩顆
         # 一大一小在畫面上很明顯)。
         bar.columnconfigure(1, weight=0, minsize=self.px(CARD_GAP), uniform="")
-        second.grid(row=row, column=2, sticky="ew", padx=0)
+        second.grid(row=0, column=2, sticky="ew", padx=0)
         if tail is not None:
-            tail.grid(row=row, column=4, sticky="w", padx=0)
+            tail.grid(row=0, column=4, sticky="w", padx=0)
         # 兩顆的寬度與剩餘空間給哪一欄,**只寫在 `_slot_fit` 一處**(這時列寬還沒排出來,
         # 走「放得下」那一支)。⚠️ 不要在這裡另外抄一份:兩處各寫一份時,改壞其中一處會被
         # 另一處蓋回來,測試抓不到(突變 M652 就是這樣逃掉過)。
@@ -4159,9 +4204,6 @@ class App(tk.Tk):
         收到 `minsize` 為止——沒有 `weight`,欄寬照樣被按鈕自己的請求寬度撐著,後面那顆
         還是被擠出去。代價是**鈕比字窄時字會被裁**(Tk 不給省略號),門檻見
         `docs/spec/06` §6.3 與 `docs/spec/04` §4.9。
-        ⚠️ **錄音那一列第 0 列還有一行狀態、跨滿四欄**(`_rec_status`):窄的時候那行長字的
-        請求寬度會被加到跨的範圍裡有 `weight` 的欄,但列寬是釘死的,grid 接著又從同樣那幾欄
-        收回到 `minsize`——欄寬總和等於列寬,所以兩顆照樣是算好的寬度。
         ⚠️ **寬度還沒排出來(`winfo_width()` ≤ 1)當成放得下**:否則分頁剛建好時先排成
         窄的,等 `<Configure>` 送到才跳回固定寬,畫面會閃一下。
         ⚠️ 不會回授:這裡只改欄設定,列寬由左欄釘死(見 `_two_columns`),請求寬度變了
@@ -4410,7 +4452,11 @@ class App(tk.Tk):
         self._scene_info.configure(text=SCENARIO_INFO[key])
 
     def _rec_actions(self, parent) -> ttk.Frame:
-        r"""「現場收音」的狀態列與雙鈕(卡片**外面**,同網頁版)。
+        r"""「現場收音」的動作列(卡片**外面**,同另外兩組):主要動作鈕與「進階參數設定」。
+
+        ⚠️ **狀態列不在這裡**:2026-09-17 使用者選案 D 搬進右邊「逐字稿預覽」卡的標題底下
+        (`_rec_status_build`)。先前它自己一列、跨滿四欄坐在這兩顆上面,字貼著左欄外緣,
+        使用者圈出來說「太靠左邊界」。
 
         ⚠️ **錄音不能重來**——所以工作目錄在 `%LOCALAPPDATA%\meeting-scribe\
         recordings`,**絕不能放系統暫存的 `meeting-scribe-*` 前綴下**:啟動時的
@@ -4418,20 +4464,78 @@ class App(tk.Tk):
         ⚠️ **錄音中不得睡眠**:螢幕關閉正是新式待命的進入條件,而進去之後行程會被
         整個凍結——那就是掉音訊。`power.stay_awake_begin()` 在開始時舉旗、收尾解除。"""
         bar = ttk.Frame(parent, style="Page.TFrame")
-        self._rec_status = self._wrap(
-            ttk.Label(bar, text=REC_IDLE, style="RecStatus.TLabel",
-                      justify="left"))
-        # ⚠️ 狀態列自己一列、**跨滿四欄**(`_action_slot` 排出來的:鈕｜縫｜鈕｜剩餘):
-        # 它是那顆鈕的說明,不是第三顆鈕。⚠️ **少跨一欄就會把縫撐開**:錄音中那行字很長
-        # (情境、已錄時間、背景轉錄進度),而跨的欄裡若沒有 `weight=1` 那一欄,grid 會把
-        # 多出來的寬度塞給縫——「⚙ 進階參數設定…」於是被推往右邊,錄得越久推得越遠。
-        # 上方那一段由 `_bar_pack` 給(同是 `REC_STATUS_GAP`),兩段相等這行字才在正中間
-        self._rec_status.grid(row=0, column=0, columnspan=4, sticky="w",
-                              pady=(0, self.px(REC_STATUS_GAP)))
         self._rec_go = self._action_btn(bar, "rec", REC_ACTION)
-        self._action_slot(bar, self._rec_go, self._adv_button(bar), row=1)
+        self._action_slot(bar, self._rec_go, self._adv_button(bar))
         self._slot_shrink(bar)                  # 視窗窄到放不下時兩顆一起縮
         return bar
+
+    def _rec_status_build(self, card: ttk.Frame) -> None:
+        r"""錄音狀態列:右邊「逐字稿預覽」卡的標題底下一行,前面一顆跟著狀態換色的點。
+
+        (2026-09-17 使用者從四案實拍裡選 D;落選的是「卡外內縮」「卡外白色資訊條」「併進左邊
+        大卡底部」,數字見 `docs/dev/native-ui.md` §18。)
+        ⚠️ **只在「現場收音」模式出現**(`_mode_show` 收放):另外兩個模式的進度走同一張卡的
+        `_run_stage`,擺一行「尚未開始錄音」在那裡是講錯話。
+        ⚠️ **換字一律走 `_rec_say`**,色點才會跟著換——直接 `configure(text=)` 的話字換了、
+        點還停在上一態(例如「收尾完成」配紅點,讀起來像還在錄)。
+        ⚠️ **換行寬度要照右欄算**:右欄在 `_two_columns` 登記了自己的份(先前右欄沒有會換行
+        的字、沒登記),不登記就是照整頁寬換行——出錯時那句帶著完整路徑,句尾會被卡片右緣
+        無聲裁掉。`minus` 扣掉的是色點與縫。
+        ⚠️ **色點自己一個 Label、對齊第一行**,不是塞進字的 `compound="left"`:那樣 Tk 把圖對
+        整段字垂直置中,訊息一換成兩行(中止、出錯都會帶著錄音檔存到哪),點就落在兩行中間
+        (2026-09-17 實拍看到的)。上緣內距 = (行高 − 點徑) ÷ 2,點的中心就在第一行的中線上。"""
+        row = ttk.Frame(card, style="CardBody.TFrame")
+        self._rec_status_row = row
+        self._rec_dot = ttk.Label(row, style="RecStatus.TLabel")
+        self._rec_dot.pack(side="left", anchor="n")
+        self._rec_status = self._wrap(
+            ttk.Label(row, style="RecStatus.TLabel", justify="left"),
+            minus=self.px(REC_DOT + REC_DOT_GAP))
+        self._rec_status.pack(side="left", anchor="n")
+        line = self._label_font(self._rec_status).metrics("linespace")
+        self._rec_dot.configure(padding=(0, max(0, (line - self.px(REC_DOT)) // 2), 0, 0))
+        self._rec_say(REC_IDLE, "wait")
+
+    def _rec_say(self, text: str, tone: str) -> None:
+        r"""錄音狀態列換一句話,前面的色點換成 `tone` 那個顏色(色票的狀態色鍵)。
+
+        | tone | 顏色 | 什麼時候 |
+        | --- | --- | --- |
+        | `wait` | 灰 | 尚未開始錄音 |
+        | `err` | 紅 | 錄音中;開不起來、收尾出錯 |
+        | `busy` | 藍 | 正在停止收音、收尾中 |
+        | `ok` | 綠 | 收尾完成 |
+        | `warn` | 琥珀 | 按了「中止收尾」(停止中與已中止);另一條工作正在跑、開不了錄音 |
+
+        (2026-09-17 使用者:「已中止和出錯時,圓點用琥珀色或紅色」。)⚠️ **錄音中與出錯同是
+        紅**:錄音的慣例就是紅點,而兩者的字截然不同。⚠️ **不用 `stop`(停止鈕那個深紅)**:
+        它在深色卡片上對比只有 1.80,一顆 8 px 的點會沉進背景;狀態色那組兩個模式都校過。
+        畫不出色點的機器(`_dot_image` 回 `None`)只剩字,照樣讀得懂。"""
+        self._rec_status.configure(text=text)
+        self._rec_dot.configure(image=self._dot_image(tone) or "")
+
+    def _dot_image(self, tone: str):
+        r"""一顆狀態色點(右邊留好與字之間的縫),照這台的縮放當場畫、畫過就記住。
+
+        ⚠️ **不烘進皮膚資產**:姊妹專案的色點是 `make_skin` 烘的,名單是共用包的
+        `palette.DOTS`,而那份沒有 `warn`——加進去,另一個下游的「出貨資產 == 產生器」
+        逐位元組比對當場變紅。當場畫只多一次 Pillow 呼叫(同 `_icon_pil`),縮放也永遠對得上。
+        ⚠️ 顏色跟著皮膚的深淺模式(`self.pal`),所以快取鍵要帶色碼,不是只帶 `tone`。"""
+        color = self.pal[tone]
+        key = ("dot", color)
+        if key in self._icons:
+            return self._icons[key]
+        photo = None
+        try:
+            from PIL import ImageTk
+            from winkit import skingen
+
+            photo = ImageTk.PhotoImage(skingen.pad_right(
+                skingen.dot(self.px(REC_DOT), color), self.px(REC_DOT_GAP)), master=self)
+        except Exception:
+            logger.debug("狀態色點畫不出來,只留字", exc_info=True)
+        self._icons[key] = photo
+        return photo
 
     def _fold(self, parent, title: str, on_toggle) -> "Fold":
         r"""一張可摺疊的卡:標題列 ＋ 右邊的 ▶／▼ 記號,點了就叫 `on_toggle`(通常是
@@ -4827,9 +4931,9 @@ class App(tk.Tk):
         # 網頁版三處都是叫 `pipeline.mmss`,下面的即時預覽也是——只有這裡漏了。
         tail = (f"背景轉錄:已完成至 {pipeline.mmss(done)}"
                 if done > 0 else "背景轉錄暖機中…")
-        self._rec_status.configure(
-            text=f"● 錄音中({self._rec.get('scene')})・已錄 "
-                 f"{pipeline.mmss(secs)}。{tail}")
+        # 開頭不再放「●」:前面那顆紅色的色點就是它(2026-09-17 選案 D)
+        self._rec_say(f"錄音中({self._rec.get('scene')})・已錄 "
+                      f"{pipeline.mmss(secs)}。{tail}", "err")
         if live is not None:
             self._rec_live_preview(live)
         self.after(1000, self._rec_tick)
@@ -4869,7 +4973,7 @@ class App(tk.Tk):
             return
         busy = self._busy_reason("rec")
         if busy:
-            self._rec_status.configure(text=busy)
+            self._rec_say(busy, "warn")
             return
         cancel.reset()
         # ⚠️ 開始收音時就套(同網頁版 `_start_recording`):邊錄邊轉的增量轉錄與講者
@@ -4883,12 +4987,12 @@ class App(tk.Tk):
             recorder = record.Recorder(rec_dir, SCENARIOS[scene_label], stem=stem)
             recorder.start()
         except UserFacingError as e:
-            self._rec_status.configure(text=str(e))
+            self._rec_say(str(e), "err")
             return
         except Exception as e:
             logger.exception("開始錄音失敗")
-            self._rec_status.configure(
-                text="無法開始錄音:發生未預期的錯誤,詳情見紀錄檔(logs 資料夾)。")
+            self._rec_say("無法開始錄音:發生未預期的錯誤,詳情見紀錄檔(logs 資料夾)。",
+                          "err")
             return
         # ⚠️ **增量轉錄起不來也要收乾淨再回報**:`LiveTranscriber` 一 `__init__` 就開
         # 了暫存目錄與鎖檔,`start()` 又會拉起講者分析子行程。
@@ -4908,8 +5012,8 @@ class App(tk.Tk):
                 recorder.stop()       # 收音已經開始了,不收就是一直錄下去
             except Exception:
                 logger.debug("收拾失敗的錄音時出錯", exc_info=True)
-            self._rec_status.configure(
-                text="無法開始錄音:發生未預期的錯誤,詳情見紀錄檔(logs 資料夾)。")
+            self._rec_say("無法開始錄音:發生未預期的錯誤,詳情見紀錄檔(logs 資料夾)。",
+                          "err")
             return
         power.stay_awake_begin()      # ⚠️ 錄音中不得睡眠(收尾時解除)
         self._rec.update(recorder=recorder, live=live, dir=rec_dir, stem=stem,
@@ -4953,7 +5057,7 @@ class App(tk.Tk):
         self._rec_abort_armed = False
         self._action_refresh("rec")
         self.after(REC_FINISH_ARM_DELAY_MS, self._rec_finish_arm)
-        self._rec_status.configure(text="正在停止收音…")
+        self._rec_say("正在停止收音…", "busy")
         self.update_idletasks()      # `stop()` 會擋住主執行緒(補零/修剪),先把這句畫出來
         tracks = self._rec["recorder"].stop()
         # ⚠️ **音軌清單要記在 `_rec` 上**:收尾中關視窗時 `_close_salvage` 要靠它保音軌,
@@ -4962,7 +5066,7 @@ class App(tk.Tk):
         # ⚠️ **收音停止的時刻要記下來**:計時器靠它停(見 `_rec_tick`),關視窗時要問
         # 的「錄了多久」也靠它——收尾期間拿現在的時間去減開錄時刻會越報越長。
         self._rec_t1 = time.monotonic()
-        self._rec_status.configure(text=REC_FINISHING)
+        self._rec_say(REC_FINISHING, "busy")
         live, out_dir, stem = (self._rec["live"], OUTPUT_DIR, self._rec["stem"])
         rec_dir = self._rec.get("dir")
         speakers = self._normalize_speakers(self._run_speakers.get())
@@ -5068,21 +5172,21 @@ class App(tk.Tk):
         self._run_lock(False, flag)     # 這一支順手清 `_stopping` 並更新四顆鈕
         self._run_bar.configure(value=0)
         if error is None:
-            self._rec_status.configure(text="收尾完成,逐字稿在下面。")
+            self._rec_say("收尾完成,逐字稿在下面。", "ok")
             self._stage("完成。")
             self._run_open.configure(state="normal")
         elif isinstance(error, Cancelled):
             # ⚠️ **自己按的「中止收尾」不是出錯**(2026-09-15 補):先前這裡沒有這一支,
             # `Cancelled` 落到最後的兜底——畫面寫「收尾時出錯」、紀錄檔多一段堆疊,而
             # 按下去那一刻 `_work_abort` 才剛講過錄音檔會留著。
-            self._rec_status.configure(text=REC_ABORTED + note)
+            self._rec_say(REC_ABORTED + note, "warn")
             self._stage("已依要求停止。")
         elif isinstance(error, UserFacingError):
             # 自家的錯誤照原話講。「錄音太短」在保音軌之前就擋下,`note` 是空的
-            self._rec_status.configure(text=f"{error}。{note}")
+            self._rec_say(f"{error}。{note}", "err")
         else:
             logger.exception("錄音收尾失敗", exc_info=error)
-            self._rec_status.configure(text=REC_FAILED + note)
+            self._rec_say(REC_FAILED + note, "err")
         winui.flash_taskbar(self)       # 理由見 `_run_done` 最後那一行
 
     # ---- 命名區(轉完之後才出現)------------------------------------------ #
@@ -5450,13 +5554,17 @@ class App(tk.Tk):
                 "relabel": self._relabel_bar}
         if naming:
             self._run_card.pack_forget()
+            self._preview_fit()             # 大卡收了:右卡回到自己的高度
             for bar in bars.values():
                 bar.pack_forget()
             self._scroll_top("run")
             return
         self._run_card.pack(fill="x")
-        self._bar_pack(self._mode, bars[self._mode])
+        self._bar_pack(bars[self._mode])
         self._scroll_top("run")
+        # ⚠️ **要自己叫**:大卡放回來時高度常常與收起來之前一樣,`<Configure>` 不會來,
+        # 右卡就一直停在命名中的高度
+        self._preview_fit()
 
     def _naming_hide(self) -> None:
         r"""命名卡收起來。
@@ -5494,7 +5602,7 @@ class App(tk.Tk):
         self._run_speakers.set("0")
         self._stage("")
         if not self._busy["rec"]:
-            self._rec_status.configure(text=REC_IDLE)
+            self._rec_say(REC_IDLE, "wait")
 
     def _naming_skip(self) -> None:
         """「跳過命名」(使用者指定 2026-07-24:有時不想改名):成品**不**刪,只清畫面

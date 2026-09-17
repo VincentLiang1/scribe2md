@@ -247,19 +247,28 @@ def _unknown_note(spoken: list[SpokenSegment]) -> list[str]:
 def to_markdown(
     spoken: list[SpokenSegment],
     title: str,
-    punctuate: Callable[[str], str] | None = None,
+    punctuate: Callable[[list[str]], list[str]] | None = None,
     quality: list | None = None,
 ) -> str:
     """punctuate:對「合併後的講者區塊」補標點的函式(長文脈絡標點
     品質最好);None 表示原樣輸出。跳針標記區塊不補標點:標記自帶
     完整標點,重斷只會斷壞。
 
+    ⚠️ **punctuate 吃一整批、回一整批**(2026-09-17 起,原本一次一個區塊):
+    標點模型要在區塊之間平行才快得起來(見 punctuate.add_punctuation_many),
+    所以這裡先把要補的區塊收齊、一次交出去。**回來的數量對不上就炸**,不准
+    `zip` 默默截短——那樣後半場的區塊會悄悄變成沒有標點的原文。
+
     quality:每位講者的分群品質(types.SpeakerQuality),有給就在檔尾附
     診斷區塊(見 _speaker_diagnostics)。"""
+    groups = list(_group_by_speaker(spoken))
+    todo = [i for i, g in enumerate(groups) if not g[3]] if punctuate else []
+    done = (dict(zip(todo, punctuate([groups[i][2] for i in todo]), strict=True))
+            if todo else {})
     lines = [f"## 會議逐字稿 — {title}", ""]
-    for speaker, start, text, is_marker in _group_by_speaker(spoken):
+    for i, (speaker, start, text, _is_marker) in enumerate(groups):
         lines.append(f"**{speaker_label(speaker)}** ({_hms(start)})")
-        lines.append(punctuate(text) if punctuate and not is_marker else text)
+        lines.append(done.get(i, text))
         lines.append("")
     lines += _speaker_diagnostics(quality or [], spoken)
     return "\n".join(lines)

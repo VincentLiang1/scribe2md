@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # 等子行程回報就緒:要載 sherpa 的原生 DLL 並建兩顆模型,冷開機慢
 _READY_TIMEOUT = 120.0
-# 單一指令的看門狗。一塊 5 分鐘音訊的切分實測數分鐘,收尾(finish)還要
+# 單一指令的看門狗。一塊 2.5 分鐘音訊的切分實測數十秒到數分鐘,收尾(finish)還要
 # 補算剩餘塊 + 全域重聚;放寬到 30 分鐘,它只是「行程還活著但不動了」
 # 的最後保險,正常結束由 stdout 的回應決定
 _WORK_TIMEOUT = 1800.0
@@ -159,7 +159,7 @@ class DiarProcess:
         """離線整檔一次做完(檔案轉檔用),等同 diarize.diarize()。
 
         **與 finish() 不是同一條路**:finish 走的是錄音用的
-        IncrementalDiarizer(5 分鐘塊),離線是 15 分鐘塊——塊界不同分群
+        IncrementalDiarizer(2.5 分鐘塊),離線是 15 分鐘塊——塊界不同分群
         結果就不同,不可互相代用(理由寫在 diarworker 那一段)。"""
         return self._turns_reply({
             "cmd": "diarize", "wav": _abs(wav), "speakers": num_speakers,

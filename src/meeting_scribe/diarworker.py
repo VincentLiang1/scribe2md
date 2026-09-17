@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
             if msg["cmd"] == "diarize":
                 # 離線整檔一次做完(檔案轉檔用)。⚠️ **不可改用
                 # IncrementalDiarizer.finish() 代替**:那支的塊長是錄音用的
-                # _LIVE_CHUNK_SEC(5 分鐘),而離線是 _CHUNK_SEC(15 分鐘)
+                # _LIVE_CHUNK_SEC(2.5 分鐘),而離線是 _CHUNK_SEC(15 分鐘)
                 # ——塊界不同,turn 的擁有權邊界就不同,分群結果會跟著變。
                 # 使用者 2026-08-07 才剛確認過離線這條分得出 B 總,不能因為
                 # 「搬進子行程」這種與演算法無關的改動而動到結果

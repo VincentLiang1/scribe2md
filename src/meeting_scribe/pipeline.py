@@ -366,7 +366,7 @@ def render_transcript(spoken, stem: str, quality=None) -> RenderedTranscript:
     # 標點整份只跑一次:md 檔與預覽是同一份 to_markdown 輸出,渲染一次
     # 兩處共用——分開各叫一次的話,標點模型對整份逐字稿等於跑兩遍
     md_text = export.to_markdown(
-        spoken, stem, punctuate=punctuate.add_punctuation, quality=quality,
+        spoken, stem, punctuate=punctuate.add_punctuation_many, quality=quality,
     )
     return RenderedTranscript(
         md_text=md_text, spoken=spoken, degenerate=degenerate,
@@ -569,8 +569,10 @@ def finalize(
     # 命名欄位的認人線索(含該句起訖秒,供 app 剪同一句的試聽片段)
     hints = _speaker_hints(spoken)
     outputs = [export.write_md(md_text, out_dir, stem)]
-    # 標點模型跑整份要數十秒,而在此之前使用者已經等了整段收尾。沒有這行
-    # 的話「到底是還在跑還是卡住了」在紀錄檔裡完全看不出來
+    # 標點模型要跑整份逐字稿,而在此之前使用者已經等了整段收尾。沒有這行
+    # 的話「到底是還在跑還是卡住了」在紀錄檔裡完全看不出來。(量級:依序跑
+    # 的年代 89 分鐘會議 4.5 秒、166 分鐘 13.6 秒;2026-09-17 改成區塊間平行,
+    # 見 punctuate.add_punctuation_many——這行的秒數就是驗收它的地方)
     logger.info(
         "輸出完成:%s(%d 段;標點與渲染 %.1f 秒、本階段共 %.1f 秒)",
         outputs[0].name, len(spoken),
