@@ -10,6 +10,22 @@ from dataclasses import dataclass
 # 講者都不夠像(通常是很短、模糊或重疊的碎片),不硬塞給某講者。
 UNKNOWN_SPEAKER = -1
 
+# 逐字稿上那個名字**是怎麼來的**(2026-09-18 使用者指定)。
+#
+# ⚠️ **這三種的可信度差一個量級,而在 md 上長得一模一樣**——下游(使用者
+# 的 FWIKI:Claude Code 讀整份 md 寫成主題知識頁)把「有名字」一律當成
+# 「聲紋命中建檔樣本、可信度高」,而自動辨識其實會認錯人(留一法實測:
+# 光過相似度門檻的 90 對 32 錯,`_RUNNER_UP_MARGIN` 擋掉一批之後仍非零)。
+#
+# ⚠️ **而這類錯誤是下游整套健檢唯一抓不到的**:WIKI 那邊的〈抽樣回原件
+# 核對〉是唯一拿頁面對原件的檢查,逐句判「符合/不符/原文找不到」——把甲
+# 的話掛給乙時,頁面寫「乙說……」、回原件一對**逐字稿上確實寫著乙說**,
+# 判定是「符合」。那正是他們自己定義的「寫錯但前後一致的錯誤查不出來」。
+# 所以誠實標示來源是這條路上唯一的防線,不是錦上添花。
+NAME_SOURCE_CONFIRMED = "人工確認"   # 使用者自己填/改過的名字
+NAME_SOURCE_AUTO = "機器辨識"        # 聲紋自動辨識填的,使用者沒有動過
+NAME_SOURCE_NONE = "未命名"          # 仍是「講者 N」/「未知」
+
 # 講者人數上限:UI 的命名框數/人數欄 clamp(app)與自動偵測的聚類封頂
 # (diarize)共用同一個值——數千 cluster 的聚類無意義且可能炸掉,UI 也
 # 擺不下;單一出處放這裡(與 UNKNOWN_SPEAKER 同為講者領域常數),
@@ -47,6 +63,11 @@ class SpeakerTurn:
     # ——同 SpeakerQuality 的警告。0.0 = 沒有這個資訊(例如「重設講者」
     # 那條路,分群早在當初就做完了)
     conf: float = 0.0
+    # 這一段落在「多人快速交錯討論」的時間區間裡(見 diarize._crosstalk_spans)。
+    # ⚠️ **它標的是「這段時間分不開」,不是「這一群混了人」**——後者 2026-08-08
+    # 用三種統計量試過、分不開(見 SpeakerQuality 的警告),而前者判準是段長與
+    # 相鄰段換人頻率,是時間區間層級的訊號,兩者不是同一個問題
+    crosstalk: bool = False
 
 
 @dataclass(frozen=True)
@@ -57,6 +78,8 @@ class SpokenSegment:
     end: float
     speaker: int
     text: str
+    # 同 SpeakerTurn.crosstalk,由 merge.assign_speakers 從掛到的那個 turn 帶過來
+    crosstalk: bool = False
 
 
 @dataclass(frozen=True)
@@ -77,6 +100,9 @@ class SpeechBlock:
     # 「🔍 核對」把它列出來,讓使用者一眼看出**哪幾列比較可疑**——
     # ⚠️ 它是**同一群之內的相對值**,不是「這一段是不是他」的判定
     cohesion: float = 0.0
+    # 這一輪發言裡有句子落在多人交錯區間(任一句中招即為 True:一輪發言只有
+    # 一個講者標籤,而標記要回答的是「這一輪的歸屬可不可靠」)
+    crosstalk: bool = False
 
     @property
     def seconds(self) -> float:

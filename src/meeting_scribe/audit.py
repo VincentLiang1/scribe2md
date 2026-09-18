@@ -134,9 +134,10 @@ def rows_for(blocks: list[SpeechBlock], picks: list[int], excerpt: int = 40) -> 
     ]
 
 
-# 逐字稿的講者行:`**名字** (00:12:34)`(export.to_markdown 的格式;
-# 與 relabel._SPEAKER_RE 同一個錨,只是這裡要連時間一起拿出來對)
-_SPEAKER_LINE = re.compile(r"^\*\*(?P<name>.+?)\*\* \((\d+):([0-5]\d):([0-5]\d)\)$")
+# 逐字稿的講者行。⚠️ **不自己抄一份正則**(2026-09-18):行內標記
+# (〔機器辨識〕之類)一加上去,抄的那份就 match 不到,而症狀是改掛說
+# 「沒有改到任何一行」——那看起來像格式壞了,不像少認一種寫法
+_SPEAKER_LINE = export.SPEAKER_LINE_RE
 
 
 def _hms(seconds: float) -> str:
@@ -177,11 +178,27 @@ def reassign(md_text: str, blocks: list[SpeechBlock], new_name: str) -> tuple[st
         if m is None:
             out.append(line)
             continue
-        key = (m.group("name"), f"{int(m.group(2)):02d}:{m.group(3)}:{m.group(4)}")
+        # ⚠️ **一律用具名群組**(2026-09-18):講者行多了選擇性的〔標記〕群組,
+        # 位置編號因此整批位移——照 `m.group(2)` 取小時會讀到標記那一段,
+        # 而症狀是「改掛什麼都沒改到」,格式看起來卻完全正常
+        key = (m.group("name"),
+               f"{int(m.group('h')):02d}:{m.group('m')}:{m.group('s')}")
         n = seen.get(key, 0)
         seen[key] = n + 1
         if n < want.get(key, 0):
-            out.append(line.replace(f"**{m.group('name')}**", f"**{new_name}**", 1))
+            # ⚠️ **改掛過的那一行只留〔多人交錯〕**:使用者親手指定了是誰,
+            # 那是最高等級的人工確認——〔機器辨識〕(名字是猜的)與
+            # 〔身分存疑〕(原標籤混了人)講的都是**原標籤**的事,留在新名字
+            # 旁邊等於把警告安到一個沒做過那件事的人頭上。而〔多人交錯〕是
+            # 聲學事實(那個時間真的好幾個人在搶著講),不因改掛而消失
+            marks = [x for x in (m.group("marks") or "").split(export.MARK_SEP)
+                     if x == export.MARK_CROSSTALK]
+            out.append(export.speaker_line(
+                new_name,
+                int(m.group("h")) * 3600 + int(m.group("m")) * 60
+                + int(m.group("s")),
+                marks,
+            ))
             changed += 1
         else:
             out.append(line)

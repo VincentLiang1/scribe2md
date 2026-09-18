@@ -58,7 +58,10 @@ def _result(turns, vps, quality) -> dict:
         # ⚠️ **conf 一定要一起送**(2026-08-14 實機抓到):它是「這一段有多像
         # 所屬講者群」,核對表的相似度就靠它。少送這一個欄位的症狀是
         # 「重新轉檔了,相似度還是空的」——而父行程那邊完全看不出哪裡漏
-        "turns": [[t.start, t.end, t.speaker, t.conf] for t in turns],
+        # ⚠️ **crosstalk 同此**(2026-09-18 新增的第 5 欄):漏送的症狀是
+        # 「檔案轉檔的逐字稿完全沒有〔多人交錯〕,而現場收音那條有」
+        # ——兩條路差一個欄位,成品上看不出是漏了還是真的沒有交錯
+        "turns": [[t.start, t.end, t.speaker, t.conf, t.crosstalk] for t in turns],
         "vp": [[int(k), _encode(v)] for k, v in (vps or {}).items()],
         "quality": [
             [q.speaker, q.segments, q.seconds, q.cohesion]

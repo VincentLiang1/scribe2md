@@ -68,5 +68,8 @@ def assign_speakers(
             if r < len(turns):
                 cand.append((turns[r].start - mid, r))
             best = turns[min(cand)[1]]
-        result.append(SpokenSegment(seg.start, seg.end, best.speaker, seg.text))
+        # crosstalk 跟著「掛到的那個 turn」走(同 speaker 的取捨):這一句
+        # 的歸屬是從那個 turn 來的,那個 turn 可不可靠就是這一句可不可靠
+        result.append(SpokenSegment(seg.start, seg.end, best.speaker, seg.text,
+                                    best.crosstalk))
     return result

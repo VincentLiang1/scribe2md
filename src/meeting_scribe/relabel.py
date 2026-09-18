@@ -30,9 +30,10 @@ from meeting_scribe.types import UNKNOWN_SPEAKER, SpokenSegment
 
 logger = logging.getLogger(__name__)
 
-# 逐字稿的講者行:`**名字** (00:12:34)`(export.to_markdown 的格式)。
-# **時間戳是關鍵**:少了它,內文裡任何一組粗體都會被當成講者標籤
-_SPEAKER_RE = re.compile(r"^\*\*(?P<name>.+?)\*\* \((\d+):([0-5]\d):([0-5]\d)\)$")
+# 逐字稿的講者行。⚠️ **不在這裡自己寫一份正則**(2026-09-18):行內標記
+# (〔機器辨識〕之類)一加上去,自己抄的那份會安靜地 match 不到,而症狀是
+# 「重設講者只剩手動命名、沒有試聽」——看不出成因。規則跟著產生端走。
+_SPEAKER_RE = export.SPEAKER_LINE_RE
 # 試聽片段的上限(秒)。見 Transcript.hints:md 只有每段的起點,終點是拿
 # 下一段的起點頂上去的,中間的靜默全被算進來——不設上限就會播到下一個人
 _CLIP_MAX_SEC = 20.0
@@ -134,7 +135,9 @@ def parse(md_text: str) -> Transcript:
             )
         pending = []
         name = m.group("name")
-        h, mi, s = (int(m.group(i)) for i in (2, 3, 4))
+        # ⚠️ 具名群組,不是位置編號:講者行多了選擇性的〔標記〕群組之後,
+        # 位置編號整批位移(照 (2,3,4) 取會拿到 marks 而 int(None) 直接炸)
+        h, mi, s = (int(m.group(k)) for k in ("h", "m", "s"))
         blocks.append(Block(name, h * 3600 + mi * 60 + s, ""))
         if name not in order:
             order.append(name)
@@ -291,8 +294,14 @@ def recluster_md(md_text: str, turns: list, quality: list) -> str:
         spoken.append(SpokenSegment(
             lo, hi, UNKNOWN_SPEAKER if lab == UNKNOWN_SPEAKER else order[lab], "",
         ))
-        out.append(
-            f"**{label_name(lab)}** ({m.group(2)}:{m.group(3)}:{m.group(4)})")
+        # ⚠️ **重新分群會重寫每一行講者行,原本的標記一律不留**:那些標記
+        # (〔身分存疑〕〔多人交錯〕)講的是**上一次**分群的結果,而這裡正在
+        # 用新的分群結果重建整份稿子——照抄舊標記就是把作廢的警告留在新的
+        # 歸屬旁邊。新的標記由 export 依這次的 quality 重新產生
+        out.append(export.speaker_line(
+            label_name(lab),
+            int(m.group("h")) * 3600 + int(m.group("m")) * 60 + int(m.group("s")),
+        ))
     text = "\n".join(out).rstrip("\n")
     diag = export.speaker_diagnostics(
         _renumber_quality(quality, order), spoken)
@@ -309,8 +318,19 @@ def find_features(md_path: Path) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def rename(md_text: str, name_map: dict[str, str]) -> str:
+def rename(md_text: str, name_map: dict[str, str],
+           auto_named: set[str] | None = None) -> str:
     """把逐字稿裡的講者標籤換成新名字(只動講者行與檔尾診斷區塊,不碰內文)。
+
+    auto_named = 那幾個**舊標籤**的名字是聲紋自動辨識填的、使用者沒有動過
+    (2026-09-18 使用者指定)。它們的講者行會多一個〔機器辨識〕標記、診斷表
+    的「名字來源」欄填「機器辨識」,其餘具名者填「人工確認」。
+
+    ⚠️ **為什麼在這一層做、而不是在 to_markdown**:名字要等使用者命名之後
+    才存在,而 md 早在那之前就渲染好了(標點模型跑整份要數十秒,不可能為了
+    一個標記重跑)。所以「這個名字是怎麼來的」只有套用名字這一刻知道。
+    ⚠️ **判準是「使用者有沒有動過」,不是「機器猜得準不準」**:他沒改可能
+    是認同、也可能是沒看,兩者分不出來——當成「沒人確認過」是誠實的那一邊。
 
     逐行重建而不是全文 replace:全文替換會誤中內文裡剛好一樣的粗體字,
     而且「講者 1」→「講者 10」這類前綴問題也要另外處理。逐行比對是
@@ -326,6 +346,7 @@ def rename(md_text: str, name_map: dict[str, str]) -> str:
     不含任何人講的話,所以粗體必定是標籤;內文裡的粗體則不得被動
     (使用者講的話裡剛好出現某個名字是很正常的事)。"""
     rename_prose = export.diag_prose_renamer(name_map)
+    auto = set(auto_named or ())
     out = []
     in_diagnostics = False
     for line in md_text.splitlines():
@@ -333,16 +354,46 @@ def rename(md_text: str, name_map: dict[str, str]) -> str:
             in_diagnostics = True
         m = _SPEAKER_RE.match(line.strip())
         if m and m.group("name") in name_map:
-            out.append(line.replace(
-                f"**{m.group('name')}**", f"**{name_map[m.group('name')]}**", 1))
+            old = m.group("name")
+            # ⚠️ **既有的標記要留著、而且新的排在前面**:那一行可能已經帶著
+            # 〔身分存疑〕或〔多人交錯〕(轉檔當下標的),整段換掉就把它們弄丟了。
+            # 順序照 export 那邊定的「名字來源 → 標籤可疑 → 這一輪交錯」
+            marks = [x for x in (m.group("marks") or "").split(export.MARK_SEP) if x]
+            if old in auto and export.MARK_AUTO_NAME not in marks:
+                marks.insert(0, export.MARK_AUTO_NAME)
+            out.append(export.speaker_line(
+                name_map[old],
+                int(m.group("h")) * 3600 + int(m.group("m")) * 60 + int(m.group("s")),
+                marks,
+            ))
             continue
         d = export.DIAG_ROW_RE.match(line)
         if d and d.group("name") in name_map:
-            out.append(line.replace(
-                f"| {d.group('name')} |", f"| {name_map[d.group('name')]} |", 1))
+            renamed = line.replace(
+                f"| {d.group('name')} |", f"| {name_map[d.group('name')]} |", 1)
+            out.append(_set_name_source(
+                renamed,
+                export.NAME_SOURCE_AUTO if d.group("name") in auto
+                else export.NAME_SOURCE_CONFIRMED,
+            ))
             continue
         out.append(rename_prose(line) if in_diagnostics else line)
     return "\n".join(out) + ("\n" if md_text.endswith("\n") else "")
+
+
+def _set_name_source(row: str, source: str) -> str:
+    """診斷表某一列的「名字來源」欄(最後一欄)換成 `source`。
+
+    ⚠️ **找不到那一欄就原樣回傳,不要硬改**:舊版產生的 md 只有四欄
+    (2026-09-18 之前),而「重設講者」正是拿舊 md 來跑的功能——硬塞一欄
+    會讓表格的欄數與標題列對不上,而 Markdown 表格欄數不符的渲染結果是
+    「整列消失」,比少一欄資訊糟得多。"""
+    cells = row.rstrip().split("|")
+    # 形狀是 ["", " 名字 ", " 8 ", " 00:05:12 ", " 0.42 ", " 未命名 ", ""]
+    if len(cells) < 7 or cells[-1].strip():
+        return row
+    cells[-2] = f" {source} "
+    return "|".join(cells)
 
 
 def read(md_path: Path) -> str:

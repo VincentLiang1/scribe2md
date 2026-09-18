@@ -353,6 +353,24 @@ def render_transcript(spoken, stem: str, quality=None) -> RenderedTranscript:
     ]
     traditionalised = any(a.text != b.text for a, b in zip(spoken, converted))
     spoken = converted
+    # 訓練殘留(模型把 YouTube 結尾語、字幕組署名吐進逐字稿)先挖掉。
+    # ⚠️ **要在跳針判定之前**:那些句子會墊高壓縮比,留著判會讓同一段
+    # 被算成跳針、整段換成標記——而它其實只有一句不屬於這場會議的話。
+    # ⚠️ **挖掉的東西一定要寫進紀錄檔**:無聲改動逐字稿內容,與無聲留著
+    # 垃圾一樣不可接受,而且更難發現(沒有人會為了確認「有沒有被改過」
+    # 去逐份比對)。見 loopdetect.strip_residue。
+    residue: list[str] = []
+    cleaned = []
+    for s in spoken:
+        text, removed = loopdetect.strip_residue(s.text)
+        residue.extend(removed)
+        cleaned.append(replace(s, text=text) if removed else s)
+    spoken = cleaned
+    if residue:
+        logger.warning(
+            "轉錄殘留:挖掉 %d 處不屬於這場會議的訓練殘留句(%s)",
+            len(residue), "、".join(sorted({r.strip()[:24] for r in residue})),
+        )
     # 轉錄跳針段的最後防線:引擎內的重轉(transcribe/_ov)救不回來的,
     # 在輸出前以繁中標記取代垃圾文字——壞內容不得安靜地混在逐字稿裡
     # (實際案例:418 秒的「包括資料,」×百次被當成一句,使用者試聽
@@ -568,7 +586,8 @@ def finalize(
         )
     # 命名欄位的認人線索(含該句起訖秒,供 app 剪同一句的試聽片段)
     hints = _speaker_hints(spoken)
-    outputs = [export.write_md(md_text, out_dir, stem)]
+    outputs = [export.write_md(
+        md_text, out_dir, stem, export.transcript_frontmatter(spoken, quality))]
     # 標點模型要跑整份逐字稿,而在此之前使用者已經等了整段收尾。沒有這行
     # 的話「到底是還在跑還是卡住了」在紀錄檔裡完全看不出來。(量級:依序跑
     # 的年代 89 分鐘會議 4.5 秒、166 分鐘 13.6 秒;2026-09-17 改成區塊間平行,

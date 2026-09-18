@@ -37,12 +37,16 @@ _ROW_PLAY = "▶"
 def _rename_speakers(
     text: str, name_map: dict[int, str], unknown_name: str | None = None,
     labels: dict[int, str] | None = None,
+    auto_named: set[int] | None = None,
 ) -> str:
     """把 md 逐字稿裡的講者標籤換成指定名字。
 
     `labels` 是「這些編號目前在檔案裡長什麼樣子」,預設「講者 N」/「未知」。
     「重設講者」模式(_run_relabel)會傳入實際讀到的標籤——那份 md 可能
     **早就命名過**(當初打錯字、或想換個稱呼),標籤是真名而不是「講者 N」。
+
+    `auto_named` 是那幾個**1-based 編號**的名字原封不動來自聲紋自動辨識
+    (使用者沒有改過),它們會被標成〔機器辨識〕,見 relabel.rename。
 
     改寫委託給 relabel.rename:它逐行比對 `**名字** (時:分:秒)` 這個輸出
     格式本身,時間戳讓它不可能誤中內文裡的粗體字,也天然沒有
@@ -54,7 +58,9 @@ def _rename_speakers(
     }
     if unknown_name:
         by_label[labels.get(UNKNOWN_SPEAKER, "未知")] = unknown_name
-    return relabel.rename(text, by_label)
+    # 編號 → 那一位在檔案裡**目前**的標籤(rename 認的是標籤不是編號)
+    auto_labels = {labels.get(n, f"講者 {n}") for n in (auto_named or ())}
+    return relabel.rename(text, by_label, auto_labels)
 
 
 def _audit_table(rows, blocks=None) -> list[list]:

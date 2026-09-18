@@ -172,10 +172,12 @@ class DiarProcess:
     ) -> tuple[list[SpeakerTurn], dict, list[SpeakerQuality]]:
         reply = self._request(msg)
         # 舊回應只有三欄(起, 訖, 講者):conf 給 0 = 核對表顯示空白,
-        # 而不是讓整場收尾因為一個欄位炸掉(同下面 quality 的取捨)
+        # crosstalk 給 False = 不標〔多人交錯〕,而不是讓整場收尾因為一個
+        # 欄位炸掉(同下面 quality 的取捨)。⚠️ **少一欄只該少一欄資訊**
         turns = [
             SpeakerTurn(float(row[0]), float(row[1]), int(row[2]),
-                        float(row[3]) if len(row) > 3 else 0.0)
+                        float(row[3]) if len(row) > 3 else 0.0,
+                        bool(row[4]) if len(row) > 4 else False)
             for row in reply.get("turns", [])
         ]
         vps = {

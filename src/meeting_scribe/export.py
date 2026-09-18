@@ -14,7 +14,70 @@ from collections.abc import Callable
 from pathlib import Path
 
 from meeting_scribe import loopdetect
-from meeting_scribe.types import UNKNOWN_SPEAKER, SpeechBlock, SpokenSegment
+from meeting_scribe.types import (NAME_SOURCE_AUTO, NAME_SOURCE_CONFIRMED,
+                                  NAME_SOURCE_NONE, UNKNOWN_SPEAKER,
+                                  SpeechBlock, SpokenSegment)
+
+
+# ---- 講者行的行內標記(2026-09-18 使用者選定 A 案:標記緊跟名字)----
+#
+# ⚠️ **為什麼要在行內、而不是只放檔尾那張表**:下游是使用者的 FWIKI
+# ——Claude Code 讀整份 md、寫成主題知識頁,而寫「某人說……」那一刻
+# 讀的是正文那一行。檔尾的表它雖然讀得到(全文都在 context 裡),但要
+# 自己把表對回正文、而且很容易漏。**標在名字旁邊,寫下那句話的同一瞬間
+# 就看得到**。使用者 2026-09-18 選「行內＋檔尾都標」。
+#
+# ⚠️ **只標「不可靠」的那些,不標正常的**:使用者的習慣是「認得出來的
+# 都會設」(2026-09-18 確認),所以人工確認才是多數——標多數只會讓整份
+# 逐字稿每一行都掛著記號,重要的那幾行反而看不出來。
+#
+# ⚠️ **全形〔〕不是隨手挑的**:① 與 doc2md 那條線的失真標記同一種括號
+# (`docmd` 的〔〕),兩種產物在 WIKI 端長得一致;② `**名字**` 後面直接
+# 接〔不會破壞 CommonMark 的粗體——這是拿 markdown-it 真的渲染過的
+# (10 種寫法全數通過),不是推理出來的。改這個字元前請重跑那個驗證,
+# flanking 規則踩過四次。
+MARK_AUTO_NAME = "機器辨識"      # 名字是聲紋自動填的,使用者沒動過
+MARK_CROSSTALK = "多人交錯"      # 這一輪落在多人快速交錯討論的區間裡
+MARK_UNCERTAIN = "身分存疑"      # 這個標籤的群內一致性明顯低於本場中位數
+# 多個標記之間的分隔。用全形頓號的變體「・」而不是「、」:後者在中文
+# 句子裡到處都是,標記串起來會看起來像內文的一部分
+MARK_SEP = "・"
+
+
+def mark_suffix(marks: list[str]) -> str:
+    """標記清單 → 接在 `**名字**` 後面的那一段(沒有標記回空字串)。
+
+    **只有這一份**:渲染(to_markdown)與解析(audit/relabel 的正則)必須
+    對得起來,而三處各寫一次字串的話,改一個字就會有一邊失聯——症狀是
+    「改掛按了沒反應」而畫面上完全看不出為什麼(同 speaker_label 那條)。"""
+    return f"〔{MARK_SEP.join(marks)}〕" if marks else ""
+
+
+# 逐字稿的講者行:`**名字**〔標記〕(00:12:34)`,標記那一段是選擇性的。
+#
+# ⚠️ **全 repo 只有這一份**(2026-09-18 起):先前 `relabel._SPEAKER_RE` 與
+# `audit._SPEAKER_LINE` 各抄了一份一樣的,而行內標記一加上去,兩份都會
+# **安靜地match不到**——症狀是「重設講者只剩手動命名」與「改掛按了說沒改到
+# 任何一行」,而畫面上完全看不出成因(同 speaker_label 那條抄三份的教訓)。
+# 產生那一行的是這個模組,規則跟著產生端走才追得上。
+#
+# ⚠️ **時間戳是關鍵**:少了它,內文裡任何一組粗體都會被當成講者標籤
+# (多冒出一個不存在的講者 + 多一個命名欄位)。
+# ⚠️ **分隔是「標記」或「一個空白」,二選一不是兩者**(2026-09-18 使用者
+# 選定的寫法:標記直接貼著時間戳):沒有標記時是 `**名字** (00:12:34)`、
+# 有標記時是 `**名字**〔機器辨識〕(00:12:34)`。寫成 `\s*` 放寬的話,
+# `**名字**(00:12:34)` 這種本工具不會產生的形狀也會被收下,而那正是
+# 「內文裡的粗體被當成講者標籤」的入口
+SPEAKER_LINE_RE = re.compile(
+    r"^\*\*(?P<name>.+?)\*\*(?:〔(?P<marks>[^〕]*)〕|\ )"
+    r"\((?P<h>\d+):(?P<m>[0-5]\d):(?P<s>[0-5]\d)\)$"
+)
+
+
+def speaker_line(name: str, seconds: float, marks: list[str] | None = None) -> str:
+    """組一行講者行。渲染與「套用名字時重建那一行」共用同一份組法。"""
+    suffix = mark_suffix(marks or [])
+    return f"**{name}**{suffix or ' '}({_hms(seconds)})"
 
 
 def speaker_label(speaker: int) -> str:
@@ -53,19 +116,25 @@ def speech_blocks(spoken: list[SpokenSegment]) -> list[SpeechBlock]:
         ):
             blocks[-1][2].append(seg.text)
             blocks[-1][3] = seg.end
+            # 一輪發言裡**任一句**落在交錯區就算(見 SpeechBlock.crosstalk):
+            # 一輪只有一個講者標籤,標記要回答的是「這一輪的歸屬可不可靠」
+            blocks[-1][5] = blocks[-1][5] or seg.crosstalk
         else:
-            blocks.append([seg.speaker, seg.start, [seg.text], seg.end, is_marker])
+            blocks.append([seg.speaker, seg.start, [seg.text], seg.end, is_marker,
+                           seg.crosstalk])
     return [
-        SpeechBlock(speaker=sp, start=st, end=en, text="".join(texts), is_marker=m)
-        for sp, st, texts, en, m in blocks
+        SpeechBlock(speaker=sp, start=st, end=en, text="".join(texts), is_marker=m,
+                    crosstalk=ct)
+        for sp, st, texts, en, m, ct in blocks
     ]
 
 
 def _group_by_speaker(
     spoken: list[SpokenSegment],
-) -> list[tuple[int, float, str, bool]]:
+) -> list[tuple[int, float, str, bool, bool]]:
     """同 speech_blocks,但回傳既有的 tuple 形狀(渲染與診斷區塊用)。"""
-    return [(b.speaker, b.start, b.text, b.is_marker) for b in speech_blocks(spoken)]
+    return [(b.speaker, b.start, b.text, b.is_marker, b.crosstalk)
+            for b in speech_blocks(spoken)]
 
 
 # 講者診斷區塊的標題。**公開常數**:relabel 解析逐字稿時要在這裡收手
@@ -193,22 +262,41 @@ def _speaker_diagnostics(quality: list, spoken: list[SpokenSegment]) -> list[str
             "",
         ]
     lines += [
-        "| 講者 | 發言輪次 | 總時長 | 群內一致性 |",
-        "| --- | ---: | ---: | ---: |",
+        "| 講者 | 發言輪次 | 總時長 | 群內一致性 | 名字來源 |",
+        "| --- | ---: | ---: | ---: | --- |",
     ]
     for q in sorted(quality, key=lambda x: x.speaker):
-        n_blocks = sum(1 for sp, _s, _t, _m in blocks if sp == q.speaker)
+        n_blocks = sum(1 for sp, _s, _t, _m, _c in blocks if sp == q.speaker)
+        # 名字來源在**這個時點一律是「未命名」**:標籤還是「講者 N」,使用者
+        # 還沒命名。`relabel.rename` 套用名字時把這一欄改掉(見該處);批次
+        # (doc2md)那條路沒有命名步驟,所以那份會一直停在「未命名」——那是
+        # 對的,不是漏改
         lines.append(
             f"| {speaker_label(q.speaker)} | {n_blocks} | {_hms(q.seconds)} "
-            f"| {q.cohesion:.2f} |"
+            f"| {q.cohesion:.2f} | {NAME_SOURCE_NONE} |"
         )
     lines += [
         "",
         "- **發言輪次**:這個標籤在逐字稿裡出現幾次(連續發言算一次)。",
         "- **群內一致性**:各段聲紋與該標籤平均聲紋的相似度。"
         "**只能在同一份逐字稿之內互相比**,不同錄音的數字沒有可比性。",
+        f"- **名字來源**:「{NAME_SOURCE_CONFIRMED}」= 由人親自填上或改過;"
+        f"「{NAME_SOURCE_AUTO}」= 聲紋比對自動填的、**沒有人確認過**"
+        f"(這種會認錯人,正文那幾行也標了〔{MARK_AUTO_NAME}〕);"
+        f"「{NAME_SOURCE_NONE}」= 仍是「講者 N」,表示這個人沒有聲紋建檔。",
         "- 「未知」不列入本表:那是與任何講者都不夠像的零碎語音,"
         "本來就不代表某一個人。",
+        "",
+        # ⚠️ **這一段是寫給下游的 AI 看的**(2026-09-18 使用者指定):他的
+        # 流程是請 Claude Code 讀整份 md、寫進 FWIKI 的主題知識頁。而標記
+        # 只有在「讀的人知道它代表什麼」時才有用——不解釋的話,下游最可能
+        # 的反應是把〔〕當成逐字稿的雜訊忽略掉
+        f"⚠️ **正文的行內標記**:〔{MARK_AUTO_NAME}〕= 這個名字是機器猜的;"
+        f"〔{MARK_UNCERTAIN}〕= 這個標籤的一致性明顯低於本場中位數,"
+        "底下可能不只一個人;"
+        f"〔{MARK_CROSSTALK}〕= **那一輪落在多人快速交錯討論的區間**,"
+        "當時好幾個人搶著講、機器分不開,所以那一行的講者歸屬是猜的。"
+        "**引用帶標記的發言時不要斷言是誰說的。**",
         "",
     ]
     lines += _unknown_note(spoken)
@@ -265,22 +353,79 @@ def to_markdown(
     todo = [i for i, g in enumerate(groups) if not g[3]] if punctuate else []
     done = (dict(zip(todo, punctuate([groups[i][2] for i in todo]), strict=True))
             if todo else {})
+    # 一致性明顯低於本場中位數的那幾位:行內也標一次(見 mark_suffix 那段)
+    uncertain = {q.speaker for q in check_first(quality or [])}
     lines = [f"## 會議逐字稿 — {title}", ""]
-    for i, (speaker, start, text, _is_marker) in enumerate(groups):
-        lines.append(f"**{speaker_label(speaker)}** ({_hms(start)})")
+    for i, (speaker, start, text, _is_marker, crosstalk) in enumerate(groups):
+        # ⚠️ **這裡只標「轉檔當下就知道的」兩種**:名字要等使用者命名之後
+        # 才存在,`MARK_AUTO_NAME` 因此由 `relabel.rename` 在套用名字那一刻
+        # 補上(見該處)。⚠️ 順序固定「標籤可疑 → 這一輪交錯」,由範圍大小
+        # 排(前者講整位講者、後者只講這一輪);順序飄動的話,下游想 grep
+        # 某一種標記就得寫出所有排列
+        marks = []
+        if speaker in uncertain:
+            marks.append(MARK_UNCERTAIN)
+        if crosstalk:
+            marks.append(MARK_CROSSTALK)
+        lines.append(speaker_line(speaker_label(speaker), start, marks))
         lines.append(done.get(i, text))
         lines.append("")
     lines += _speaker_diagnostics(quality or [], spoken)
     return "\n".join(lines)
 
 
-def write_md(md_text: str, out_dir: Path, stem: str) -> Path:
+def transcript_frontmatter(
+    spoken: list[SpokenSegment], quality: list | None = None,
+) -> list[str]:
+    """逐字稿的 frontmatter(md 行清單)。
+
+    ⚠️ **只放「不隨命名改變」的欄位**:使用者命名之後 `relabel.rename` 會
+    重寫講者行與診斷表,但它**不碰 frontmatter**——放講者名字進來就會在
+    改名後變成一份對不上的舊資料,而那沒有任何症狀。
+
+    ⚠️ **這裡加、`to_markdown` 不加**:批次那條路(docaudio → docmd.render)
+    會自己放一份 frontmatter,兩份疊在一起**整份 YAML 解析失敗**,而下游
+    多半是先 parse frontmatter 再處理——壞一份就整份進不了知識庫
+    (`docmd._frontmatter` 註解記著這條)。`write_md` 只有單檔/現場收音那條
+    路會走,批次走的是 `docmd.write_md`,天然不會撞。"""
+    if not spoken:
+        return []
+    total = sum(s.end - s.start for s in spoken)
+    if total <= 0:
+        return []
+    cross = sum(s.end - s.start for s in spoken if s.crosstalk)
+    unknown = sum(s.end - s.start for s in spoken if s.speaker == UNKNOWN_SPEAKER)
+    return [
+        "---",
+        # 同 doc2md 那條線的憑據欄位:「這份 md 是本工具產生的」
+        "converter: meeting-scribe",
+        f"speakers: {len(quality or [])}",
+        # ⚠️ 固定英文 token(同 lossy_kinds 的理由):值是給機器判斷的,
+        # 而中文的「機器分出來的」沒辦法拿去做相等比較
+        "speaker_labels: machine",
+        f"crosstalk_share: {cross / total:.3f}",
+        f"unknown_share: {unknown / total:.3f}",
+        "---",
+        # ⚠️ **兩個空字串 = frontmatter 與正文之間真的空一行**:`write_md`
+        # 是 `"\n".join(...) + md_text`,少一個的話 `---` 會和 `## 會議逐字稿`
+        # 黏成相鄰兩行。多數 YAML parser 不在意,但人讀起來像壞掉的
+        "",
+        "",
+    ]
+
+
+def write_md(md_text: str, out_dir: Path, stem: str,
+             frontmatter: list[str] | None = None) -> Path:
     """把已渲染好的 md 內容寫成檔案,回傳路徑。
 
     渲染留在呼叫端(pipeline.finalize):同一份 to_markdown 輸出要同時
     當檔案內容與預覽,標點模型對整份逐字稿要跑上數十秒,不能各跑一遍。
-    (曾接 spoken+punctuate 自行渲染當備援,生產路徑從未走過,已移除。)"""
+    (曾接 spoken+punctuate 自行渲染當備援,生產路徑從未走過,已移除。)
+
+    ⚠️ **frontmatter 只加在檔案上、不進預覽**(2026-09-18):預覽框要給人看
+    的是逐字稿本身,開頭頂著一塊 YAML 只是噪音;而它也是「改掛」與命名套用
+    比對的那份文字,多一塊在前面只會讓兩邊的內容不一致。"""
     out_dir.mkdir(parents=True, exist_ok=True)
     p = out_dir / f"{stem}.md"
-    p.write_text(md_text, encoding="utf-8")
+    p.write_text("\n".join(frontmatter or []) + md_text, encoding="utf-8")
     return p

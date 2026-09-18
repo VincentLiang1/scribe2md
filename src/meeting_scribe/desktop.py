@@ -82,7 +82,14 @@ logger = logging.getLogger("meeting_scribe.desktop")
 # (20×2),這樣預設開起來就正好是那個上限、不必先拉一次視窗;高度多出來的 60 給
 # 新的頁首(大標＋副標)。⚠️ **2026-09-04 再從 1280 收成 1216**:那是 `MAX_CONTENT`
 # 跟著網頁版改成 1176 的連帶,兩者的關係不變(改一個就要改另一個)。
-WIN_W, WIN_H = 1216, 820
+# ⚠️ **2026-09-18 再收成 1120**(使用者:「預設開啟的視窗大小,寬度可以小一點」;
+# 三案實拍選 B),`MAX_CONTENT` 一起收到 1080。**高度一格沒動。**
+# ⚠️ **1120 是兩個量過的門檻夾出來的,再往下不是「更緊湊」而是壞掉**:**1104**
+# 以下頁首副標折成兩行(整頁內容跟著往下推一行);**1040** 以下「名單與聲紋」那頁
+# 第三張卡被右邊界切掉——那一頁的三欄寬度照 `MAX_CONTENT` 算(`_roster_col`),而它
+# 的 canvas 沒有橫向捲軸,所以溢出不是捲得到,是**看不到**。量法與數據見
+# `docs/dev/native-ui.md`。
+WIN_W, WIN_H = 1120, 820
 
 # 內容區的**最大**寬度。⚠️ **這是 2026-09-01「照網頁版重排」的第一刀**:網頁版的
 # 容器寫死 `width: 1240px` 並置中(`ui_style.py` 的 `.gradio-container`),而原生
@@ -99,7 +106,12 @@ WIN_W, WIN_H = 1216, 820
 # 的截圖逐列掃卡片邊界):網頁 1764 實體 px、原生 1856,而中縫都是 30 = `CARD_GAP`
 # ——**先用中縫確認兩張同一個縮放,再比卡片寬**,不然量到的是 DPI 不是版面。
 # ⚠️ **上限不是固定寬**:視窗拉得比它窄時內容跟著縮,不會冒出橫向捲軸。
-MAX_CONTENT = 1176
+# ⚠️ **2026-09-18 起不再等於網頁版的 1176,而是 1080**(使用者:「寬度可以小一點」)
+# ——上面那一整段留著是因為它說明的是**上限為什麼要存在**、以及當初怎麼量的,不是
+# 現在的值;要再對照網頁版就從 1176 那個數字回推。⚠️ **不可以單獨改這一個**:
+# `WIN_W` 綁著它(= 本值 + `PAGE_PAD` 20×2),只改一邊的症狀分兩種——視窗比上限寬
+# 是兩側多一圈灰,窄則是「名單與聲紋」第三張卡被切掉(見 `WIN_W` 那段的門檻)。
+MAX_CONTENT = 1080
 
 # 共用的間距尺規(三個 repo 同一組值,理由見檔頭)。
 SP_XS, SP_SM, SP_MD, SP_LG, SP_XL = 4, 8, 12, 16, 24
@@ -1564,6 +1576,7 @@ class App(tk.Tk):
                       selectbackground=self.pal["row_sel"],
                       spacing1=gap // 2, spacing3=gap - gap // 2)
         box.wrap_raw = text
+        box.wrap_line_w = []              # 每一行畫出來多寬,`_rewrap_text` 排版時填
         box.wrap_font = tkfont.Font(root=self, font=(self.fam, pt))
         box.wrap_bold = tkfont.Font(root=self, font=(self.fam, pt, "bold"))
         # 程式碼字:等寬、小一號、淡灰底——量網頁版:墨跡 18 對一般字 21(約 0.85em)、底
@@ -1624,18 +1637,34 @@ class App(tk.Tk):
                 box.insert("end", run, (run_st,) if run_st else ())
                 run = ""
 
+        # ⚠️ **每一行畫出來多寬順手記著**(`wrap_line_w`,2026-09-18 收窄視窗時補的):
+        # 這一段混著三種字型與圖片,**拿單一字型量整行兩個方向都會錯**——同一段實測
+        # (@150%、`wrap_w` 1528):第一行畫出來 1527,單一字型量 **1541**(高估 14,
+        # 於是「明明放得下」卻報錯);第二行畫 1427,單一字型量 **1391**(低估 36,而
+        # `wrap="none"` 的 Text 裁字**沒有任何跡象**,那是漏報)。逐字量兩行都是 1527
+        # 與 1427,與 `dlineinfo` 一個像素不差,所以量尺只留這一把:排版當下順手加總,
+        # 測試直接讀它(`test_wrapped_labels_break_like_a_browser` 那一族)。
+        line_w, rows = 0, []
         for ch, st in pieces:
             photo = icon(ch)
             if photo is not None:
                 flush()
                 box.image_create("end", image=photo, align="center")
+                line_w += photo.width()
                 continue
+            if ch == "\n":
+                rows.append(line_w)
+                line_w = 0
+            else:
+                line_w += fonts[st].measure(ch)
             if st != run_st:
                 flush()
                 run_st = st
             run += ch
         flush()
+        rows.append(line_w)
         box.wrap_out = out
+        box.wrap_line_w = rows
         box.configure(state="disabled", height=out.count("\n") + 1)
 
     def _label_font(self, label: ttk.Label):
@@ -3846,6 +3875,11 @@ class App(tk.Tk):
         self._naming_btns: dict[int, ttk.Button] = {}
         self._naming_audit_btns: dict[int, ttk.Button] = {}
         self._naming_clues: dict[int, ttk.Label] = {}   # 每一塊的線索(填了名字就收合)
+        # ⚠️ **跟著空卡一起先建**(同 `_audit_win` 那批的理由):命名卡是「用到才建」,
+        # 而套用名字那條路要讀它——少了初值就是 `AttributeError` 被 Tk 吞進紀錄檔、
+        # 畫面上一個字都沒有。目前 `_naming_apply` 有 `_naming_result is None` 擋在
+        # 前面,但那是**另一個**變數的保護,不該靠它
+        self._naming_guesses: dict[int, str] = {}
         self._naming_next_row = 0
         self._naming_clips: dict | None = None
         self._playing: int | None = None      # 正在試聽哪一位(None = 沒在放)
@@ -5312,6 +5346,10 @@ class App(tk.Tk):
         self._naming_btns = {}
         self._naming_audit_btns = {}
         self._naming_clues = {}
+        # 聲紋自動辨識填進去的原值({0-based 講者: 名字})。⚠️ **套用時要拿它
+        # 比對**:使用者最後留下的名字若與它一字不差,表示那個名字是機器猜的、
+        # 沒有人確認過,逐字稿要標〔機器辨識〕(見 relabel.rename)
+        self._naming_guesses: dict[int, str] = {}
         self._naming_next_row = 0
         count = int(getattr(result, "speakers", 0) or 0)
         hints = result.speaker_hints or {}
@@ -5343,6 +5381,10 @@ class App(tk.Tk):
         guesses, rivals, flags = naming_core._naming_clues(
             count, result.voiceprints or {}, seed, has_audit)
         prefill = dict(guesses) if names is None else dict(names)
+        # ⚠️ **存的是 guesses 不是 prefill**:開頁還原時 prefill 是使用者的草稿,
+        # 而要比對的基準永遠是「機器原本猜什麼」(候選不落地、兩邊各自重算,
+        # 見 _naming_clues 的 docstring,所以這個值兩條路一致)
+        self._naming_guesses = dict(guesses)
         # 「改成幾位講者」:只在同層真的有分群檔時出現(第三種狀態,同網頁版
         # `_naming_page_updates`)。⚠️ **人數欄預設填「現在幾位」,不是猜一個建議值**
         # (使用者 2026-08-18 選定:兩種標準做法都推算不出人數,欄位就該顯示事實)。
@@ -6140,6 +6182,13 @@ class App(tk.Tk):
         picked = {spk + 1: var.get().strip()
                   for spk, var in self._naming_vars.items()
                   if spk != UNKNOWN_SPEAKER and var.get().strip()}
+        # ⚠️ **判準是「使用者有沒有動過那一格」**(2026-09-18 使用者指定):留下來的
+        # 名字與聲紋猜的一字不差 = 沒有人確認過,逐字稿標〔機器辨識〕。他沒改可能是
+        # 認同、也可能是沒看,分不出來——當成「沒人確認過」是誠實的那一邊,而下游
+        # (他的 FWIKI)正是把「有名字」一律當成高可信度才需要這個標記
+        auto_named = {spk + 1 for spk, var in self._naming_vars.items()
+                      if spk != UNKNOWN_SPEAKER and var.get().strip()
+                      and var.get().strip() == self._naming_guesses.get(spk, "")}
         unknown_var = self._naming_vars.get(UNKNOWN_SPEAKER)
         unknown_name = unknown_var.get().strip() if unknown_var is not None else ""
         outputs = [Path(p) for p in result.outputs]
@@ -6151,7 +6200,8 @@ class App(tk.Tk):
                 # ⚠️ **標籤現場從檔案讀**:一般逐字稿讀到的就是「講者 N」;而重設講者
                 # 那條路讀到的是當初命名過的真名,那正是這次要換掉的東西。
                 after = naming_core._rename_speakers(
-                    text, picked, unknown_name or None, naming_core._labels_in(text))
+                    text, picked, unknown_name or None, naming_core._labels_in(text),
+                    auto_named)
                 # ⚠️ **改不到要出聲**:套用成功與否使用者看不出來(畫面照樣復位、檔案
                 # 照樣在),真的發生時多半是格式對不上,那是工具的 bug 不是使用者的。
                 if after == text:

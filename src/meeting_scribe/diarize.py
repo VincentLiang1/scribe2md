@@ -231,6 +231,89 @@ def _fragmentary_labels(est: np.ndarray, labels: np.ndarray) -> set[int]:
     return out
 
 
+# ---- 「多人快速交錯討論」:標出來,不硬分 ----
+# 2026-09-18 使用者指定(原話:「整段快速對話,分不出來,那就不要分」)。
+#
+# ⚠️ **這與上面那條、與「這一群有幾個人」都不是同一個問題**,三者的層級
+# 不同,別混在一起調:
+#   - `_fragmentary_labels` 判的是**一整群**(整群都是零星應答 → 標未知);
+#   - 「這一群混了幾個人」判**不出來**(三種統計量都試過,見
+#     types.SpeakerQuality),已結案;
+#   - 這一條判的是**一段時間**——那幾分鐘裡大家七嘴八舌,誰是誰分不開。
+#     判準只看段長與相鄰段換人頻率,不看群,所以前兩條的否決不適用。
+#
+# **為什麼值得做**(不是為了分得更準,是為了誠實):這種區間的歸屬一定
+# 是猜的,而 md 上看起來跟正常發言一模一樣。下游(使用者的 FWIKI)讀到
+# 連續幾行同一個標籤,會自然當成那個人的連貫發言,把好幾個人的話合成
+# 一個人的立場寫進知識頁——那是一條錯誤的結論,而且他們的〈抽樣回原件
+# 核對〉抓不到(頁面與逐字稿一致,只是逐字稿本身錯了)。
+#
+# **順帶的用途**:使用者的 FWIKI 有一條規則要在攝入時判斷哪些是離題閒談
+# (`memory/meeting-offtopic-not-ingested.md`:離題段落不寫進頁面、只在
+# 頁尾註明時間碼)。報告是一個人講,閒聊才會七嘴八舌——所以這個標記
+# 直接幫下游做那個判斷,不只是一個警告。
+#
+# **門檻是使用者 2026-09-18 從實測三組裡挑的**(拿他 20 支長錄音、26.6
+# 小時真實會議量的,佔「有語音時間」的比例):
+#   段長 1.5 秒 → 6.25% / **3.0 秒 → 19.72%(選定)** / 2.0 秒 → 11.36%
+# 選 3.0 是因為呈現方式是「保留講者標籤、只加註」——誤判的代價只是多
+# 一個〔多人交錯〕,而漏判的代價是一段猜的歸屬被下游當真。**代價不對稱
+# 時就往寬的那邊走**;若哪天改成「換掉講者標籤」,這個數字必須跟著收回
+# 到 2.0 以下,否則會把真的分得出來的段落一起放棄。
+_CROSSTALK_SHORT_SEC = 3.0
+# 相鄰段聲紋相似度低於此即視為「換人了」。與 `_BLOCK_MIN_SIM` 同值不是
+# 巧合:那條是「像到可以聚成同一塊」,這條問的是它的反面
+_CROSSTALK_SIM = 0.60
+# 你一言我一語的間隔上限:超過就不是搶著講,是各自講完一段
+_CROSSTALK_MAX_GAP_SEC = 1.0
+# 至少連續幾段、其中至少幾次換人,才算一個交錯區間。⚠️ **兩個都要有**:
+# 只看段數會把「一個人連講幾句短話」算進來,只看換人次數則會把兩個人
+# 正常的一問一答算進來
+_CROSSTALK_MIN_RUN = 3
+_CROSSTALK_MIN_SWITCH = 2
+
+
+def _crosstalk_spans(est: np.ndarray, vecs: np.ndarray) -> list[tuple[float, float]]:
+    """多人快速交錯討論的時間區間(見上面那段常數說明)。
+
+    est = 有抽聲紋那些區段的 [起, 迄](與 vecs 同長同序)。回傳的是**時間
+    區間**而不是索引:呼叫端要標的是全部區段(含沒抽聲紋的短碎段),而那些
+    正是交錯區裡最碎的一批——只標有聲紋的會漏掉它們。
+
+    ⚠️ **vecs 必須是 L2 正規化過的**(accum.vectors() 保證),否則 `a @ b`
+    不是 cosine 相似度、門檻整個失去意義。"""
+    n = len(est)
+    if n < _CROSSTALK_MIN_RUN or vecs.size == 0:
+        return []
+    dur = est[:, 1] - est[:, 0]
+    out: list[tuple[float, float]] = []
+    i = 0
+    while i < n:
+        j, switches = i, 0
+        while j + 1 < n:
+            # 兩段都夠長:那是正常的一來一往,不是聽不清的交錯
+            if dur[j] > _CROSSTALK_SHORT_SEC and dur[j + 1] > _CROSSTALK_SHORT_SEC:
+                break
+            if est[j + 1][0] - est[j][1] > _CROSSTALK_MAX_GAP_SEC:
+                break
+            if float(vecs[j] @ vecs[j + 1]) < _CROSSTALK_SIM:
+                switches += 1
+            j += 1
+        if (j - i + 1 >= _CROSSTALK_MIN_RUN and switches >= _CROSSTALK_MIN_SWITCH
+                and float(np.median(dur[i:j + 1])) < _CROSSTALK_SHORT_SEC):
+            # ⚠️ **區間只涵蓋短段本身,不含 run 頭尾那幾段正常發言**
+            # (2026-09-18 測試抓到的真實缺陷):一串交錯的前後常常各黏著
+            # 一段完整發言(迴圈是在「連續兩段都夠長」才收手,所以 run 的
+            # 邊界會壓到其中一段)。照 run 的邊界標,那段真的分得出來、
+            # 最不該放棄的發言就會被標成「歸屬不可靠」——而那正是這整條
+            # 判準要避免的事。
+            short = [k for k in range(i, j + 1) if dur[k] < _CROSSTALK_SHORT_SEC]
+            if short:
+                out.append((float(est[short[0]][0]), float(est[short[-1]][1])))
+        i = j + 1 if j > i else i + 1
+    return out
+
+
 # 單例快取:diarizer/embedder 建構要重讀 onnx(實測 ~0.45 秒),批次多檔
 # 重用;設定不再依講者人數而變(重聚在本模組做),永遠只需一份
 _SD_CACHE: list["sherpa_onnx.OfflineSpeakerDiarization"] = []
@@ -808,8 +891,14 @@ def _labels_and_voiceprints(
         else:
             mid = (all_spans[i][0] + all_spans[i][1]) / 2
             confs.append(float(conf_emb[int(np.argmin(np.abs(mids_emb - mid)))]))
+    # 多人快速交錯討論的區間(見 _crosstalk_spans):標在 turn 上一路帶到
+    # 逐字稿。⚠️ **在 est/vecs 上判、對 all_spans 標**:交錯區裡最碎的那些
+    # 段本來就短到抽不出聲紋,只標有聲紋的會正好漏掉它們
+    cross = _crosstalk_spans(est, vecs)
+    def _in_crosstalk(s: float, e: float) -> bool:
+        return any(e > lo and s < hi for lo, hi in cross)
     turns = [
-        SpeakerTurn(s, e, lab, c)
+        SpeakerTurn(s, e, lab, c, _in_crosstalk(s, e))
         for (s, e), lab, c in zip(all_spans, labels, confs)
     ]
     return turns, voiceprints, _quality(turns, conf_emb, emb_labels)
