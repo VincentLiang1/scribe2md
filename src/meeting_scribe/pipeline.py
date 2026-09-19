@@ -321,7 +321,7 @@ class RenderedTranscript:
 
     degenerate 是「連重轉都救不回、已被標記取代」的段落——批次路徑
     (docaudio)要據此在 md 的 frontmatter 留失真標記,而 finalize 要據此
-    寫紀錄檔。兩邊都需要,所以它是回傳值的一部分而不是內部細節。"""
+    寫記錄檔。兩邊都需要,所以它是回傳值的一部分而不是內部細節。"""
     md_text: str
     spoken: list
     degenerate: list
@@ -356,7 +356,7 @@ def render_transcript(spoken, stem: str, quality=None) -> RenderedTranscript:
     # 訓練殘留(模型把 YouTube 結尾語、字幕組署名吐進逐字稿)先挖掉。
     # ⚠️ **要在跳針判定之前**:那些句子會墊高壓縮比,留著判會讓同一段
     # 被算成跳針、整段換成標記——而它其實只有一句不屬於這場會議的話。
-    # ⚠️ **挖掉的東西一定要寫進紀錄檔**:無聲改動逐字稿內容,與無聲留著
+    # ⚠️ **挖掉的東西一定要寫進記錄檔**:無聲改動逐字稿內容,與無聲留著
     # 垃圾一樣不可接受,而且更難發現(沒有人會為了確認「有沒有被改過」
     # 去逐份比對)。見 loopdetect.strip_residue。
     residue: list[str] = []
@@ -515,7 +515,7 @@ def transcribe_to_markdown(
         spoken = merge.assign_speakers(segments, turns)
         rendered = render_transcript(spoken, src.stem, quality)
     # 同 finalize:跳針是整條管線唯一會真的弄丟內容的地方,批次更沒有人
-    # 會逐份翻 md,紀錄檔那一行是唯一會被看見的痕跡(md 內另有標記)
+    # 會逐份翻 md,記錄檔那一行是唯一會被看見的痕跡(md 內另有標記)
     if rendered.degenerate:
         logger.warning(
             "轉錄跳針:%s 有 %d 段(共 %.0f 秒)連重轉都救不回,已在逐字稿標記",
@@ -576,7 +576,7 @@ def finalize(
     spoken, degenerate, md_text = (
         rendered.spoken, rendered.degenerate, rendered.md_text,
     )
-    # **這件事一定要進紀錄檔**:標記在 md 裡看得到,但沒人會為了確認
+    # **這件事一定要進記錄檔**:標記在 md 裡看得到,但沒人會為了確認
     # 「這次有沒有掉東西」去逐份翻逐字稿;而它就是這條管線唯一會真的
     # 弄丟內容的地方(2026-08-04 一場 64 分鐘的會議掉了 3 段共 92 秒)
     if degenerate:
@@ -589,7 +589,7 @@ def finalize(
     outputs = [export.write_md(
         md_text, out_dir, stem, export.transcript_frontmatter(spoken, quality))]
     # 標點模型要跑整份逐字稿,而在此之前使用者已經等了整段收尾。沒有這行
-    # 的話「到底是還在跑還是卡住了」在紀錄檔裡完全看不出來。(量級:依序跑
+    # 的話「到底是還在跑還是卡住了」在記錄檔裡完全看不出來。(量級:依序跑
     # 的年代 89 分鐘會議 4.5 秒、166 分鐘 13.6 秒;2026-09-17 改成區塊間平行,
     # 見 punctuate.add_punctuation_many——這行的秒數就是驗收它的地方)
     logger.info(

@@ -103,7 +103,7 @@ def build_engine(threads: int = 0):
 
     `params` 的鍵是 OmegaConf 的點路徑(3.x 的設定介面,與 1.x 的關鍵字
     參數完全不同)。log 壓到 error:預設 info 會把三顆模型的載入路徑往
-    stderr 洗,而父行程把 stderr 全部收進 DEBUG 紀錄檔。
+    stderr 洗,而父行程把 stderr 全部收進 DEBUG 記錄檔。
 
     **推論後端是 OpenVINO CPU,不是 onnxruntime**(2026-08-03 實測):同一批
     1,179 張真實影像端到端,中位 1.78 秒 → 0.67 秒(**2.66 倍**),而**文字
@@ -448,13 +448,13 @@ def _write(stdout, payload: dict) -> None:
 def main() -> int:  # pragma: no cover - bootstrap,由 ocr.py 以子行程啟動
     # 三條都要釘(見 stdio):先前只釘 stdin/stdout,漏掉的 stderr 讓本行程的
     # 繁中 log 在父端(以 UTF-8 解碼)變成替代字元——那些行現在會落地進
-    # 紀錄檔(filelog),而紀錄檔存在的唯一理由就是事後分析
+    # 記錄檔(filelog),而記錄檔存在的唯一理由就是事後分析
     from meeting_scribe import stdio
 
     stdio.force_utf8()
     # root 留在 WARNING(擋掉第三方的 INFO 洗版),但**自家模組放到 INFO**:
-    # 引擎重建這種事必須在紀錄檔看得到,不然「怎麼變慢了」永遠查不出來。
-    # stderr 會被父行程 drain 進 DEBUG 紀錄檔(filelog),不會進黑視窗
+    # 引擎重建這種事必須在記錄檔看得到,不然「怎麼變慢了」永遠查不出來。
+    # stderr 會被父行程 drain 進 DEBUG 記錄檔(filelog),不會進黑視窗
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
     logger.setLevel(logging.INFO)
     threads = 0

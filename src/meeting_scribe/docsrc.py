@@ -186,7 +186,7 @@ def expand_folder(
             if suffix in scan_types:
                 files.append(path)
             elif suffix in CLI_ONLY_TYPES and suffix in types:
-                # 呼叫端明講吃這個格式、但展開仍不收——留一行紀錄,
+                # 呼叫端明講吃這個格式、但展開仍不收——留一行記錄,
                 # 「工具幫你少做了幾百個檔」不該完全查不到痕跡
                 cli_only += 1
             # `_REFERRING_SUFFIXES` 與 `types` **各自獨立**收集:md 不進

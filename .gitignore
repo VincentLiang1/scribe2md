@@ -14,7 +14,7 @@ __pycache__/
 .pytest_cache/
 .coverage
 
-# 使用者自己的東西:聲紋、名單、詞表、逐字稿、紀錄檔
+# 使用者自己的東西:聲紋、名單、詞表、逐字稿、記錄檔
 data/
 output/
 logs/

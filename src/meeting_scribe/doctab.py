@@ -11,6 +11,7 @@ r"""「文字、圖像→MD」分頁的事件處理(`desktop.py` 只負責接線
 """
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -193,3 +194,36 @@ def open_output_dirs(dirs) -> None:
             logger.exception("開啟資料夾失敗:%s", d)
     if not opened:
         raise UserFacingError(f"開不了資料夾,請自行前往:{paths[0]}")
+
+
+def reveal(path) -> None:
+    r"""在檔案總管裡指出一個**檔**(選起來)或**資料夾**(開進去)。
+
+    **為什麼這支住在這裡**:這裡是全 repo 唯一「用檔案總管開東西」的地方(前景權那一
+    套就在隔壁的 `_allow_foreground`),而它與介面無關——換一套 UI 不必改,所以照
+    `naming.py` 那條判準留在非 UI 模組。呼叫端目前是頁首那顆「📂 記錄檔…」
+    (`desktop.App._open_log`)。
+
+    ⚠️ **走 `explorer.exe` 而不是 `os.startfile`**(做法取自 MP4-2-SRT,那邊踩過):
+    記錄檔是 `.log`,而 `.log` 在很多機器上**沒有預設開啟程式**——`startfile` 那時會跳
+    出「你要如何開啟?」的選擇器,而使用者要的只是「讓我看到這個檔」。隔壁那支開的是
+    資料夾,不會踩到,所以兩邊用不同的作法不是不一致。
+    ⚠️ **一樣要先放行前景權**:不放行的話按下去只有工作列閃爍,而使用說明裡已經有一條
+    FAQ 在講那個現象(「📁 按了「輸出資料夾…」,但沒看到視窗跳出來」)——別再製造第二個。
+    """
+    if sys.platform != "win32":
+        raise UserFacingError(f"自動開啟檔案總管只支援 Windows,請自行前往:{path}")
+    p = Path(path)
+    if not p.exists():
+        # ⚠️ 記錄檔那條路走得到這裡:開檔失敗(資料夾唯讀)時 `logs\` 根本沒被建出來。
+        # 靜靜什麼都不做的話,那顆鈕看起來就是壞的。
+        raise UserFacingError(f"找不到這個位置:{p}")
+    _allow_foreground()
+    # ⚠️ `/select,` 與路徑**分成兩個參數**(explorer 的老怪癖,MP4-2-SRT 那邊已驗過)。
+    args = (["explorer.exe", "/select,", str(p)] if p.is_file()
+            else ["explorer.exe", str(p)])
+    try:
+        subprocess.Popen(args)  # noqa: S603 - 固定命令,無 shell
+    except OSError as exc:
+        logger.exception("開啟檔案總管失敗:%s", p)
+        raise UserFacingError(f"開不了檔案總管,請自行前往:{p}") from exc

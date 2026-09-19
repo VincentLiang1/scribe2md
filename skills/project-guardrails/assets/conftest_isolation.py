@@ -5,7 +5,7 @@
 極難回推來源。
 
 四個模式:
-  1. 全域 logging 狀態(以及會落地的紀錄檔)
+  1. 全域 logging 狀態(以及會落地的記錄檔)
   2. 模組層快取(模型物件 / 路徑 memo / 連線池)
   3. 真實硬體探測
   4. 使用者的真實資料檔
@@ -20,7 +20,7 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# 模式 1:紀錄檔 + logging 全域狀態
+# 模式 1:記錄檔 + logging 全域狀態
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="session")
 def _log_dir(tmp_path_factory):
@@ -29,7 +29,7 @@ def _log_dir(tmp_path_factory):
 
 @pytest.fixture(autouse=True)
 def _isolate_logging(_log_dir, monkeypatch):
-    r"""紀錄檔一律導到 tmp,且測試後把 logging 的全域狀態還原。
+    r"""記錄檔一律導到 tmp,且測試後把 logging 的全域狀態還原。
 
     沒有這道隔離會有兩個後果:
     (1) 每跑一次測試就在原始碼樹裡長出 `logs\` 目錄;

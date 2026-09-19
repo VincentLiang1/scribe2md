@@ -82,7 +82,7 @@ _disable_openvino_telemetry()
 # (它走 `from meeting_scribe.brand import …`,而匯入子模組必先匯入父套件)。
 # ⚠️ **位置要我們自己算,不可以讓 winkit 用它的 `__file__` 推**:那幾支模組住在
 # 下游的時候「我在哪」是 `Path(__file__).parents[2]`,搬進共用包之後那條會指到
-# winkit 自己——紀錄檔寫進 `winkit\logs`、版本號讀成 winkit 的 `.git`、皮膚資產
+# winkit 自己——記錄檔寫進 `winkit\logs`、版本號讀成 winkit 的 `.git`、皮膚資產
 # 找不到,而**三個症狀都沒有錯誤訊息**。
 # ⚠️ `repo_root` 也不可以從 `package_dir` 往上推:本專案是 src layout(往上兩層),
 # 姊妹專案 NotebookLM_OCR 是 flat layout(一層),推的那個版本會在一邊安靜地算錯。

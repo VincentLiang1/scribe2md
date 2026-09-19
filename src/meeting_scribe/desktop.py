@@ -70,7 +70,7 @@ from meeting_scribe.types import (DEVICE_NAMES, MAX_SPEAKERS,
 # ⚠️ **名字寫死,不可以用 `__name__`**(2026-09-15 量啟動速度時才發現):`啟動.vbs` 跑的是
 # `pythonw -m meeting_scribe.desktop`,那時 `__name__` 是 `__main__`,不在 `meeting_scribe`
 # 底下——`filelog` 只把 `meeting_scribe` 那一支調到 DEBUG,`__main__` 退回 root 預設的
-# WARNING,這一支的 INFO/DEBUG(十幾行)在使用者的紀錄檔裡**一行都沒有**,而測試是
+# WARNING,這一支的 INFO/DEBUG(十幾行)在使用者的記錄檔裡**一行都沒有**,而測試是
 # import 進來跑的、名字是對的,永遠是綠的。
 logger = logging.getLogger("meeting_scribe.desktop")
 
@@ -202,6 +202,21 @@ APP_SUBTITLE = ("本系統係將聲音、文字、圖像轉換成適合 AI 閱�
 # 而使用者比對的正是這種差距。要改就重量(`verification.md` §6),不要照感覺調。
 HEAD_GAP_SUB, HEAD_GAP_NAV = 17, 20
 
+# 「❓ 使用說明」那一頁、搜尋列末端的那顆(2026-09-19 使用者指定「只有這個專案沒有
+# 記錄檔目錄開啟的按鈕」;先做在頁首,同日他說「太明顯,這個功能不是很常用」,五案
+# 實拍後改收進說明頁):按下去在檔案總管裡指出這一趟的記錄檔。
+# ⚠️ **不要再搬回頁首**——那是品牌區,而這顆鈕一年用不到幾次。放這裡也不只是「藏
+# 起來」:使用者會找它的時機只有一個(我要回報問題),而那一刻他會去的正是這一頁。
+# ⚠️ **文字裡的圖示由 `HandButton` 自己拆**(`split_icon` → `button_icon` 畫成彩色
+# 圖),格式照 `ADV_BUTTON`。⚠️ **「記錄」不是「紀錄」**:log 的繁中譯名全 repo 統一
+# 成「記錄」(同日使用者裁定,444 處一起改),別又寫回去。
+LOG_BUTTON = "📂 記錄檔…"
+# 出錯時的指路。⚠️ **不要再寫「logs 資料夾」**:同仁是用桌面捷徑開的,根本不知道
+# 工具資料夾在哪——那正是這顆鈕存在的理由。⚠️ **指的是那一頁的右上角,不是視窗的**
+# (2026-09-19 鈕從頁首搬進說明頁之後)。⚠️ **命令列那條路不能用這句**(`doccli` 沒有
+# 視窗,它印的是記錄檔的完整路徑)。
+LOG_HINT = "詳情見記錄檔(「❓ 使用說明」右上角的「記錄檔…」)"
+
 # 說明文字裡的程式碼字(`_icon_text` 的 code tag)。Consolas 從 Vista 起隨 Windows 出貨;
 # 缺了 Tk 會自己退到預設字型,只是不等寬,不是壞掉。
 MONO_FAMILY = "Consolas"
@@ -236,7 +251,7 @@ AUDIT_COL_SPEC = (("pick", "", 36, "center"), ("play", "", 36, "center"),
                   ("text", "摘錄", 0, "w"))
 # 一行灰一行白(使用者 2026-09-02 拿網頁版核對表對照):列多時眼睛才跟得住同一列的
 # 時間與摘錄。⚠️ **白那一半要自己設**(`_styles` 把 `Audit.Treeview` 的底色設成卡片的白):
-# 共用包給 Treeview 的底色是紀錄框那個淺灰(`log_bg` = #f0f0f3),第一版的斑馬灰 #f4f4f6
+# 共用包給 Treeview 的底色是記錄框那個淺灰(`log_bg` = #f0f0f3),第一版的斑馬灰 #f4f4f6
 # 疊在上面幾乎同色,使用者當場問「灰及白的差異太小,你是不是設錯了」。灰要看得出來、
 # 又不跟 hover/選中那一列(`row_sel`)與琥珀底打架。
 AUDIT_ZEBRA_LIGHT, AUDIT_ZEBRA_DARK = "#ececf0", "#2c2c31"
@@ -328,7 +343,7 @@ DEVICE_INFO = {
 ADV_TEXT_W, ADV_CTL_W = 270, 220
 
 # 開窗之後在背景偵測 GPU,主執行緒多久問一次「好了沒」(毫秒;見 `App._probe_start`)。
-# 只影響紀錄檔那一行什麼時候寫,不影響任何值——要用到結果的地方都會自己等(`_probe_wait`)。
+# 只影響記錄檔那一行什麼時候寫,不影響任何值——要用到結果的地方都會自己等(`_probe_wait`)。
 PROBE_POLL_MS = 100
 
 
@@ -370,7 +385,7 @@ REC_FINISHING = "收尾中:完成剩餘轉錄與講者分析,進度見下方的�
 # ⚠️ **要講錄音檔在哪、以及怎麼補救**:放棄的是一整場會議的逐字稿,只講「已停止」或
 # 「出錯」的話,使用者會以為那場會議整個沒了。
 REC_ABORTED = "已依要求停止,這一趟的逐字稿放棄了。"
-REC_FAILED = "收尾時出錯,詳情見紀錄檔(logs 資料夾)。"
+REC_FAILED = f"收尾時出錯,{LOG_HINT}。"
 
 
 def salvage_note(salvaged: tuple[list[Path], int] | None, rec_dir: Path | None) -> str:
@@ -389,7 +404,7 @@ def salvage_note(salvaged: tuple[list[Path], int] | None, rec_dir: Path | None) 
                 "之後可以用「轉錄音檔」重轉。")
     if len(saved) < want:
         where = f":{rec_dir}" if rec_dir is not None else ""
-        text += (f"⚠ {'有一條音軌' if saved else '錄音檔'}沒能存到 output(詳見紀錄檔),"
+        text += (f"⚠ {'有一條音軌' if saved else '錄音檔'}沒能存到 output(詳見記錄檔),"
                  f"原始檔還在{where}")
     return text
 
@@ -1416,7 +1431,7 @@ class App(tk.Tk):
         r"""視窗第一次畫好之後:記下開窗花了多久,再開始背景偵測 GPU(`main` 排的)。
 
         (2026-09-15 使用者:「感覺按下啟動.vbs 到畫面出來有點慢」。)
-        ⚠️ **秒數寫進紀錄檔,是為了拿到「開機後第一次」的真實數字**:開發機上量得到的
+        ⚠️ **秒數寫進記錄檔,是為了拿到「開機後第一次」的真實數字**:開發機上量得到的
         都是暖的(檔案早在記憶體裡),而使用者感覺慢的通常是冷的那一次。從行程建立算起、
         不含啟動器那一層(見 `seconds_since_process_start`)。
         ⚠️ **偵測排在畫好之後才開始**,不是視窗一建好就開:`import openvino` 載 DLL 時
@@ -1438,7 +1453,7 @@ class App(tk.Tk):
         `RuntimeError: main thread is not in main loop`。結果留在 `_probe_result`,由主
         執行緒的 `_probe_poll` 或 `_probe_wait` 收。
         ⚠️ **偵測失敗不擋任何事**:驅動壞掉時 `transcribe` 那兩支本來就回 False,這裡再
-        兜一層只是為了紀錄檔那一行不要變成 traceback。"""
+        兜一層只是為了記錄檔那一行不要變成 traceback。"""
         if self._probe is not None:
             return
         import threading
@@ -1458,7 +1473,7 @@ class App(tk.Tk):
         self.after(PROBE_POLL_MS, self._probe_poll)
 
     def _probe_poll(self) -> None:
-        """主執行緒:背景偵測跑完了沒;跑完就把結果寫進紀錄檔。"""
+        """主執行緒:背景偵測跑完了沒;跑完就把結果寫進記錄檔。"""
         if self._probe is not None and self._probe.is_alive():
             self.after(PROBE_POLL_MS, self._probe_poll)
             return
@@ -1476,7 +1491,7 @@ class App(tk.Tk):
         self._probe_report()
 
     def _probe_report(self) -> None:
-        """把背景偵測的結果寫進紀錄檔(一次;檔頭那一行只寫了「見下方」)。"""
+        """把背景偵測的結果寫進記錄檔(一次;檔頭那一行只寫了「見下方」)。"""
         if self._probe_reported or self._probe_result is None:
             return
         self._probe_reported = True
@@ -2130,7 +2145,7 @@ class App(tk.Tk):
             user32.GetParent.argtypes = [ctypes.c_void_p]
             # ⚠️ `winfo id` 回的是 "0x240efe" 這種十六進位字串,`int(x, 0)` 才讀得懂
             # (Tkinter 的 `winfo_id()` 也是這樣做的);第一版寫 `int(x)` 當場 ValueError,
-            # 而它只在紀錄檔留一行 DEBUG,畫面上就是清單照舊方角。
+            # 而它只在記錄檔留一行 DEBUG,畫面上就是清單照舊方角。
             child = int(str(self.tk.call("winfo", "id", pop)), 0)
             hwnd = user32.GetParent(child) or child
             pref = ctypes.c_int(2)                        # DWMWCP_ROUND
@@ -2185,7 +2200,7 @@ class App(tk.Tk):
         # ⚠️ **先把死掉的清掉**:命名區每轉一檔就整批重建(`_naming_show` 會
         # `destroy()` 舊的那幾列),而那些 Label 還留在這張清單上。碰到它就是
         # `TclError: bad window path name`,而且**迴圈當場中斷**——後面所有 Label
-        # 從此不再重算換行,拉視窗也不會變。⚠️ 它只在紀錄檔留一行:Tk 把
+        # 從此不再重算換行,拉視窗也不會變。⚠️ 它只在記錄檔留一行:Tk 把
         # `<Configure>` 的 traceback 吞掉,畫面上什麼都沒有。
         self._wrapped = [w for w in self._wrapped if w.winfo_exists()]
         # ⚠️ **寬度由這一支算、不去問 `winfo_width()`**:內容區的寬度現在是「視窗
@@ -2372,7 +2387,7 @@ class App(tk.Tk):
                            ("active", self.pal["on_accent"])])
         # 核對視窗的表格(2026-09-02 選案 C):字型同輸入格,列高照網頁版核對表的列
         # (`AUDIT_ROW_H`);`rowheight` 是像素,要跟著縮放走,所以留在這裡。
-        # ⚠️ 底色要明寫成卡片的白:共用包給 Treeview 的是紀錄框的淺灰,斑馬紋的白那一半
+        # ⚠️ 底色要明寫成卡片的白:共用包給 Treeview 的是記錄框的淺灰,斑馬紋的白那一半
         # 會跟灰那一半糊成一片(見 `AUDIT_ZEBRA_*` 的註解)。
         ttk.Style(self).configure("Audit.Treeview", font=(self.fam, 10),
                                   rowheight=self.px(AUDIT_ROW_H),
@@ -2571,6 +2586,29 @@ class App(tk.Tk):
         self._wrap(ttk.Label(head, text=APP_SUBTITLE, style="BrandSub.TLabel",
                              justify="center")).pack(pady=(self.px(HEAD_GAP_SUB), 0))
         return head
+
+    def _open_log(self) -> None:
+        r"""把這一趟的記錄檔在檔案總管裡指出來。
+
+        **一開 App 就按這顆鈕**是到得了的狀態,所以退路有三層:這一趟的記錄檔 →
+        `logs\` 本身(檔還沒落地,或 `attach()` 開檔失敗時根本沒有那個檔)→ 工具資料夾
+        (連 `logs\` 都沒建出來,那多半是那個資料夾寫不進去)。⚠️ **最後一層不能省**:
+        什麼都不做的話那顆鈕看起來就是壞的,而工具資料夾一定在——程式就是從那裡跑起
+        來的,使用者至少看得到記錄檔**應該**在哪。
+
+        ⚠️ **開不起來只記 log,不彈訊息**(同 `_open_url`):頁首沒有狀態列,而本 repo
+        刻意不用 `tkinter.messagebox`(按鈕字會是英文,見 `_ask_close`)——為了一條
+        「explorer 自己掛了」的路徑新增一整套提示框,代價比那條路徑本身大得多。
+        ⚠️ **不要在這裡 `mkdir`**:走到第三層就代表那個位置寫不進去,補建只會再失敗
+        一次,而使用者要的是「讓我看到那個地方」。"""
+        path = filelog.current_path()
+        log_dir = filelog.log_dir()
+        target = (path if path is not None and path.is_file()
+                  else log_dir if log_dir.is_dir() else repo_root())
+        try:
+            doctab.reveal(target)
+        except UserFacingError:
+            logger.exception("開不了記錄檔的位置:%s", target)
 
     def _plate_h(self, elem: str, fallback: int) -> int:
         r"""某張底板**實際載入的那張圖**有多高(實體 px)。
@@ -3020,7 +3058,7 @@ class App(tk.Tk):
         `self._doc_stop` **根本不存在**——而 `self.` 取不到就落到 Tk 自己的
         `__getattr__`,丟出來的是
         `AttributeError: '_tkinter.tkapp' object has no attribute '_doc_stop'`。
-        ⚠️ **它在畫面上一個字都沒有**:Tk 把 callback 的 traceback 吞進紀錄檔,使用者
+        ⚠️ **它在畫面上一個字都沒有**:Tk 把 callback 的 traceback 吞進記錄檔,使用者
         看到的只是「按了『開始錄音』沒反應」,而先去點一下別的分頁反而就好了——
         「先點過別頁才會動」這種症狀沒有人猜得到成因。`tests/test_desktop.py` 以 AST
         反向釘著「三個 start 都要走這一支」。
@@ -3055,7 +3093,7 @@ class App(tk.Tk):
         r"""把那幾組(不給就是全部)的主要動作鈕更新成現在該有的長相。
 
         ⚠️ **一律問 `self._actions`**:文件頁那一顆要等那一頁被點過才存在,直接摸
-        `self._doc_run` 會丟 `AttributeError`,而 Tk 把它吞進紀錄檔——畫面上只會看到
+        `self._doc_run` 會丟 `AttributeError`,而 Tk 把它吞進記錄檔——畫面上只會看到
         「按了開始錄音沒反應」(同 `_busy_reason` 記著的那一顆)。"""
         for key in (keys or tuple(self._actions)):
             entry = self._actions.get(key)
@@ -3856,7 +3894,7 @@ class App(tk.Tk):
         # `native-ui.md` 對 22 位那 0.8 秒的判斷),0.75 秒在那裡是無感的。
         # ⚠️ **空卡本身要先建**:它的 `pack` / `pack_forget` 在還沒命名過的時候就會被
         # 呼叫(`_naming_hide` 掛在整頁復位那條路上),而分頁「用到才建」踩過的那個坑
-        # 正是 `AttributeError` 被 Tk 吞進紀錄檔、畫面上一個字都沒有。
+        # 正是 `AttributeError` 被 Tk 吞進記錄檔、畫面上一個字都沒有。
         self._naming_box = ttk.Frame(inner, style="Card.TFrame",
                                      padding=self.px(CARD_PAD))
         self._naming_ready = False
@@ -3876,7 +3914,7 @@ class App(tk.Tk):
         self._naming_audit_btns: dict[int, ttk.Button] = {}
         self._naming_clues: dict[int, ttk.Label] = {}   # 每一塊的線索(填了名字就收合)
         # ⚠️ **跟著空卡一起先建**(同 `_audit_win` 那批的理由):命名卡是「用到才建」,
-        # 而套用名字那條路要讀它——少了初值就是 `AttributeError` 被 Tk 吞進紀錄檔、
+        # 而套用名字那條路要讀它——少了初值就是 `AttributeError` 被 Tk 吞進記錄檔、
         # 畫面上一個字都沒有。目前 `_naming_apply` 有 `_naming_result is None` 擋在
         # 前面,但那是**另一個**變數的保護,不該靠它
         self._naming_guesses: dict[int, str] = {}
@@ -4390,7 +4428,7 @@ class App(tk.Tk):
                 feat_note = f"\n{e}"
         # ⚠️ **不可以叫 `audit`**:模組層有一支同名的 `audit`(核對音檔那支),
         # 遮住之後 `audit.get(...)` 讀到的是這個 dict——而那一族要真的按下去
-        # 才會發現,Tk 把 `AttributeError` 吞進紀錄檔、畫面上一個字都沒有。
+        # 才會發現,Tk 把 `AttributeError` 吞進記錄檔、畫面上一個字都沒有。
         # `tests/test_desktop.py` 的靜態網守著。
         payload = naming_core._audit_payload_from_transcript(
             transcript, named, media)
@@ -4452,7 +4490,7 @@ class App(tk.Tk):
             self._stage("")
             self._run_set_preview(
                 error.args[0] if isinstance(error, UserFacingError)
-                else "未預期的錯誤,詳見紀錄檔。")
+                else f"未預期的錯誤,{LOG_HINT}。")
 
     # ---- 現場收音 -------------------------------------------------------- #
     def _rec_build(self, parent) -> ttk.Frame:
@@ -4778,7 +4816,7 @@ class App(tk.Tk):
 
         ⚠️ **清參照要在 `destroy()` 之前**:destroy 會走 `<Destroy>` 事件,而那條路
         上還可能有人問到這幾個名字——留著的話問到的是已經死掉的 widget,`configure`
-        會拋 TclError 被 Tk 吞進紀錄檔,畫面上一個字都沒有。
+        會拋 TclError 被 Tk 吞進記錄檔,畫面上一個字都沒有。
         ⚠️ **值不清**(`_run_model` / `_run_cores` / `_run_device`):它們住在視窗上,
         關掉對話框只是收起介面,不是把使用者的設定丟掉。"""
         win, self._adv_win = self._adv_win, None
@@ -5002,7 +5040,7 @@ class App(tk.Tk):
 
         ⚠️ **裝置缺失要當場講**(沒有麥克風、沒有播放裝置),**絕不錄一場空**。
         ⚠️ **`cancel.reset()` 要在這裡做**:上一批檔案轉檔按過的停止不清掉的話,
-        錄音中的增量講者切分一開工就自我了斷(而且只在紀錄檔裡留一行)。"""
+        錄音中的增量講者切分一開工就自我了斷(而且只在記錄檔裡留一行)。"""
         if self._rec.get("recorder"):
             return
         busy = self._busy_reason("rec")
@@ -5025,13 +5063,13 @@ class App(tk.Tk):
             return
         except Exception as e:
             logger.exception("開始錄音失敗")
-            self._rec_say("無法開始錄音:發生未預期的錯誤,詳情見紀錄檔(logs 資料夾)。",
+            self._rec_say(f"無法開始錄音:發生未預期的錯誤,{LOG_HINT}。",
                           "err")
             return
         # ⚠️ **增量轉錄起不來也要收乾淨再回報**:`LiveTranscriber` 一 `__init__` 就開
         # 了暫存目錄與鎖檔,`start()` 又會拉起講者分析子行程。
         # ⚠️ 這一段先前**完全沒有把關**(上面那個 `Recorder` 有、它沒有):炸掉就是
-        # traceback 進紀錄檔、畫面上一個字都沒有,而收音其實已經開始了——使用者會
+        # traceback 進記錄檔、畫面上一個字都沒有,而收音其實已經開始了——使用者會
         # 對著一個看起來沒反應的畫面講完一整場會議(同「靜默的失敗」那一族)。
         live = live_scribe.LiveTranscriber(
             model_key=MODEL_LABELS[self._run_model.get()])
@@ -5046,7 +5084,7 @@ class App(tk.Tk):
                 recorder.stop()       # 收音已經開始了,不收就是一直錄下去
             except Exception:
                 logger.debug("收拾失敗的錄音時出錯", exc_info=True)
-            self._rec_say("無法開始錄音:發生未預期的錯誤,詳情見紀錄檔(logs 資料夾)。",
+            self._rec_say(f"無法開始錄音:發生未預期的錯誤,{LOG_HINT}。",
                           "err")
             return
         power.stay_awake_begin()      # ⚠️ 錄音中不得睡眠(收尾時解除)
@@ -5137,7 +5175,7 @@ class App(tk.Tk):
                 # 且沒有一層會出聲——① 子行程一直活著(下一場錄音會與它併用同一
                 # 批模型檔、白佔 CPU,理由見 `diarproc.close` 的檔頭);②
                 # `TemporaryDirectory` 的 finalizer 要等 GC 才跑,那時鎖檔還開著、
-                # Windows 不准刪,只在紀錄檔留一行 `Exception ignored …
+                # Windows 不准刪,只在記錄檔留一行 `Exception ignored …
                 # PermissionError: [WinError 32]`;③ 於是那個
                 # `meeting-scribe-live-*` 目錄整場都留著(要等下次啟動的
                 # `cleanup_stale_temp` 才掃得掉——那時鎖檔的持有者已經不在了)。
@@ -5211,7 +5249,7 @@ class App(tk.Tk):
             self._run_open.configure(state="normal")
         elif isinstance(error, Cancelled):
             # ⚠️ **自己按的「中止收尾」不是出錯**(2026-09-15 補):先前這裡沒有這一支,
-            # `Cancelled` 落到最後的兜底——畫面寫「收尾時出錯」、紀錄檔多一段堆疊,而
+            # `Cancelled` 落到最後的兜底——畫面寫「收尾時出錯」、記錄檔多一段堆疊,而
             # 按下去那一刻 `_work_abort` 才剛講過錄音檔會留著。
             self._rec_say(REC_ABORTED + note, "warn")
             self._stage("已依要求停止。")
@@ -6063,7 +6101,7 @@ class App(tk.Tk):
             # 改不到就要出聲:錨定的是 md 的講者行格式,改不到多半是格式對不上——
             # 那是工具的 bug,不是使用者的(同 `_naming_apply` 的同一條規矩)
             logger.warning("改掛沒有改到任何一行(%d 段、名字「%s」)", len(chosen), name)
-            self._naming_say("沒有改到任何一行,請把紀錄檔提供給維護者。")
+            self._naming_say("沒有改到任何一行,請把記錄檔提供給維護者。")
             self._audit_close()
             return
         done = set(int(i) for i in self._naming_audit.get("reassigned") or ())
@@ -6272,7 +6310,7 @@ class App(tk.Tk):
         ⚠️ 先前這裡寫的是 `srcfile.native_dialog(srcfile.OPEN_FILE)`,而 `OPEN_FILE`
         **根本不存在**、`native_dialog` 收的也是一個 callable——那一行從來沒被執行
         過,直到使用者 2026-08-30 真的按下去。症狀又是「按了沒反應」:Tk 把
-        `AttributeError` 吞進紀錄檔,畫面上一個字都沒有。"""
+        `AttributeError` 吞進記錄檔,畫面上一個字都沒有。"""
         self._run_set_path(srcfile.append_paths(self._run_paths(), srcfile.pick_files()))
 
     def _run_pick_folder(self) -> None:
@@ -6458,7 +6496,7 @@ class App(tk.Tk):
             logger.exception("處理失敗", exc_info=error)
             self._stage("")
             self._run_set_preview(
-                "發生未預期的錯誤,詳情見紀錄檔(logs 資料夾);"
+                f"發生未預期的錯誤,{LOG_HINT};"
                 "若為記憶體不足,請改選「快速」模型再試。")
         # ⚠️ **閃工作列、但絕不把視窗搶到前景**(使用者 2026-09-05 選定,同
         # `MP4-2-SRT`):切走兩小時的人需要有人叫他一聲,而搶焦點會把他正在打的字吃掉。
@@ -6827,7 +6865,7 @@ class App(tk.Tk):
         else:
             logger.exception("文件轉檔失敗(未預期)", exc_info=error)
             self._doc_say("")
-            self._doc_set_result("發生未預期的錯誤,詳情見紀錄檔(logs 資料夾)。")
+            self._doc_set_result(f"發生未預期的錯誤,{LOG_HINT}。")
         self._doc_open.configure(state="normal" if self._doc_dirs else "disabled")
         winui.flash_taskbar(self)       # 理由見 `_run_done` 最後那一行
 
@@ -6933,6 +6971,18 @@ class App(tk.Tk):
             row=0, column=3, padx=(self.px(SP_XS), 0))
         self._help_hits = ttk.Label(find, text="", style="Hint.TLabel")
         self._help_hits.grid(row=0, column=4, padx=(self.px(SP_SM), 0))
+        # 記錄檔的入口(2026-09-19 選案 ③;先做在頁首,同日使用者說「太明顯,這個功能
+        # 不是很常用」)。⚠️ **放這一頁不只是「藏起來」**:使用者會找它的時機只有一個
+        # ——「我要回報問題」——而那一刻他會來的正是這一頁(底下那篇〈🆘 好像怪怪的〉
+        # 的最後一節就在講怎麼回報)。⚠️ **樣式是 `Small.TButton` 不是頁底色那張**:
+        # 這一列坐在**白卡**裡(同一排的「上一個/下一個」),底板不透明、圓角外側畫的是
+        # 指定的底色——與頁首那次正好相反,不要照抄另一邊。⚠️ **刻意不登記
+        # `_lockable()`**:最需要記錄檔的時刻正是工作進行中或剛出錯。
+        # ⚠️ **這一頁是「點了才建」的**,所以別頁的錯誤訊息只能**指路**過來(`LOG_HINT`),
+        # 不可以回頭摸這顆鈕。
+        self._log_btn = HandButton(find, text=LOG_BUTTON, style="Small.TButton",
+                                   command=self._open_log)
+        self._log_btn.grid(row=0, column=5, padx=(self.px(SP_MD), 0))
         entry.bind("<Return>", lambda _e: self._help_find(+1))
         entry.bind("<Shift-Return>", lambda _e: self._help_find(-1))
         entry.bind("<Escape>", lambda _e: self._help_query.set(""))
@@ -7059,7 +7109,7 @@ class App(tk.Tk):
         錨點與內文在補完之前只有第一章,不叫就是點了目錄跳不動、搜尋搜不到後半本——而那
         只有在補完前的那 250ms 內點下去才會發生,測試不特意搶那個時機就永遠是綠的。
         ⚠️ **視窗關掉時 `after_idle` 可能已經排著了**:那時 widget 都沒了,碰它就是
-        `TclError` 被 Tk 吞進紀錄檔。"""
+        `TclError` 被 Tk 吞進記錄檔。"""
         # ⚠️ `getattr`:`_help_mark` 掛在搜尋框的 trace 上,而那是**建頁的過程中**就接好的
         if not getattr(self, "_help_todo", None) or not self._help_body.winfo_exists():
             return
@@ -7496,7 +7546,7 @@ class App(tk.Tk):
         ⚠️ **每一步各自 try**:這一支是在「使用者已經決定要關」之後跑的,任何一步
         丟例外都會讓視窗關不掉,而那比沒收乾淨嚴重得多。
         ⚠️ **`recorder.stop()` 要叫**:收音的收尾(補零/修剪、標頭最後一次回填、
-        那行「錄音收檔」的紀錄)都在裡面。不叫也不會壞掉(標頭每 2 秒回填一次,
+        那行「錄音收檔」的記錄)都在裡面。不叫也不會壞掉(標頭每 2 秒回填一次,
         檔案任何時刻都是合法 WAV),但會白白丟掉最後那不到兩秒。"""
         cancel.request()             # 轉檔那兩條會在下一個段落邊界停下來
         recorder, live = self._rec.get("recorder"), self._rec.get("live")
@@ -7537,7 +7587,7 @@ class App(tk.Tk):
         萬一兩邊真的撞在一起,先搬走的那邊贏,另一邊找不到來源就算了,而退回複製的那條先寫暫存檔
         再換名,output 裡不會出現寫到一半的檔。
         ⚠️ **軌檔已經不在的不重保**:收尾那條搬走了、或收尾成功後刪了錄音工作目錄,都代表音檔
-        早已進 output——再保只會在紀錄檔留一串「沒能存進」。
+        早已進 output——再保只會在記錄檔留一串「沒能存進」。
         ⚠️ **不到 2 秒的不保**(同「錄音太短」那條)。
         ⚠️ **等待與搬檔之前先把視窗藏起來**:使用者已經按了「關閉」,一個凍住的視窗看起來就是
         當掉。同一顆磁碟上搬是瞬間的,但搬不動退回複製時(不同磁碟、檔案被佔用),長會議的
@@ -7616,7 +7666,7 @@ def main() -> None:
     # 面上只看得到各自那份進度。找得到既有的就把它叫到前景——什麼都不做的話,使用者
     # 會以為程式壞了、再點兩三次。整條政策(含「搶輸了卻找不到那個視窗就照常開」那
     # 一格)在共用包裡。
-    # ⚠️ **擋在最前面**:紀錄檔還沒開、視窗還沒建,退出時什麼都不必收;而且離開碼是
+    # ⚠️ **擋在最前面**:記錄檔還沒開、視窗還沒建,退出時什麼都不必收;而且離開碼是
     # **0**,啟動器因此不跳訊息框、也不會觸發它那道「非正常結束又不到 5 秒就用 uv 再
     # 跑一次」的退路。
     if not winui.single_instance_or_raise():
@@ -7627,10 +7677,10 @@ def main() -> None:
     winui.enable_dpi_awareness()
     winui.set_app_user_model_id()
 
-    # 紀錄檔:黑視窗被藏起來之後,這是唯一看得到啟動過程的地方。
+    # 記錄檔:黑視窗被藏起來之後,這是唯一看得到啟動過程的地方。
     # ⚠️ **走本專案的 `filelog`,不是 `winkit.filelog`**:兩份都寫進 `<repo>\logs`、
     # 檔名格式也一樣(`2026-08-29_170028.log`),所以同一秒內開的兩個寫入者會**疊在
-    # 同一個檔上**——而那沒有任何錯誤訊息,只是紀錄檔的內容交錯。另外二十支模組用的
+    # 同一個檔上**——而那沒有任何錯誤訊息,只是記錄檔的內容交錯。另外二十支模組用的
     # 都是這一份,視窗這一支沒有理由不一樣。⚠️ 哪一份最後成為唯一真值還沒定案
     # (winkit 的 `CLAUDE.md` 記著),在那之前**不要把這裡換過去**。
     # ⚠️ **檔頭不偵測 GPU**(`device=False`,2026-09-15):那一趟是開窗路徑上最貴的一段,
@@ -7654,7 +7704,7 @@ def main() -> None:
     # ⚠️ 模型下載的進度要進視窗(見 `App._model_progress`):掛在這裡而不是
     # `App.__init__` 裡,是因為它是**行程層級**的單一插槽——一個行程只有一個視窗。
     app = App()
-    # 視窗畫好之後:紀錄檔記下開窗花了幾秒,再開始背景偵測 GPU(見 `_boot_done`)
+    # 視窗畫好之後:記錄檔記下開窗花了幾秒,再開始背景偵測 GPU(見 `_boot_done`)
     app.after_idle(app._boot_done)
     models.set_progress_hook(app._model_progress)
     try:

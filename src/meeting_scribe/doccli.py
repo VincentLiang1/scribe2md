@@ -14,9 +14,18 @@ r"""命令列入口(`doc2md`):把文件批次轉成 md,不開網頁介面。
 - 人看的進度與報告一律走 **stderr**;而且**進度只在真的終端機才印**
   (`stderr.isatty()`),被程式接走時保持安靜——這支程式的存在意義是
   省 token,自己卻對著 AI 洗 50 行進度就本末倒置了。
+- **每一趟都留一份執行記錄**(`logs\<時間>-<行程編號>.log`,使用者 2026-09-18
+  指定),出事時 stderr 會把路徑講出來並叫人拿去給 AI 分析(見 `_blame`)。
+  ⚠️ 這條路 **tee=False**:記錄檔不得代收 stdout,那是上面那個契約。
 
 離開碼:0 全部順利、1 有檔案轉失敗(其餘仍已完成)、2 參數或選檔有問題
 (什麼都沒做)、130 中途被 Ctrl+C 中止。
+
+⚠️ **離開碼 2 有一種情況不會留下記錄檔:根本沒跑到這支程式**(`uv` 找不到
+`--directory` 指的目錄就回 `error: 系統找不到指定的檔案。 (os error 2)`、
+離開碼同樣是 2)。判準是**有沒有「執行記錄:」那一行**:沒有就是指令本身有
+問題,不是轉檔失敗——2026-09-18 在 FWIKI 連踩四次,成因是 Bash 把未加引號的
+反斜線路徑吃掉了(見 `skills/doc2md/SKILL.md` 的指令那段)。
 """
 import argparse
 import logging
@@ -29,6 +38,7 @@ from meeting_scribe import (
     docpipe,
     docprune,
     docsrc,
+    filelog,
     models,
     pipeline,
     srcfile,
@@ -38,6 +48,28 @@ from meeting_scribe import (
 from meeting_scribe.errors import UserFacingError
 
 logger = logging.getLogger(__name__)
+
+
+def _blame(log_path: Path | None) -> None:
+    r"""出事時把記錄檔指出來(使用者 2026-09-18 指定:「產生 LOG 讓程式事後可
+    查到資訊」「要出現訊息讓轉檔的人知道」「應該將 LOG 給 AI 分析」)。
+
+    ⚠️ **這支程式的失敗最常是無聲的**:主要呼叫端是 AI,而它多半把 doc2md 丟去
+    背景跑、只看得到離開碼——2026-09-18 在 FWIKI 就出現過「背景轉檔失敗、輸出檔
+    裡只有孤零零一行」,查不出是哪個檔、也沒有 traceback 可看。所以這裡**同時**
+    做三件事:講出哪裡不對、講出記錄檔在哪、講出那個檔該拿去做什麼。
+
+    ⚠️ 一律走 stderr:stdout 是「一行一個 md 路徑」的契約(見模組 docstring)。
+    ⚠️ 開不了記錄檔時(唯讀目錄)就只是少一段話,不另外抱怨——原本的錯誤訊息
+    已經印出去了,再疊一句「記錄檔也寫不了」只會蓋掉真正的成因。"""
+    if log_path is None:
+        return
+    print(f"完整過程記在記錄檔:{log_path}", file=sys.stderr)
+    print(
+        "要查原因就把那個檔交給 AI 分析"
+        "(裡面有程式版本、機器資訊、逐檔的失敗原因與 traceback)。",
+        file=sys.stderr,
+    )
 
 
 def _inside(path: Path, folder: Path) -> bool:
@@ -162,6 +194,16 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
     args = _build_parser().parse_args(argv)
 
+    # 記錄檔要在**任何工作之前**開:出事的那一趟不會回頭補記,而這支程式的
+    # 失敗常常是背景跑掉、只剩一個離開碼(見 `_blame`)。
+    # ⚠️ **tee=False、訊息改走 stderr**:stdout 是機器可讀契約,被代收或多印
+    # 一行都會讓呼叫端拿到讀不到的路徑。device 不偵測的理由見 DEVICE_SKIPPED
+    log_path = filelog.start(
+        tee=False, device=filelog.DEVICE_SKIPPED, stream=sys.stderr,
+        console_level=logging.WARNING,
+    )
+    logger.info("doc2md 啟動:%s", " ".join(sys.argv[1:]))
+
     # 出廠預設補檔:網頁介面那條在 app.main,命令列這條同樣要有——
     # 只裝了工具、還沒開過網頁就直接跑 doc2md 的人,少了 replace.txt
     # 就是整批文件都沒做大陸詞替換,而且沒有任何跡象看得出來
@@ -176,7 +218,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError as e:
+            logger.error("無法建立輸出資料夾 %s:%s", out_dir, e)
             print(f"無法建立輸出資料夾「{out_dir}」:{e}", file=sys.stderr)
+            _blame(log_path)
             return 2
 
     try:
@@ -188,7 +232,9 @@ def main(argv: list[str] | None = None) -> int:
             types=docsrc.SUPPORTED_TYPES,
         )
     except UserFacingError as e:
+        logger.error("選檔失敗:%s", e)
         print(str(e), file=sys.stderr)
+        _blame(log_path)
         return 2
 
     # **輸出資料夾自己不能當來源**:`.md` 自 2026-08-02 起是支援的格式,
@@ -253,7 +299,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     except UserFacingError as e:
         # 缺元件之類的「整批都做不了」:convert_batch 刻意不接,由這裡收
+        logger.error("整批無法進行:%s", e)
         print(str(e), file=sys.stderr)
+        _blame(log_path)
         return 2
     except KeyboardInterrupt:
         print("已中止。", file=sys.stderr)
@@ -263,6 +311,7 @@ def main(argv: list[str] | None = None) -> int:
         # 有用(GUI 那邊才必須藏起來,見 spec §8)。繁中一行仍要有
         logger.exception("轉檔時發生未預期的錯誤")
         print("轉檔時發生未預期的錯誤,詳情見上方 traceback。", file=sys.stderr)
+        _blame(log_path)
         return 2
 
     # stdout 只有路徑,先印完再印摘要:被 shell 接走時兩者本來就分流,
@@ -272,10 +321,25 @@ def main(argv: list[str] | None = None) -> int:
     summary = _summary(report)
     if summary:
         print(summary, file=sys.stderr)
+        # 摘要也要進記錄檔:逐檔的原因是 docpipe 寫的(logger.warning /
+        # logger.exception),但「這一批總共幾成幾敗」只有這裡算得出來,
+        # 而事後分析第一個要問的正是它
+        logger.info("%s", summary.replace("\n", " | "))
 
     if report.cancelled:
         return 130
-    return 1 if report.failed else 0
+    if report.failed:
+        # ⚠️ **失敗一定要講到「還能怎麼辦」**:呼叫端多半是 AI,而它在背景跑
+        # 這支程式時只看得到離開碼——沒有這兩行,它只會回報「轉檔失敗」然後
+        # 停在那裡(2026-09-18 FWIKI 那次正是如此)
+        print(
+            f"⚠️ 有 {len(report.failed)} 個檔案沒有轉成功"
+            f"(其餘 {len(report.ok)} 個已完成,路徑在 stdout)。",
+            file=sys.stderr,
+        )
+        _blame(log_path)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover

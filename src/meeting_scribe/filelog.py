@@ -1,4 +1,4 @@
-r"""執行紀錄落地成檔(2026-08-03 加,使用者要求:「之後進行程式改善分析之用」)。
+r"""執行記錄落地成檔(2026-08-03 加,使用者要求:「之後進行程式改善分析之用」)。
 
 起因是現場收音的掉幀問題:黑視窗只看得到節流過的累計次數,關掉視窗就什麼
 都不剩,而真正該問的「掉了幾秒」「間隔是均勻還是叢發」「是誰在吃 CPU」
@@ -15,7 +15,7 @@ r"""執行紀錄落地成檔(2026-08-03 加,使用者要求:「之後進行程�
   `code_version`);那一群人正是最需要報得出版本的。
 - **逐行 flush**:使用者是直接關視窗收工的,留在緩衝區的會整段蒸發,而那
   正好是出事的那一段。
-- **寫檔失敗一律靜靜關掉**,不重試也不拋:紀錄檔不該有辦法讓錄音停下來。
+- **寫檔失敗一律靜靜關掉**,不重試也不拋:記錄檔不該有辦法讓錄音停下來。
 
 與 MP4-2-SRT 的差別:那邊是外層 launch 與子行程兩條流要合併,這裡是單一
 行程,掛一個 FileHandler 就收得到全部。
@@ -41,7 +41,7 @@ from pathlib import Path
 from meeting_scribe import paths
 
 # 目錄覆寫(測試用):不設就寫進專案底下的 logs\。沒有這個開關的話,每跑
-# 一次測試就會在原始碼樹裡長出紀錄檔。
+# 一次測試就會在原始碼樹裡長出記錄檔。
 LOG_DIR_ENV = "MEETING_SCRIBE_LOG_DIR"
 
 KEEP_DAYS = 30
@@ -70,11 +70,11 @@ def log_dir() -> Path:
 
 
 def new_path(now: datetime.datetime | None = None) -> Path:
-    r"""這一趟的紀錄檔路徑。
+    r"""這一趟的記錄檔路徑。
 
     ⚠️ **檔名要帶行程編號,不然「一次執行一個檔」在同一秒開兩次時就不成立**
     (2026-08-29 補,來自 NotebookLM_OCR 那邊已經驗過的形狀):兩個行程在同一秒
-    走到這裡就會拿到**同一個路徑**,而 `attach()` 用的是 `"a"` ——兩份紀錄疊在
+    走到這裡就會拿到**同一個路徑**,而 `attach()` 用的是 `"a"` ——兩份記錄疊在
     一個檔裡、檔頭出現兩次,**沒有任何錯誤訊息**,而分析的時候會把甲的訊息算到
     乙頭上(這個檔存在的理由正是事後分析)。
     ⚠️ **同一秒真的到得了**:網頁版沒有「只准開一個」的把關(它自動找空埠,兩份
@@ -85,8 +85,17 @@ def new_path(now: datetime.datetime | None = None) -> Path:
     return log_dir() / f"{base}-{os.getpid()}.log"
 
 
+def current_path() -> Path | None:
+    r"""這一趟的記錄檔(還沒 `attach()` 或開檔失敗就回 None)。
+
+    介面上那顆「📂 記錄檔…」問的就是它(`desktop.App._open_log`)。⚠️ **不要讓呼叫端
+    去讀 `_attached`**:那是模組私有的狀態,而「還沒落地時退到 `log_dir()`」這條退路
+    要有一個固定的地方寫著——沒有它,每個呼叫端都得自己記得寫一次。"""
+    return _attached
+
+
 def purge_old(keep_days: int = KEEP_DAYS) -> None:
-    """清掉太舊的紀錄檔。擺在開 App 時做,與 cleanup_stale_temp 同一個位置。"""
+    """清掉太舊的記錄檔。擺在開 App 時做,與 cleanup_stale_temp 同一個位置。"""
     cutoff = time.time() - keep_days * 86400
     try:
         old = [p for p in log_dir().glob("*.log") if p.stat().st_mtime < cutoff]
@@ -152,7 +161,7 @@ def _stamped() -> str:
 
 
 def code_version() -> str:
-    """跑出這份紀錄的是哪一版的碼(取不到就明說,不要假裝有)。
+    """跑出這份記錄的是哪一版的碼(取不到就明說,不要假裝有)。
 
     三種情境都要答得出來,因為讀者是同一個人——收到問題回報的維護者:
 
@@ -175,7 +184,7 @@ def _device_hint() -> str:
     ⚠️ **偵測本身不便宜**(`import openvino` ＋ 列裝置,暖的時候約 0.34 秒,結果整個
     行程快取一份,見 `transcribe._intel_gpu_available`),所以原生視窗不在檔頭問它
     (`header` 的 `device`)。收音掉幀這類問題的成因高度綁機器,少了這行事後就對不
-    起來,所以其他進入點照舊寫在檔頭。偵測失敗(驅動壞掉)絕不能讓紀錄檔擋住啟動,
+    起來,所以其他進入點照舊寫在檔頭。偵測失敗(驅動壞掉)絕不能讓記錄檔擋住啟動,
     故整段兜底。"""
     try:
         from meeting_scribe import transcribe
@@ -187,55 +196,85 @@ def _device_hint() -> str:
 
 # 檔頭那一行不偵測時寫什麼(原生視窗:偵測挪到開窗之後在背景做,結果另起一行)。
 DEVICE_LATER = "開窗後在背景偵測,結果見下方「轉錄裝置(偵測)」那一行"
+# 命令列(doccli)用的說法。⚠️ **那條路不能沿用 DEVICE_LATER**:它沒有「開窗
+# 後補一行」這回事,照抄等於在檔頭寫一句永遠不會兌現的承諾——三週後分析的人
+# (或 AI)會往下找那一行,而它不存在,只能重看一遍才確定不是自己漏掉
+DEVICE_SKIPPED = "未偵測(命令列不載入 openvino:純文件批次不值得付那 0.34 秒與 106 MB DLL)"
 
 
-def header(path: Path, *, device: bool = True) -> list[str]:
+def header(
+    path: Path, *, device: bool | str = True, console_level: int = logging.INFO,
+) -> list[str]:
     """檔頭。分析一份 log 要先知道「哪一版的碼、在什麼機器上跑的」——
     收音掉幀這類問題的成因高度綁機器,少了這幾行就對不起來。
 
     `device=False` 不在這裡偵測轉錄裝置(原生視窗用,2026-09-15):偵測要
     `import openvino` 再列裝置,暖的時候 0.34 秒、而且載入約 106 MB 的 DLL,
     寫在檔頭就等於**每次開窗都先等它**。那一行改由視窗在背景偵測完再補
-    (`desktop.App._probe_done`),機器資訊一樣留得下來。"""
+    (`desktop.App._probe_done`),機器資訊一樣留得下來。
+    給**字串**則直接當那一行的內容(`DEVICE_SKIPPED`:命令列那條路根本不會
+    回頭補,得把「為什麼沒有」講在當場)。"""
     now = datetime.datetime.now()
-    hint = _device_hint() if device else DEVICE_LATER
+    if device is True:
+        hint = _device_hint()
+    elif device is False:
+        hint = DEVICE_LATER
+    else:
+        hint = device
     return [
         "=" * 72,
-        f"AI 文件.MD 轉換器 執行紀錄  開始 {now:%Y-%m-%d %H:%M:%S}",
+        f"AI 文件.MD 轉換器 執行記錄  開始 {now:%Y-%m-%d %H:%M:%S}",
         f"  程式版本:{code_version()}",
-        f"  紀錄檔:{path}",
+        f"  記錄檔:{path}",
         f"  Python:{sys.version.split()[0]}  平台:{sys.platform}",
         f"  CPU 核心數:{os.cpu_count()}  轉錄裝置(偵測):{hint}",
-        "  黑視窗看得到的是 INFO 以上;這個檔另收 DEBUG(收音診斷等細節)。",
+        # ⚠️ 門檻要照實寫:讀這個檔的人多半手上另有一份「畫面上看到的」
+        # (同事貼來的訊息、AI 接走的 stderr),兩邊對不起來時第一個要問的
+        # 就是「是不是那邊本來就看不到」。命令列那條是 WARNING,不是 INFO
+        f"  畫面上看得到的是 {logging.getLevelName(console_level)} 以上;"
+        "這個檔另收 DEBUG(收音診斷等細節)。",
         "=" * 72,
     ]
 
 
-def start(tee: bool = True, *, device: bool = True) -> Path | None:
-    """開一份執行紀錄:清舊檔 → 掛檔案 handler →(可選)代收 print。
+def start(
+    tee: bool = True, *, device: bool | str = True, stream=None,
+    console_level: int = logging.INFO,
+) -> Path | None:
+    """開一份執行記錄:清舊檔 → 掛檔案 handler →(可選)代收 print。
 
     **順序有三個約束,寫成程式碼而不是註解**:清舊檔要在開檔之前(否則
     剛建好的這一份會被自己的規則掃到)、tee 要在 attach 之後(handler 還
     不存在就沒有地方收)、路徑要印出來(同事回報問題時得找得到那個檔)。
     先前這三條只寫在 app.main 的註解裡,第二個進入點(scripts/repro_live)
     就只做了一半——沒 tee,於是它 print 的收尾比較數字**不在它自己叫人去
-    讀的那個紀錄檔裡**,而那正是規定要前後對比的數字。
+    讀的那個記錄檔裡**,而那正是規定要前後對比的數字。
 
     tee=False 給「stdout 是機器可讀契約」的進入點(如 doccli:一行一個 md
-    絕對路徑),那種通道不能被攔截。`device` 見 `header`。"""
+    絕對路徑),那種通道不能被攔截。⚠️ **那種進入點連這裡的 print 都要改道**
+    (`stream=sys.stderr`)——路徑那一行本身就會污染契約,而呼叫端是照著
+    stdout 逐行去 Read 的,多一行就是多一個讀不到的檔。`device` 見 `header`。"""
     purge_old()
-    path = attach(device=device)
+    path = attach(device=device, console_level=console_level)
     if path is not None:
         if tee:
             tee_console()
-        print(f"執行紀錄:{path}")
+        print(f"執行記錄:{path}", file=stream or sys.stdout)
     return path
 
 
-def attach(path: Path | None = None, *, device: bool = True) -> Path | None:
+def attach(
+    path: Path | None = None, *, device: bool | str = True,
+    console_level: int = logging.INFO,
+) -> Path | None:
     """把往後所有 log 同時寫進檔案;回傳實際路徑(失敗回 None)。
 
-    冪等:重複呼叫直接回上次的路徑,不會疊出第二個 handler。`device` 見 `header`。"""
+    冪等:重複呼叫直接回上次的路徑,不會疊出第二個 handler。`device` 見 `header`。
+
+    `console_level` 是**主控台**往後的門檻(檔案一律收 DEBUG)。黑視窗要看得到
+    INFO 的進度,所以預設 INFO;⚠️ **doccli 要傳 WARNING**——那條路的 stderr 是
+    「給人看的摘要」而不是診斷流,沿用 INFO 會讓每一趟都多出「啟動」與批次摘要
+    兩行,而後者與它自己印的摘要一字不差(2026-09-18 接上記錄檔時實測到)。"""
     global _attached, _handler
     if _attached is not None:
         return _attached
@@ -243,7 +282,9 @@ def attach(path: Path | None = None, *, device: bool = True) -> Path | None:
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("a", encoding="utf-8", newline="\n") as f:
-            f.write("\n".join(header(p, device=device)) + "\n")
+            f.write("\n".join(
+                header(p, device=device, console_level=console_level),
+            ) + "\n")
         handler = logging.FileHandler(p, encoding="utf-8")
     except OSError:
         return None
@@ -253,9 +294,13 @@ def attach(path: Path | None = None, *, device: bool = True) -> Path | None:
         "%(message)s", _TS_FMT,
     ))
     root = logging.getLogger()
-    # 黑視窗維持原樣:既有的主控台 handler 釘在 INFO,自家的 DEBUG 不外流
+    # 黑視窗維持原樣:既有的主控台 handler 釘在 `console_level`,自家的 DEBUG
+    # 不外流。⚠️ **這一步是必要的**:下一行把 `meeting_scribe` 降到 DEBUG,
+    # 而 handler 多半是 NOTSET(`basicConfig` 的 `level` 設的是 **logger** 的
+    # 門檻、不是 handler 的)——不擋的話,原本被 root 等級攔住的每一行都會
+    # 突然湧上主控台。⚠️ **只收緊不放寬**(`max`):已經比它嚴的不要被放寬
     for existing in root.handlers:
-        existing.setLevel(logging.INFO)
+        existing.setLevel(max(existing.level, console_level))
     root.addHandler(handler)
     logging.getLogger("meeting_scribe").setLevel(logging.DEBUG)
     _attached, _handler = p, handler
@@ -263,7 +308,7 @@ def attach(path: Path | None = None, *, device: bool = True) -> Path | None:
 
 
 class _LineTee:
-    """代理 stdout/stderr:照樣印到黑視窗,同時逐行送進紀錄檔。
+    """代理 stdout/stderr:照樣印到黑視窗,同時逐行送進記錄檔。
 
     **為什麼不直接把 handler 掛上去就好**:黑視窗上有一部分內容根本不經過
     logging(gradio 的「Running on local URL」、自家的提示、未攔截的
@@ -276,16 +321,16 @@ class _LineTee:
     - **`propagate = False` 且 handler 直接掛在自己身上**:不然這些記錄會
       往上傳給 root 的主控台 handler,黑視窗上每一行都印兩遍。
     - **`\\r` 只留最後一段**:下載模型的進度條是原地重寫,整串收下來會在
-      紀錄檔裡堆出上萬行,而這個檔要保持「貼得進對話」。
+      記錄檔裡堆出上萬行,而這個檔要保持「貼得進對話」。
 
     ⚠️ **stderr 那條記成 WARNING 不是 INFO**(2026-08-15 改):這個檔存在
     的理由是事後分析,而先前**未攔截的例外在檔裡長得跟一般訊息一模一樣**
-    ——259 份紀錄裡有 35 次 traceback(一晚就 33 次)全掛在 INFO,用等級
+    ——259 份記錄裡有 35 次 traceback(一晚就 33 次)全掛在 INFO,用等級
     篩選會整批漏掉,只能靠 grep「Traceback」去撈。查過那 1178 行 stderr
     輸出**全部**是 traceback 內容、沒有一行是正常訊息,所以整條提級不會
     製造新的雜訊(否則就是另一種狼來了)。
 
-    寫入端有任何閃失都吞掉:紀錄檔不該有辦法讓程式的輸出壞掉。"""
+    寫入端有任何閃失都吞掉:記錄檔不該有辦法讓程式的輸出壞掉。"""
 
     def __init__(self, stream, logger_name: str, level: int = logging.INFO):
         self._stream = stream
@@ -326,7 +371,7 @@ class _LineTee:
 
 
 def tee_console() -> bool:
-    """把 stdout/stderr 上的內容也收進紀錄檔;回傳是否接上。
+    """把 stdout/stderr 上的內容也收進記錄檔;回傳是否接上。
 
     必須在 attach() 之後、且在 logging.basicConfig() 之後呼叫:主控台
     handler 在建構時就抓住了「當時的」sys.stderr 物件,所以它之後仍直接

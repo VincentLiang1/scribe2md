@@ -63,7 +63,7 @@ _RATE = wavspan.RATE
 #
 # ⚠️ **2026-09-18 起試用 150**(使用者裁定,起因是「散會後要等一下才能設定
 # 講者」)。它與 `diarize._LIVE_CHUNK_SEC` 是**一組的**,收尾等的是兩者中較慢
-# 的那個,只縮一顆幾乎省不到時間(生產紀錄:轉錄尾巴 17~29 秒,每一場都比
+# 的那個,只縮一顆幾乎省不到時間(生產記錄:轉錄尾巴 17~29 秒,每一場都比
 # 整段收尾 33~37 秒先結束)。實測與代價見 `scripts/bench_live_tail.py` 檔頭,
 # 摘要:尾巴期望值減半;轉錄本身與長度成正比、切短不多付也不省
 # (150 秒音訊 25~32 秒、300 秒 57~62 秒);收音安全過關(20 分鐘、爆發次數
@@ -229,7 +229,7 @@ class LiveDiarizer:
         """轉錄走 GPU 才啟用(純 CPU 機兩者同搶 CPU,見模組 docstring);
         不啟用時安靜跳過,收尾一律照舊。
 
-        啟用與否記進紀錄檔:兩種情形的 CPU 使用量差一個量級,而使用者
+        啟用與否記進記錄檔:兩種情形的 CPU 使用量差一個量級,而使用者
         看得到的只有「散會後等多久」——分析收音掉幀或收尾耗時的時候,
         第一件要確認的就是這條到底有沒有在跑(2026-08-03 加)。"""
         if not self._paths:
@@ -261,6 +261,22 @@ class LiveDiarizer:
         proc = self._proc
         try:
             proc.start()
+        except cancel.Cancelled:
+            # ⚠️ **取消不是啟動失敗**(2026-09-19 review 補,與下面 poll 那條
+            # 是同一件事的另一半):`Cancelled` 繼承 BaseException,下面那個
+            # `except Exception` **攔不到它**,於是它會帶著整段英文 traceback
+            # 從執行緒冒出去——`threading.excepthook` 印到 stderr,而
+            # `filelog.tee_console` 把 stderr 整條提級成 WARNING 寫進記錄檔
+            # (`filelog._LineTee` 的 ⚠️),長得跟真的壞掉一模一樣。而且
+            # `_give_up()` 沒跑的話 `self._proc` 留著非 None,`active` 整場
+            # 回報 True、收尾會對著一支從來沒就緒的 worker 要結果。
+            # ⚠️ **這個窗口是真的**:`DiarProcess.start()` 在等 worker 就緒
+            # (熱機 1.3~1.7 秒,冷開機更久)期間 `_await` 每圈都
+            # `cancel.check()`,而 `desktop._shutdown()` 無條件
+            # `cancel.request()`——「開始錄音後很快關視窗」就會踩到
+            logger.info("使用者取消,錄音中的講者切分未啟用")
+            self._give_up()
+            return
         except Exception:
             # 起不來就退回「收尾再算」:結果完全正確,只是散會後要多等
             logger.warning("講者分析子行程啟動失敗,改由停止後一次處理", exc_info=True)
@@ -286,7 +302,32 @@ class LiveDiarizer:
                             "(本輪 %.0f 秒音訊,耗時 %.1f 秒)",
                             kind, done, done - before, time.monotonic() - t0,
                         )
-                except (Exception, cancel.Cancelled):
+                except cancel.Cancelled:
+                    # ⚠️ **使用者按取消不是失敗**(2026-09-18 讀執行記錄時
+                    # 發現):下面那個 `self._stop` 只代表「錄音停了」,而
+                    # 取消是 `cancel.py` 的**全域**旗標——在收尾途中按取消
+                    # 時 _stop 根本還沒設,於是一次完全正常的取消在記錄檔裡
+                    # 留下「切分失敗」加一整段 traceback,長得跟真的壞掉
+                    # 一模一樣(實測 2026-09-16 那場:警告的下一行就是
+                    # 「收尾沒做完,已保住 1/1 條音軌」)
+                    # ⚠️ **不記成失敗不等於不記**(2026-09-19 review 補):
+                    # 「這條到底有沒有在跑」是分析收尾耗時的第一個問題
+                    # (見 start() 的 docstring),整場只留「已啟用」而沒有
+                    # 結束的那一行就答不出來了——而 `desktop._rec_start` 的
+                    # docstring 至今還寫著這個症狀「只在記錄檔裡留一行」
+                    logger.info("使用者取消,錄音中的講者切分就此停止")
+                    # ⚠️ **`_stop` 已設時不可以收子行程**(2026-09-19 review
+                    # 補;舊版 `if self._stop.is_set(): return` 保護的正是
+                    # 這件事):那代表 `stop()` 正在 join,而它之後的
+                    # `finish()` 還要靠這支子行程。收掉的話 `finish()` 會退回
+                    # 主行程的 `diarize.diarize()`,而那要先載兩顆 sherpa 模型
+                    # 再把整份 wav 讀進記憶體,**之後**才碰得到第一個取消檢查
+                    # 點(`diarize._segment_and_embed`)——使用者按了取消反而
+                    # 要多等一整趟冷載入。收子行程的事交給 close()
+                    if not self._stop.is_set():
+                        self._give_up()
+                    return
+                except Exception:
                     if self._stop.is_set():
                         # 收工時是我們自己把子行程殺掉的(close),不是失敗。
                         # 照樣示警的話每一場正常錄音都會留下一行「切分失敗」,
@@ -308,15 +349,26 @@ class LiveDiarizer:
         """停止背景切分,並等進行中的那塊跑完(冪等)。
 
         progress:等待期間的完成度(由子行程回報,見 diarproc)——不掛的話
-        進度條會在這幾分鐘定格。"""
-        if self._proc is not None:
-            self._proc.on_progress = progress
+        進度條會在這幾分鐘定格。
+
+        ⚠️ **`self._proc` 一律先綁成區域變數再用**(2026-09-19 review 補):
+        切分執行緒會在使用者按取消時把它設成 None(`_give_up`),而這支跑在
+        收尾那條執行緒上——`if self._proc is not None:` 與下一行的屬性寫入
+        之間只差兩個 bytecode,落在那個窗口就是
+        `AttributeError: 'NoneType' object has no attribute 'on_progress'`,
+        而它不是 `UserFacingError`,使用者錄完一整場會議只會看到「未預期的
+        錯誤」。`finish()` 的 `finally` 同一個形狀,而且那裡還會把正在傳播的
+        例外整個蓋掉。"""
+        proc = self._proc
+        if proc is not None:
+            proc.on_progress = progress
         self._stop.set()
         if self._thread is not None:
             self._thread.join()
             self._thread = None
-        if self._proc is not None:
-            self._proc.on_progress = None
+        proc = self._proc
+        if proc is not None:
+            proc.on_progress = None
 
     def finish(
         self,
@@ -331,14 +383,26 @@ class LiveDiarizer:
 
         沒啟用增量時直接走離線 diarize:塊長不同(_LIVE_CHUNK_SEC 較短、
         重疊佔比較高),不該讓純 CPU 機為了共用路徑多付一成切分成本。
-        子行程中途死掉也走這條——結果完全正確,只是白做了前面那些塊。"""
-        if self._proc is None or kind not in self._paths:
+        子行程中途死掉也走這條——結果完全正確,只是白做了前面那些塊。
+
+        ⚠️ **`self._proc` 綁成區域變數**(理由同 `stop()` 的 ⚠️):這裡的
+        `finally` 更兇——`self._proc` 被切分執行緒清掉的話,`AttributeError`
+        會在 `finally` 裡炸開,把正在往上傳的那個例外(含使用者按的取消)
+        整個蓋掉。"""
+        proc = self._proc
+        if proc is None or kind not in self._paths:
+            # ⚠️ **退回離線路徑之前先看取消旗標**(2026-09-19 review 補):
+            # `diarize.diarize()` 會先 `_get_diarizer()`(把兩顆 sherpa 模型
+            # 載進**主行程**)再 `read_wav16k()`(整份 wav 進記憶體),而第一個
+            # `cancel.check()` 要到 `_segment_and_embed` 裡才碰得到——使用者
+            # 按了取消卻要先等這一整趟冷載入,正好與「子行程是硬中斷點」相反
+            cancel.check()
             return diarize.diarize(
                 path, num_speakers=num_speakers, progress=progress,
                 features_out=features_out)
         try:
-            self._proc.on_progress = progress
-            return self._proc.finish(
+            proc.on_progress = progress
+            return proc.finish(
                 kind, path, total_sec, num_speakers, features_out=features_out)
         except Exception:
             logger.warning("講者分析子行程收尾失敗,改在主行程重算", exc_info=True)
@@ -346,7 +410,7 @@ class LiveDiarizer:
                 path, num_speakers=num_speakers, progress=progress,
                 features_out=features_out)
         finally:
-            self._proc.on_progress = None
+            proc.on_progress = None
 
     def close(self) -> None:
         """關閉會話:直接把子行程收掉,不等進行中的那塊跑完。
@@ -404,6 +468,22 @@ class LiveTranscriber:
                     continue
                 try:
                     self._transcribe_span(tr, tr.done, cut)
+                except cancel.Cancelled:
+                    # ⚠️ **這裡也一樣:取消不是失敗**(2026-09-19 review 補
+                    # ——`LiveDiarizer._loop` 2026-09-18 修了,這條姊妹迴圈
+                    # 當時漏掉,而它的症狀更糟):`Cancelled` 繼承
+                    # BaseException,下面那個 `except Exception` 根本攔不到,
+                    # 於是它直接從執行緒冒出去——`threading.excepthook` 把
+                    # 整段英文 traceback 印到 stderr,而 `filelog.tee_console`
+                    # 把 stderr 整條提級成 **WARNING** 寫進記錄檔
+                    # (`filelog._LineTee` 自己記著「259 份記錄裡有 35 次
+                    # traceback」),連軌別與時間區間都沒有。
+                    # ⚠️ **窗口很現成**:`stop_and_flush` 要先 `_stop.set()`
+                    # 才 join 這條執行緒,所以從「按下停止錄音」到那一刻、
+                    # 以及 join 正在等一塊轉錄跑完的那幾十秒,全都算;而
+                    # `desktop._shutdown()`(錄到一半關視窗)無條件
+                    # `cancel.request()`,那條路更是必中
+                    return
                 except Exception:
                     # 失敗不推進 done:這段音訊下一輪(或收尾)重來,
                     # 絕不安靜跳過;退避避免緊迴圈重複失敗
@@ -418,7 +498,7 @@ class LiveTranscriber:
 
         起訖各記一行(2026-08-03 加):使用者回報「GPU 每隔一陣子飆升一下」
         且掉幀警告的出現節奏與這些爆發一致,而收音診斷(record._CaptureDiag)
-        是每 30 秒一筆——兩邊落在同一個紀錄檔、同一份毫秒時間戳,對得起來
+        是每 30 秒一筆——兩邊落在同一個記錄檔、同一份毫秒時間戳,對得起來
         才答得出「掉幀到底是不是這一下造成的」。起是 DEBUG(只給分析)、
         訖是 INFO(耗時是使用者也看得到的即時進度感)。"""
         if end - start <= 0.05:
@@ -692,7 +772,7 @@ def salvage_tracks(tracks: list, out_dir: Path, stem: str) -> list[Path]:
     ⚠️ **單軌存成 `<stem>.wav`**(與成功時同名);**雙軌存兩個分軌檔、不合成**:合成要跑
     ffmpeg,而收尾失敗的原因可能正是它。
     ⚠️ **一軌失敗不擋另一軌,而且不拋**:呼叫端正要報另一個錯,這裡再拋會把原本的錯蓋掉;
-    失敗寫進紀錄檔,由回傳值少了哪幾個讓呼叫端講出來。
+    失敗寫進記錄檔,由回傳值少了哪幾個讓呼叫端講出來。
     ⚠️ **先直接搬,搬不動才複製**(2026-09-15 使用者:「用移動檔案的方式會比較快」):同一顆
     磁碟上搬只是換目錄項,幾百 MB 也是瞬間,錄音工作目錄裡也不會多留一份。搬不動的兩種情況
     才退回複製——**不同磁碟**(工具裝在 D:,`%LOCALAPPDATA%` 在 C:),以及**檔案還被佔用**
@@ -726,7 +806,7 @@ def salvage_tracks(tracks: list, out_dir: Path, stem: str) -> list[Path]:
 
 
 def _copy_track(src: Path, dest: Path) -> bool:
-    """搬不動時的退路:複製到暫存檔、換成正式檔名、再刪原檔。成功回 True,失敗記紀錄檔回 False。"""
+    """搬不動時的退路:複製到暫存檔、換成正式檔名、再刪原檔。成功回 True,失敗記記錄檔回 False。"""
     part = dest.with_name(f"{dest.name}.{threading.get_ident()}.part")
     try:
         shutil.copy2(src, part)
@@ -769,8 +849,8 @@ def run_live_finish(
 
     with power.keep_awake():
         report("轉錄收尾")
-        # **收尾階段的紀錄**(2026-08-04 補):在此之前,從「按下停止」到
-        # 成品落地之間紀錄檔是一片空白——2026-08-04 那場 64 分鐘的錄音,
+        # **收尾階段的記錄**(2026-08-04 補):在此之前,從「按下停止」到
+        # 成品落地之間記錄檔是一片空白——2026-08-04 那場 64 分鐘的錄音,
         # 停止之後 40 幾分鐘沒有任何一行,無從判斷是還在算、還是卡住了。
         # 而這段正是最慢的一段(講者分析的積壓要在這裡補完)
         t_start = time.monotonic()

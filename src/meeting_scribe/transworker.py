@@ -26,7 +26,7 @@ below-normal 好讓「電腦還能用」(2026-08-04 指定),而 **介面跟轉�
 使用者判斷「程式還活著」的唯一依據(那正是這次事件的核心),而 stderr
 上混著 OpenVINO 的 onednn_verbose 洪流——父端若照單全收會把黑視窗洗掉,
 只收 debug 又等於心跳消失。故自家 logger 的 INFO 以上另外送一則 log
-訊息,父端按原級別重播;stderr 仍照舊 drain 進紀錄檔供除錯。
+訊息,父端按原級別重播;stderr 仍照舊 drain 進記錄檔供除錯。
 
 ⚠️ **就緒 ≠ 模型載得起來**(與 diarworker 刻意不同):轉錄有 CUDA →
 Intel GPU → CPU 三路降級,而 OV 冷編譯實測要 200 秒上下——在 ready 前
@@ -55,7 +55,7 @@ def _reply(obj: dict) -> None:
 
 
 class _ForwardHandler(logging.Handler):
-    """把自家 logger 的紀錄轉成 NDJSON 送回父端(見檔頭的 ⚠️)。"""
+    """把自家 logger 的記錄轉成 NDJSON 送回父端(見檔頭的 ⚠️)。"""
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if threads > 0:
             power.set_worker_count(threads)
-        # 自家的 INFO 以上轉發給父端;propagate 留著,stderr 那份進紀錄檔
+        # 自家的 INFO 以上轉發給父端;propagate 留著,stderr 那份進記錄檔
         own = logging.getLogger("meeting_scribe")
         own.setLevel(logging.INFO)
         own.addHandler(_ForwardHandler())

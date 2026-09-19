@@ -39,7 +39,7 @@
 - 掉幀診斷(_CaptureDiag,2026-08-03 加):黑視窗那條節流訊息只講得出
   「累計幾次」,而那個數字**分不出成因**——使用者回報一場會議累計 619 次、
   工作管理員卻只有 10~20% CPU,原本「被講者分析的執行緒排擠」的假設當場
-  站不住。故每 30 秒往紀錄檔(filelog,不進黑視窗)記一筆足以判斷成因的
+  站不住。故每 30 秒往記錄檔(filelog,不進黑視窗)記一筆足以判斷成因的
   統計,細節見該類 docstring。
 - soundcard 惰性 import:單元測試注入假模組;app 啟動不必先初始化 COM。
 - COM 每條執行緒各自初始化(_ensure_com,自己叫 ole32 不借 soundcard 的
@@ -240,12 +240,18 @@ def _ensure_com() -> None:
 _disc_local = threading.local()
 
 _DISC_LOG_INTERVAL_SEC = 60.0
-# 診斷統計往紀錄檔寫一筆的間隔。30 秒:兩小時會議 240 行(貼得進對話),
+# 診斷統計往記錄檔寫一筆的間隔。30 秒:兩小時會議 240 行(貼得進對話),
 # 又細到看得出掉幀是「整場均勻」還是「跟著某件事叢發」
 _DIAG_INTERVAL_SEC = 30.0
+# 診斷行裡「小到印不出來就不要印」的共同門檻:四捨五入到 .1f 之後還不是
+# 0.0 才值得佔一欄。⚠️ **兩處必須共用同一個定義**(2026-09-19 review 補):
+# 裸的真值判斷(`if trim_sec:`)會讓 0.02 秒印出「修掉捏造的靜音 0.0 秒」,
+# 正好是這條規則要消滅的那種背景音——同 M760 記著的「`%.1f` 把 0.04 秒
+# 印成『掉了 0.0 秒』」
+_DIAG_MIN_SEC = 0.05
 # 單次 _record_chunk 超過這麼久 = soundcard 走了「裝置交不出資料」那條路
 # (見 _install_chunk_probe)。soundcard 的門檻是 4 個 default device period,
-# 典型 10ms → 40ms;取固定值當判準,真值由開流時記進紀錄檔備查
+# 典型 10ms → 40ms;取固定值當判準,真值由開流時記進記錄檔備查
 _STALL_SEC = 0.040
 
 _KIND_LABEL = {"mic": "麥克風", "system": "系統聲音"}
@@ -254,9 +260,18 @@ _KIND_LABEL = {"mic": "麥克風", "system": "系統聲音"}
 class _DiscontinuityLog:
     """單軌掉幀帳本:首次立即示警、之後節流,停止時總結。
 
-    掉幀是真資料損失,不能因為訊息吵就悶掉——降噪的做法是節流+總結,
-    黑視窗上一定看得到。hit() 只在該軌 worker 執行緒呼叫、count 由主
-    執行緒在 join 之後讀,無並行寫,不需鎖。
+    ⚠️ **「掉幀」指的是音訊層發了 discontinuity,不等於真的掉了資料**
+    (2026-09-18 從 259 份執行記錄查出來,詳見 summary 的 ⚠️):它在取樣
+    時鐘漂移、裝置 DSP 調整時照樣發。**次數本身不得當成損失量**——真實
+    損失量是補零秒數,由 `_TrackRecorder._log_accounting` 算、傳進
+    `summary`。不能因為訊息吵就悶掉仍然成立,降噪的做法是節流+總結。
+
+    hit() 只在該軌 worker 執行緒呼叫。⚠️ **count 有兩種讀法**:正常路徑
+    是主執行緒在 join 之後讀(無並行寫,不需鎖);**錄音執行緒卡死那條路
+    (`stop()` 的 `is_alive()` 分支)讀到的是「當下的快照」,worker 還在
+    跑、還會繼續 hit()**。單一寫入者 + 讀一個 int 在 GIL 下不會讀壞,但
+    **要往這裡加第二個欄位(list/dict/累加的 float)就不再成立**,那時得
+    補鎖或改成只在 join 之後讀。
 
     另外收下每次的發生時刻給 _CaptureDiag 做間隔分佈——**這是黑視窗那個
     累計數字給不出來的資訊**:均勻的間隔代表裝置節律(驅動/DSP),叢發
@@ -281,17 +296,95 @@ class _DiscontinuityLog:
         if self._last_log is None or now - self._last_log >= _DISC_LOG_INTERVAL_SEC:
             self._last_log = now
             logger.warning(
-                "錄音資料不連續(%s軌,累計 %d 次):電腦忙不過來,該瞬間的聲音已掉失",
+                # ⚠️ **錄音當下判不出「到底掉了沒」,所以這裡不准斷言掉了**
+                # (2026-09-19 review 補):舊文案是「電腦忙不過來,該瞬間的
+                # 聲音已掉失」,而 2026-09-18 那份 259 檔的調查正是拿
+                # 2026-09-04 那場當頭號反例——917 次、補零 0 秒,什麼都沒掉。
+                # 收檔的總結已經改成跟著補零秒數走了,但那份記錄檔裡這一句
+                # 出現 **8 次**、總結只有 1 行,而且 8 次都排在前面:修了 1 句
+                # 留下 8 句,下次讀記錄檔的人最先撞到的還是它。
+                # 真相要等收檔結算,所以這裡只陳述「音訊層回報了什麼」
+                "錄音資料不連續(%s軌,累計 %d 次):音訊層回報取樣不連續"
+                "(不一定代表掉了內容,收檔時會結算)",
                 _KIND_LABEL.get(self.kind, self.kind),
                 self.count,
             )
 
-    def summary(self) -> None:
-        if self.count:
+    def summary(
+        self, pad_sec: float | None = None, accounting_ok: bool = True,
+    ) -> None:
+        r"""收檔時的總結。`pad_sec` 是這一軌**真的**補了幾秒零(= 真實損失),
+        `accounting_ok` 是 `_log_accounting` 那行判定「這一軌的帳乾不乾淨」。
+
+        ⚠️ **次數與損失是兩回事,分開講**(2026-09-18 讀了 259 份執行記錄
+        之後改;沿革同 `_log_accounting` 的「不喊狼來了」那條):這個計數
+        是 WASAPI 自己發的 `data discontinuity`,而它在取樣時鐘漂移、裝置
+        DSP 調整時也照樣發——**次數多不等於掉了東西**。實測兩場真實會議
+        正好是反例:一場 2 小時 46 分報了 **917 次**、拉取單圈最大 147ms、
+        **補零 0 秒**(什麼都沒掉);另一場 2 小時 23 分只報 **1 次**,卻在
+        散會前裝置卡住 24 秒、**補零 22.8 秒**(最後 22.8 秒的發言真的沒了)。
+        舊版兩場喊的話一模一樣、而且都說「逐字稿可能缺漏」——**警告的強度
+        與真實損失完全相反**,分析的人會被它帶去錯的方向。
+
+        所以:真的掉了才 WARNING 並把秒數講在最前面;沒掉就降成 INFO 並
+        明說「沒有偵測到內容損失」。⚠️ `pad_sec=None` 是「帳還沒算出來」
+        (錄音執行緒卡死那條路,tail_pad 要有 writer 才算得出來),那時只
+        報得出次數。
+
+        ⚠️ **損失那一支不受 `self.count` 擋,判準也與 `_log_accounting`
+        共用同一個 `_PAD_TOL_SEC`**(2026-09-19 review 補,兩件事都是上面
+        那個論點沒走完的一半):
+
+        - **存在不能綁在次數上**:強度跟著損失走了,但「印不印」原本還寫在
+          `if not self.count: return` 上——而這整段的論點就是兩者無關。
+          discontinuity 一次都沒發、卻補了幾十秒零的錄音真的存在(實測
+          2026-09-15 那場 3 小時的會議整場診斷窗都乾淨、收檔卻報補零 8.3 秒),
+          那種形態下最該講的那句話反而一個字都不會印。
+        - **門檻要同一個**:`_log_accounting` 2026-08-15 特地訂了 1 秒的
+          `_PAD_TOL_SEC`(理由見那支的 ⚠️),這裡若用 `> 0`,一次 0.4 秒的
+          收尾補零就會得到「INFO …補零 0.4 秒」緊接著「WARNING …掉了 0.4 秒
+          的聲音」這種自打嘴巴的相鄰兩行,而 `%.1f` 還會把 0.04 秒印成
+          「掉了 0.0 秒的聲音」——那正是這一整段要消滅的喊狼來了。
+
+        ⚠️ **「沒有偵測到內容損失」不能只看補零**(2026-09-19 review 補):
+        `_log_accounting` 的判準是 `pad_sec >= _PAD_TOL_SEC` **或**「檔案與
+        牆鐘差太多」,而它自己的口訣是「**短了是掉音訊,長了是時間軸壞掉**」
+        ——只拿 `pad_sec` 回來等於只懂前半句。實測 2026-09-04 那場 38 分鐘的
+        會議:牆鐘 2291.6 秒、檔案 2304.8 秒(+13.2)、補零 0.0 秒、修掉捏造
+        的靜音 25.8 秒,收檔那行是 WARNING,而緊接著的這一行會說「沒有偵測到
+        內容損失」——**下結論的那一句還排在後面**,讀記錄檔的人(或 FWIKI 那條
+        AI)拿它當結論就被帶去錯的方向,正是這一整段要消滅的那件事。所以
+        `accounting_ok`(= `_log_accounting` 的 `not bad`)為假時只講「沒掉
+        音訊」,並把人指回上一行。"""
+        label = _KIND_LABEL.get(self.kind, self.kind)
+        if pad_sec is not None and pad_sec >= _PAD_TOL_SEC:
             logger.warning(
-                "錄音期間共 %d 次資料不連續(%s軌):次數偏多時,對應時間點的逐字稿可能缺漏",
-                self.count,
-                _KIND_LABEL.get(self.kind, self.kind),
+                "%s軌:掉了 %.1f 秒的聲音(錄音期間共 %d 次資料不連續)"
+                "——逐字稿會缺這些片段,補零的時間點見上方各行",
+                label, pad_sec, self.count,
+            )
+            return
+        if not self.count:
+            return
+        if pad_sec is None:
+            logger.warning(
+                "錄音期間共 %d 次資料不連續(%s軌):這次算不出補零總量"
+                "(錄音執行緒未正常結束),對應時間點的逐字稿可能缺漏",
+                self.count, label,
+            )
+        elif accounting_ok:
+            logger.info(
+                "錄音期間共 %d 次資料不連續(%s軌),但補零 %.1f 秒"
+                "——沒有偵測到內容損失(WASAPI 的 discontinuity 在時鐘漂移、"
+                "裝置 DSP 調整時也會發)",
+                self.count, label, pad_sec,
+            )
+        else:
+            logger.info(
+                "錄音期間共 %d 次資料不連續(%s軌),補零 %.1f 秒"
+                "——沒有掉音訊,但收檔記帳有異常(檔案與牆鐘對不上 = 時間軸被"
+                "推移),詳見上一行",
+                self.count, label, pad_sec,
             )
 
 
@@ -404,7 +497,7 @@ def _pct(values: list[float], q: float) -> float:
 
 
 class _CaptureDiag:
-    """每 _DIAG_INTERVAL_SEC 往紀錄檔記一筆收音診斷(DEBUG,不進黑視窗)。
+    """每 _DIAG_INTERVAL_SEC 往記錄檔記一筆收音診斷(DEBUG,不進黑視窗)。
 
     黑視窗那條「累計 N 次」分不出成因,而三種成因的修法完全不同,所以
     這幾組數字缺一不可:
@@ -416,8 +509,16 @@ class _CaptureDiag:
     - **拉取單圈耗時**:只有超過 WASAPI 緩衝容量(_WASAPI_BUFFER_SEC)的
       停頓才代表「我們的執行緒被餓到」,那是唯一該去調優先權/執行緒數的
       情形。p50 落在拉取長度附近是正常的(等資料本來就要等)。
-    - **落後牆鐘幾秒**:唯一能回答「到底掉了幾秒音訊」的數字。補零保險絲
-      的門檻是 5 秒,少於 5 秒的損失它整場都不會提,先前完全沒被量過。
+    - **落後牆鐘幾秒**:檔案時間軸與牆鐘的**即時**落差。⚠️ **它不是損失量**
+      ——補零保險絲一補就把檔案推回牆鐘,這個數字隨即歸零,所以一場真的
+      掉了音訊的錄音,每一個視窗都可以是乾淨的(實測一場 3 小時的真實
+      會議整場一路是負的,收檔卻報補零 8.3 秒)。負值代表檔案跑在牆鐘
+      前面,成因有兩個、處方相反:晶振與牆鐘的 0.05% 差異(3 小時約 5 秒,
+      是物理不是故障),以及 soundcard 捏造的靜音——要分辨就看下一欄。
+    - **累計補零、累計修剪**:回答「到底掉了幾秒音訊」的是**補零**,不是
+      上一欄。它只增不減,所以「掉了多少」與「掉在哪一個視窗」一眼看得
+      出來;修剪是反向的那件事(多了不存在的靜音、已經拿掉多少),兩者
+      必須分開看,理由見 _log_accounting 的 ⚠️。
     - **行程 CPU 秒數**:把「工作管理員看起來只有 10~20%」變成客觀數字。
       process_time 是跨執行緒總和,除以牆鐘就是「等於幾顆核心在忙」。
 
@@ -437,6 +538,11 @@ class _CaptureDiag:
         # 元素值從來沒被用到(對比 _pulls 真的要算分位數),一個事件記
         # 三個地方只是多兩個要同步的欄位
         self._stall_mark = (0, 0.0)
+        # 同理,補零的「本視窗新增」= 現值 − 視窗起點的快照。⚠️ **補零總量
+        # 不在這裡自己記一份**:真值是 `_TrackRecorder._pad_frames`(收檔那行
+        # 也讀它),各記一份就多一個要同步的欄位,而兩份對不上的症狀是
+        # 「診斷窗與收檔行說的補零秒數不一樣」——沒有人分得出哪一個是對的
+        self._pad_mark = 0.0
         # 探針裝不上時停擺數會一直是 0,而「沒量到」與「沒發生」在分析時
         # 是兩件完全不同的事——不講清楚會把人導向錯的結論
         self.probed = True
@@ -450,13 +556,31 @@ class _CaptureDiag:
     def pull(self, seconds: float) -> None:
         self._pulls.append(seconds)
 
-    def maybe_report(self, now: float, written_sec: float, force: bool = False) -> None:
+    def maybe_report(self, now: float, written_sec: float, pad_sec: float,
+                     trim_sec: float, force: bool = False) -> None:
         """到點就記一筆,然後開始新視窗。
+
+        `pad_sec`/`trim_sec` 是**到此刻為止的累計量**,由呼叫端(該軌的
+        `_TrackRecorder._report_diag`)帶進來——診斷自己不記一份,理由見
+        `_pad_mark`。⚠️ **這兩個不准給預設值**(2026-09-19 review 補):有了
+        預設值,「漏接線」與「真的沒補零」在記錄檔上長得一模一樣,而且是
+        **安靜地**一樣——那條路印出來的是「累計補零 0.0 秒」這個**結論**。
+        同這支檔案自己守著的「『沒量到』不得看起來像『沒發生』」(`probed`
+        那一欄特地會明寫「探針未裝上」)。漏傳要當場 TypeError。
+
+        ⚠️ **再多一欄就別再加參數了**:那時把 `_pad_frames`/`_trim_frames`
+        收成一個帳本 dataclass、建構時交給診斷一次(真值仍只有一份,而
+        「忘了接」整類失效會連同參數一起消失)。現在不做是因為接觸點有
+        15 個以上、回報要等第三欄出現才兌現——**第三欄就是觸發線**。
 
         force=True 用在收音結束時把最後那個不滿 30 秒的視窗倒出來——
         **出事最常發生在收尾那一段**(引擎正忙、使用者剛按停止),丟掉它
         等於每次都漏掉最有價值的一筆(2026-08-03 實測踩到:42 秒的重現
         跑出 2 次不連續、8 次裝置停擺,全落在最後 12 秒,而診斷一行都沒印)。
+        ⚠️ **收尾補到牆鐘的那一段不會出現在任何視窗裡**:它要等 `stop()`
+        才算得出來,而那時候診斷已經倒完了。那一段是以最後一個視窗的
+        「落後牆鐘」**正值**先浮出來的,補零的數字則在收檔那行(見
+        `_log_accounting`)與它自己的一行(見 `stop`)。
 
         診斷有任何閃失都只留 DEBUG:**錄音不能重來**,絕不讓一行統計把它
         弄斷(同 _install_chunk_probe 的取捨)。視窗一律往前推,失敗也不
@@ -468,7 +592,9 @@ class _CaptureDiag:
         try:
             logger.debug(
                 "收音診斷(%s軌):%s", _KIND_LABEL.get(self.kind, self.kind),
-                " · ".join(self._fields(now, written_sec, hits, now_sys)),
+                " · ".join(
+                    self._fields(now, written_sec, pad_sec, trim_sec, hits, now_sys)
+                ),
             )
         except Exception:
             logger.debug("收音診斷組不出來", exc_info=True)
@@ -478,9 +604,11 @@ class _CaptureDiag:
         # 本視窗——叢發型負載在後段會被稀釋掉,正是這欄要抓的東西
         self._sys = now_sys
         self._stall_mark = (self.stall_count, self.stall_sec)
+        self._pad_mark = pad_sec
         self._pulls = []
 
-    def _fields(self, now: float, written_sec: float, hits: list[float],
+    def _fields(self, now: float, written_sec: float, pad_sec: float,
+                trim_sec: float, hits: list[float],
                 now_sys: tuple[float, float] | None) -> list[str]:
         span = now - self._win_start
         gaps = [b - a for a, b in zip(hits, hits[1:])]
@@ -504,6 +632,19 @@ class _CaptureDiag:
                 f"/最大 {max(self._pulls) * 1000:.0f}ms"
             )
         parts.append(f"落後牆鐘 {now - self._t0 - written_sec:+.2f} 秒")
+        # ⚠️ **補零一律印,修剪只在真的修過才印**:補零 0.0 秒是「到這裡為止
+        # 一秒都沒少」這個**結論**(整場都印得出來,才看得出它何時從 0 變大);
+        # 修剪是校正不是損失,沒發生就不必佔一欄。兩者不得相加,理由見
+        # `_log_accounting` 的 ⚠️——合起來看的話,一場修得很成功的錄音會長得
+        # 跟一場沒事的一模一樣。「為什麼損失量是這一欄、不是上一欄」見本類別
+        # docstring 的「累計補零、累計修剪」那一條
+        win_pad = pad_sec - self._pad_mark
+        parts.append(
+            f"累計補零 {pad_sec:.1f} 秒"
+            + (f"(本視窗 +{win_pad:.1f})" if win_pad >= _DIAG_MIN_SEC else "")
+        )
+        if trim_sec >= _DIAG_MIN_SEC:
+            parts.append(f"修掉捏造的靜音 {trim_sec:.1f} 秒")
         # process_time 是跨執行緒總和,除以牆鐘 = 這段期間等於幾顆核心在忙。
         # 全機那個才看得到子行程(講者分析),見 power.system_cpu_ticks
         cpu = f"CPU 本行程 {(time.process_time() - self._cpu) / max(span, 1e-6):.2f} 核"
@@ -531,11 +672,11 @@ def find_loopback_mic():
     except Exception as e:
         # 列舉本身失敗 = 不是「沒有播放裝置」而是問不到(COM/驅動層);
         # 原樣往上丟會變成 app 的「未預期的錯誤」。細節(HRESULT)走 DEBUG:
-        # 黑視窗不得有裸英文 traceback(spec §8),要診斷的人拿的是紀錄檔
+        # 黑視窗不得有裸英文 traceback(spec §8),要診斷的人拿的是記錄檔
         logger.debug("列舉播放裝置失敗", exc_info=True)
         raise UserFacingError(
             "無法查詢 Windows 音訊裝置:請重試一次;若持續發生請重新啟動程式"
-            "(詳細錯誤已寫進 logs 資料夾的紀錄檔)"
+            "(詳細錯誤已寫進記錄檔,「❓ 使用說明」右上角的「記錄檔…」開得到)"
         ) from e
     loopbacks = [m for m in mics if m.isloopback]
     if not loopbacks:
@@ -547,7 +688,7 @@ def find_loopback_mic():
         default_name = sc.default_speaker().name
     except Exception:
         # 退回第一個 loopback 可能不是使用者正在聽的那個裝置(= 整場錄到
-        # 錯的系統聲音),而這條路徑不會浮出任何訊息:至少在紀錄檔留一筆
+        # 錯的系統聲音),而這條路徑不會浮出任何訊息:至少在記錄檔留一筆
         logger.debug("問不到預設喇叭,退回第一個 loopback", exc_info=True)
         return loopbacks[0]
     for m in loopbacks:
@@ -570,14 +711,14 @@ def _default_mic():
         # 真的沒有裝置與「問不到」都走這條(soundcard 對兩者都是丟例外,
         # 只差 HRESULT),所以措辭要兩種都對得起來——2026-08-05 的
         # CO_E_NOTINITIALIZED 就是被寫死的「找不到麥克風」導去查音效設定的。
-        # 同上:HRESULT 只進紀錄檔(exc_info=None 就只是不附 traceback)。
-        # 在此之前這條路徑**什麼都沒留下**——2026-08-05 那次的紀錄檔從轉檔
+        # 同上:HRESULT 只進記錄檔(exc_info=None 就只是不附 traceback)。
+        # 在此之前這條路徑**什麼都沒留下**——2026-08-05 那次的記錄檔從轉檔
         # 完成到使用者重開程式之間一行都沒有,完全無從判斷是不是裝置問題
         logger.debug("查詢預設麥克風失敗", exc_info=cause)
         raise UserFacingError(
             "找不到麥克風:請確認 Windows 已連接並啟用錄音裝置,"
             "或改用「只錄電腦聲音」情境;裝置正常卻仍失敗,"
-            "請重新啟動程式並附上 logs 資料夾的紀錄檔"
+            "請重新啟動程式並附上記錄檔(「❓ 使用說明」右上角的「記錄檔…」)"
         ) from cause
     return mic
 
@@ -705,8 +846,29 @@ class _TrackRecorder:
                     expected = int((now - self._start_mono) * TARGET_RATE)
                     gap = expected - (writer.frames + len(pcm))
                     if gap > _DRIFT_PAD_SEC * TARGET_RATE:
+                        at_sec = writer.frames / TARGET_RATE
                         writer.write(np.zeros(gap, dtype=np.int16))
                         self._pad_frames += gap
+                        # ⚠️ **補零是實打實的損失,發生的當下就要留下時間點**
+                        # (2026-09-18 讀執行記錄時補):收檔那行只有總量,而
+                        # 「22.8 秒是一次掉的、還是好幾次各掉幾秒」修法完全
+                        # 不同——前者去查那一刻機器發生什麼事,後者去查裝置
+                        # 節律。⚠️ **落後量補完就歸零**,所以診斷窗的「落後
+                        # 牆鐘」整場都可以是乾淨的(實測一場 3 小時的真實會議
+                        # 一路是負的,收檔卻報補零 8.3 秒)——診斷窗因此另外
+                        # 帶「累計補零」那一欄(見 `_CaptureDiag._fields`),
+                        # 而這一行是它的時間點來源:窗只框得出 30 秒。
+                        # ⚠️ **這一行的下限是 `_DRIFT_PAD_SEC`(8 秒),不是
+                        # 「任何補零」**(2026-09-19 review 補):這個分支本身
+                        # 就是 8 秒起跳的保險絲,所以「很多次各掉零點幾秒」在
+                        # 這裡**一行都不會有**——那種量只可能來自 `stop()` 收尾
+                        # 補到牆鐘的那一段,而那一段有它自己的一行(見 stop)
+                        logger.warning(
+                            "%s軌:裝置斷流,已在第 %.0f 秒補 %.1f 秒靜音"
+                            "——這段時間的聲音掉了,逐字稿會缺這一段",
+                            _KIND_LABEL.get(self.kind, self.kind),
+                            at_sec, gap / TARGET_RATE,
+                        )
                     elif -gap > _DRIFT_TRIM_SEC * TARGET_RATE:
                         # 反向:檔案跑在牆鐘前面 = soundcard 捏造的靜音被
                         # 寫了進來。從全零段裡把多出來的拿掉(見
@@ -715,15 +877,13 @@ class _TrackRecorder:
                         pcm, dropped = _trim_zero_runs(pcm, -gap)
                         self._trim_frames += dropped
                     writer.write(pcm)
-                    diag.maybe_report(now, writer.frames / TARGET_RATE)
+                    self._report_diag(diag, now)
                     if now - last_flush >= _HEADER_FLUSH_SEC:
                         writer.flush_header()
                         last_flush = now
                 self._drain(writer, rec)
                 # 收尾那一段最容易出事,不能讓它隨著不滿一個視窗而消失
-                diag.maybe_report(
-                    time.monotonic(), writer.frames / TARGET_RATE, force=True,
-                )
+                self._report_diag(diag, time.monotonic(), force=True)
         except Exception as e:
             # 開裝置失敗(start 同步浮出)與錄到一半裝置消失都落在這;
             # 後者檔案保留到最後寫入點,絕不因裝置問題丟掉已錄內容
@@ -733,10 +893,28 @@ class _TrackRecorder:
             _disc_local.log = None
             self._opened.set()  # start() 不得因開裝置即噴例外而卡死
 
+    def _report_diag(self, diag: "_CaptureDiag", now: float,
+                     force: bool = False) -> None:
+        """把這一軌的當下數字交給診斷窗(錄音中每圈一次、收尾強制一次)。
+
+        ⚠️ **接線只有這一處**(2026-09-19 review 收斂):原本錄音中那一圈與
+        收尾那一筆各自組同一串實參,於是「值到不了欄位」有**兩個**各自會斷
+        的地方,要兩顆突變(M766/M769)並排守著,而下一次診斷加一欄就是四
+        個地方要同步改。收成一處之後,漏接就只可能漏在這裡,而它一漏就是
+        每一筆都漏——測試那條 `>= 2` 的斷言照樣抓得到。
+
+        真值仍然只在 `_pad_frames`/`_trim_frames` 上,這裡只做單位換算。"""
+        diag.maybe_report(
+            now, self._writer.frames / TARGET_RATE,
+            self._pad_frames / TARGET_RATE,
+            self._trim_frames / TARGET_RATE, force=force,
+        )
+
     def _drain(self, writer: "_WavWriter", rec) -> None:
         """停止後把還躺在 WASAPI 緩衝裡的音訊拉完。
 
-        **緩衝開到 30 秒是為了扛住 GIL 阻塞**(見 _WASAPI_BUFFER_SEC),
+        **緩衝開大是為了扛住 GIL 阻塞**(_WASAPI_BUFFER_SEC,現值 5 秒;
+        曾經開到 30 秒,見該常數的註解),
         代價是按下停止的當下,最後最多那麼多秒的聲音還沒被讀出來。不排空
         就等於**每一場會議的結尾都被剪掉一段**,再由 stop() 補上等長的
         靜音——而散會前的結論正是最不該丟的那一段。
@@ -785,11 +963,11 @@ class _TrackRecorder:
             "已裝上" if probed else "裝不上(soundcard 換過實作)",
         )
 
-    def _log_accounting(self, wall_sec: float, tail_pad: int) -> None:
+    def _log_accounting(self, wall_sec: float, tail_pad: int) -> tuple[float, bool]:
         """收檔時把這一軌的音訊帳算給人看:牆鐘多長、真的收到多少、補了多少零。
 
         **補零總量就是掉幀的真實損失量**,而它先前從來沒有被記下來過:錄音中
-        的保險絲門檻是 _DRIFT_PAD_SEC(5 秒),少於 5 秒的落差整場都不會有人
+        的保險絲門檻是 _DRIFT_PAD_SEC(8 秒),少於 8 秒的落差整場都不會有人
         提;收尾這一段更是靜靜補完就收檔。黑視窗那個「累計 N 次」回答不了
         「所以到底掉了幾秒」——619 次 × 每次 10ms 和 × 每次 300ms 是完全
         不同量級的災情,而修法取決於此。
@@ -808,7 +986,7 @@ class _TrackRecorder:
         真的出事就用 WARNING(壞消息不得只躺在 DEBUG 裡),否則 INFO。
 
         ⚠️ **牆鐘與檔案的落差要用比例判,不能用固定秒數**(2026-08-15 從
-        執行紀錄查出來):裝置的取樣時鐘跟系統牆鐘本來就差個 0.05% 上下,
+        執行記錄查出來):裝置的取樣時鐘跟系統牆鐘本來就差個 0.05% 上下,
         那是晶振不是故障——9120 秒的錄音實測差 +5.6 秒,固定 1 秒的門檻
         等於**每一場長錄音都報警**,而那幾場補零 0 秒、掉幀 5 次,乾淨得
         很。示警一旦變成常態就會被當背景音,真的出事那次也就沒人看了
@@ -828,27 +1006,72 @@ class _TrackRecorder:
         drift_tol = max(_DRIFT_ABS_TOL_SEC, wall_sec * _DRIFT_REL_TOL)
         bad = pad_sec >= _PAD_TOL_SEC or abs(file_sec - wall_sec) >= drift_tol
         (logger.warning if bad else logger.info)(line, *args)
+        # 回傳 (真實損失量, 這一軌的帳乾不乾淨) 給 `_DiscontinuityLog.summary`:
+        # 那條訊息的強度要跟著損失走,而不是跟著「不連續」的次數走;而
+        # ⚠️ **`bad` 也要一起帶過去**——`pad_sec` 只講得出上面口訣的前半句
+        # (短了是掉音訊),漏掉後半句(長了是時間軸壞掉)的話,一場 +13.2 秒
+        # 漂移的錄音會在這行 WARNING 的**下面**接一句「沒有偵測到內容損失」
+        return pad_sec, not bad
 
     def stop(self) -> RecordedTrack:
         end_mono = time.monotonic()
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=_STOP_JOIN_SEC)
-            self._disc.summary()  # 壞消息在收檔時一次講清楚,不只靠錄音中的節流示警
             if self._thread.is_alive():
+                # ⚠️ 這條路**算不出補零總「量」**:收尾補到牆鐘的那一段要等
+                # writer 才算得出來,而它還被那條執行緒握著。所以 summary 只
+                # 報得出次數——正常路徑要等帳算完才講,見下
+                self._disc.summary()
                 # 拉取卡死(裝置層停擺):不能碰 writer(執行緒可能還握著),
-                # 檔案有效長度以最後一次標頭回寫為準
-                logger.warning("錄音執行緒未在時限內結束(%s),檔案保留至最後回寫點", self.kind)
+                # 檔案有效長度以最後一次標頭回寫為準。
+                # ⚠️ **迴圈中補了多少零還是講得出來**:`_pad_frames` 是這個
+                # 物件上的一個 int、不是 writer 的欄位(下一行本來就在讀
+                # `self._writer.frames`)。這條路最可能真的掉了東西,把已知
+                # 的下限講出來,遠好過只說「不知道」
+                logger.warning(
+                    "錄音執行緒未在時限內結束(%s),檔案保留至最後回寫點;"
+                    "錄音期間已補零 %.1f 秒(收尾那一段算不出來)",
+                    self.kind, self._pad_frames / TARGET_RATE,
+                )
                 return RecordedTrack(self.path, self.kind, self._writer.frames / TARGET_RATE)
         # 正常結束:補零至牆鐘等長——兩軌等長,收尾的雙聲道合成與
         # 跨軌時間戳對照才成立
-        if self._start_mono is not None:
-            expected = int((end_mono - self._start_mono) * TARGET_RATE)
-            tail_pad = expected - self._writer.frames
-            if tail_pad > 0:
-                self._writer.write(np.zeros(tail_pad, dtype=np.int16))
-            self._log_accounting(end_mono - self._start_mono, tail_pad)
-        self._writer.close()
+        pad_sec: float | None = None
+        accounting_ok = True
+        try:
+            if self._start_mono is not None:
+                expected = int((end_mono - self._start_mono) * TARGET_RATE)
+                tail_pad = expected - self._writer.frames
+                if tail_pad > 0:
+                    at_sec = self._writer.frames / TARGET_RATE
+                    self._writer.write(np.zeros(tail_pad, dtype=np.int16))
+                    # ⚠️ **收尾補的零也要有自己的一行**(2026-09-19 review 補):
+                    # 它一樣被算進 `pad_sec`,而 summary 那句「補零的時間點見
+                    # 上方各行」只有迴圈裡那個分支會兌現——損失全部落在尾巴時
+                    # (裝置在散會前卡死、`_drain` 撞上逾時,正是 2026-09-07
+                    # 那場 22.8 秒的形狀)往上一行都翻不到,讀記錄檔的人會以為
+                    # 自己把 log 截斷了。判準與 summary 共用 `_PAD_TOL_SEC`:
+                    # 收尾本來就會補幾十毫秒對齊,那種量不值得驚動任何人
+                    if tail_pad >= _PAD_TOL_SEC * TARGET_RATE:
+                        logger.warning(
+                            "%s軌:收尾補了 %.1f 秒靜音(第 %.0f 秒之後)"
+                            "——散會前這段時間的聲音沒收到,逐字稿會缺這一段",
+                            _KIND_LABEL.get(self.kind, self.kind),
+                            tail_pad / TARGET_RATE, at_sec,
+                        )
+                pad_sec, accounting_ok = self._log_accounting(
+                    end_mono - self._start_mono, tail_pad)
+            # **壞消息在收檔時一次講清楚**,但要等帳算出來才講得對:次數多寡
+            # 與「到底掉了幾秒」是兩回事,見 `_DiscontinuityLog.summary`
+            self._disc.summary(pad_sec, accounting_ok)
+        finally:
+            # ⚠️ **檔案一定要關,而且不能被上面那幾行擋住**:記帳與總結只是
+            # 印字,但它們一旦拋例外,writer 就留著沒關——標頭停在最後一次
+            # 回寫(最多丟 `_HEADER_FLUSH_SEC` 的音訊),更麻煩的是 Windows
+            # 不准搬一個還開著的檔,`live.salvage_tracks` 那條「保住音軌」的
+            # 保命路徑會退回複製。`close()` 本身冪等
+            self._writer.close()
         return RecordedTrack(self.path, self.kind, self._writer.frames / TARGET_RATE)
 
     def abort(self) -> None:

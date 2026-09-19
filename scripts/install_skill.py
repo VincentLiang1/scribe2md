@@ -6,7 +6,7 @@ r"""把 `skills/` 底下的 Claude Code Skill 安裝到使用者層級。
 doc2md`,而 repo 在每台機器上的位置都不一樣(README 教使用者解壓到「桌面或
 C:\ 底下」,本來就不會一致,而且**路徑可能含中文與空格**——填佔位符時不能
 假設它是純 ASCII)。手動複製 SKILL.md 的話,得記得改
-裡面**兩處**路徑,漏一處就是「Skill 有裝、但叫用失敗」——而那種壞法沒有
+裡面**三處**路徑,漏一處就是「Skill 有裝、但叫用失敗」——而那種壞法沒有
 任何提示。這支腳本從自己的位置推出 repo 根目錄,把佔位符填掉再寫出去。
 
 **使用者層級不是專案層級**:裝到 `%USERPROFILE%\.claude\skills\`,任何專案
@@ -27,8 +27,19 @@ def skills_root() -> Path:
 
 
 def render(template: str, install_dir: Path) -> str:
-    """把範本裡的佔位符換成這台機器上的實際路徑。"""
-    return template.replace(PLACEHOLDER, str(install_dir))
+    r"""把範本裡的佔位符換成這台機器上的實際路徑。
+
+    ⚠️ **一律填正斜線**(`as_posix()`),而範本裡的佔位符**一律包在雙引號
+    裡**。填好的指令是給 Claude Code 照抄去跑的,而它的 Bash 工具是 POSIX
+    shell:`C:\SOURCE5\Python\meeting-scribe` 裸寫時 `\S`、`\P`、`\m` 會被當
+    成跳脫吃掉、整條路徑塌成 `C:SOURCE5Pythonmeeting-scribe`,uv 只回一句
+    「error: 系統找不到指定的檔案。 (os error 2)」、離開碼 2。⚠️ **那句話
+    看起來像轉檔失敗,其實指令根本沒跑到**——2026-09-18 在 FWIKI 的批次攝入
+    連踩四次(同一天四次呼叫全部先炸一次、改寫成正斜線才過),其中一次還是
+    背景執行,只在 `.output` 裡留下孤零零一行。引號另外擋掉路徑含空格的情況
+    (README 教使用者解壓到「桌面或 C:\ 底下」,而桌面路徑本來就可能有空格)。
+    """
+    return template.replace(PLACEHOLDER, install_dir.as_posix())
 
 
 def install_one(src_dir: Path, dest_root: Path, install_dir: Path) -> Path:
