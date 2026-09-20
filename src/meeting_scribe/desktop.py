@@ -422,6 +422,17 @@ ADV_TITLE = "進階參數設定"
 # 放不下時 Tk 直接裁字、不給省略號——要改字先跑 `test_the_advanced_button_sits_beside_every_action_button`。
 ADV_BUTTON = "⚙ 進階參數設定…"
 
+# 兩頁右上角／動作列那顆「開啟成品所在」的鈕(轉檔頁 `_run_open`、文件頁 `_doc_open`)。
+# ⚠️ **字樣只有這一份**:兩頁是同一個角色,各寫一份的話下次改字就只會改到其中一頁。
+# ⚠️ **圖示 2026-09-20 使用者指定**(「前面加上使用說明記錄檔按鈕前面的 ICON」),
+# 與 `LOG_BUTTON` 同一顆 📂——兩者都是「按了會開一扇檔案總管」。
+# ⚠️ **圖示與字中間那個空白不可以省**:`split_icon` 的判準就是「第一個字是圖示、
+# 第二個字是空白」,黏在一起就整串留在文字裡、退回單色(而且畫面上只是「顏色不對」,
+# 沒有任何錯誤)。⚠️ **不帶 VS16**(見檔頭)。
+# ⚠️ **文件頁那顆受 `ACTION_BTN_W` 限制**(與主要動作鈕同寬並排):圖示是實打實的寬度,
+# 改字樣之前先跑 `test_the_output_folder_buttons_wear_the_folder_icon`。
+OPEN_DIR_BUTTON = "📂 輸出資料夾…"
+
 # 使用說明裡那張 Claude 隱私設定截圖(全篇唯一一張圖)。
 PRIVACY_IMG = repo_root() / "docs" / "claude-privacy-setting.jpg"
 
@@ -566,6 +577,13 @@ CHECK_W = 28
 # 把頁面撐滿」):`tk.Text` 不給 height 就是預設 24 行、實測請求 564px,它一個人
 # 就能把命名區擠成 1px。
 PREVIEW_LINES = 20
+
+# 「預覽已經停在最底」的判準(見 `_run_set_preview` 的 `follow`):`Text.yview()` 回
+# 的是 (第一可見, 最後可見) 兩個比例,捲到底時第二個是 1.0。⚠️ **不寫 `== 1.0`**:
+# 那是浮點數、由「可見高度 / 內容總高」算出來的,差一個 px 就不是整數 1;這個 0.999
+# 的縫在 20 行的框裡不到一行的 1/50,人分不出來,而它擋掉的是「明明貼在最底、卻因為
+# 尾差而從此不再跟著捲」。
+PREVIEW_AT_END = 0.999
 
 # 轉檔頁左欄佔內容區的幾成(`grid` 的權重 5:7)。⚠️ **說明小字的換行寬度靠這個
 # 算,不准去量欄位自己有多寬**——理由見 `_wrap_width`。
@@ -4010,7 +4028,7 @@ class App(tk.Tk):
         # ⚠️ 穿線框藍(`CTA_STYLE`)而不是一般的灰底小鈕(2026-09-04 使用者圈出這一顆:
         # 「請改為藍色框的按鈕樣式」):它與同一張卡上的「選擇檔案…」是同一款,而停用
         # 時邊框會自己換成灰的(`Sq.cta` 的 `cta-dis`),還沒轉完照樣看得出按不動。
-        self._run_open = HandButton(head, text="輸出資料夾…", style=skin.CTA_STYLE,
+        self._run_open = HandButton(head, text=OPEN_DIR_BUTTON, style=skin.CTA_STYLE,
                                     state="disabled",
                                     command=lambda: doctab.open_output_dirs(
                                         self._run_dirs if self._run_dirs is not None
@@ -5020,7 +5038,10 @@ class App(tk.Tk):
         洗掉,而長會議每秒都在洗。
         ⚠️ **逐段快取繁化結果、只轉新增的那幾段**(同網頁版):整份重轉是每秒一次的
         OpenCC 全文轉換,而且錄音中途改 `replace.txt` 也不該回頭重寫已經轉過的段落。
-        ⚠️ **這裡不標講者**:講者要等收尾的分群才知道,預覽只求「看得到內容在長」。"""
+        ⚠️ **這裡不標講者**:講者要等收尾的分群才知道,預覽只求「看得到內容在長」。
+        ⚠️ **`follow=True` 只在這裡傳**(2026-09-20 使用者指定自動捲到最新內容):新的一批
+        字長在最底下,而框只有 20 行——不跟著捲的話,錄超過那個長度之後畫面就定住了,
+        看起來像背景轉錄停了。條件與「他往上捲走就不搶」都在 `_run_set_preview`。"""
         # 局部 import:本檔刻意不在模組層背這些(見檔頭)
         from meeting_scribe import convert
         snap = live.snapshot()
@@ -5033,7 +5054,7 @@ class App(tk.Tk):
                 self._live_conv[key] = convert.to_taiwan_traditional(seg.text)
             lines.append(f"[{pipeline.mmss(seg.start)}] {self._live_conv[key]}")
         self._live_n = len(snap)
-        self._run_set_preview(LIVE_PREVIEW_HEAD + "\n".join(lines))
+        self._run_set_preview(LIVE_PREVIEW_HEAD + "\n".join(lines), follow=True)
 
     def _rec_start(self) -> None:
         r"""按下「開始錄音」。
@@ -6321,13 +6342,40 @@ class App(tk.Tk):
         """「清空」:選檔是累加的,要重來得有這顆。"""
         self._run_set_path("")
 
-    def _run_set_preview(self, text: str) -> None:
+    def _run_set_preview(self, text: str, follow: bool = False) -> None:
+        r"""重畫右邊的預覽;`follow` 是「邊錄邊長」那條路要的**跟著捲到最新內容**。
+
+        (2026-09-20 使用者:「右邊的逐字稿預覽,每次更新時,請自動捲到最下面新的內容」。)
+
+        ⚠️ **`follow` 只有增量更新那條路可以傳**(目前只有 `_rec_live_preview`;使用者
+        同一輪選定):轉檔完成的整份逐字稿、核對改掛之後的重畫都是**一次性換掉內容**,
+        那種更新捲到底等於開場就跳到結尾。
+        ⚠️ **而且他往上捲走的時候不准搶**(同一輪選定,聊天視窗與終端機的慣例):只有
+        原本就停在最底時才跟,他捲回最底就自動恢復——長會議每 2~3 分鐘長一批,搶一次
+        就是把他正在讀的段落抽走。
+        ⚠️ **「在不在最底」必須在 `delete` 之前問**:內容一清空捲動位置就回到頂端
+        (實測重畫後 `yview()` 回 `(0.0, …)`),重畫後再問一律不成立、黏底永遠不會發生。
+        ⚠️ **不跟的時候要把他原本在讀的那一行捲回來**:同一個原因(重畫就彈回開頭),
+        真視窗實測「停在 30% 處 → 長出一批 → 跳到 `(0.0, 0.218)`」。只擋住「拉到底」
+        等於把他往上抽,一樣是把正在讀的段落抽走。⚠️ **記的是行號不是比例**:內容
+        只在尾端追加、前面逐字不變(逐段快取),所以同一個行號就是同一段話,而比例
+        會隨著總長度變長而往下漂。
+        ⚠️ **捲到底用 `yview_moveto(1.0)` 不用 `see("end")`**:真視窗上兩者同值,但
+        `see` 的語意只是「讓它看得見」、捲多少取決於框有多高——框還沒排版時實測只捲到
+        97.7%(而 `moveto` 與框高無關,永遠貼到底)。"""
         # 原文留一份(核對改掛與命名進度落地都要它),框裡畫的是剝過記號的版本
         self._preview_md = text or ""
+        at_end = follow and self._run_preview.yview()[1] >= PREVIEW_AT_END
+        # 他往上捲走了:記下最上面看得見的是哪一行(`@0,0` = 框左上角那個字元)
+        keep = self._run_preview.index("@0,0") if follow and not at_end else ""
         self._run_preview.configure(state="normal")
         self._run_preview.delete("1.0", "end")
         self._run_preview.insert("1.0", helpmd.flatten(text))
         self._run_preview.configure(state="disabled")
+        if at_end:
+            self._run_preview.yview_moveto(1.0)
+        elif keep:
+            self._run_preview.yview(keep)
 
     def _run_lock(self, running: bool, outcome: int = winui.TBPF_NOPROGRESS) -> None:
         r"""鎖住/放開「檔案轉檔」這條路的按鈕;`outcome` 是收工時留在工作列上的顏色。
@@ -6589,7 +6637,7 @@ class App(tk.Tk):
         # 貼上路徑時不一定觸發任何事件,鈕不亮會讓人以為工具壞了;按下去才把關,
         # 錯誤訊息會講清楚是空的、找不到、還是格式不支援。
         self._doc_run = self._action_btn(bar, "doc", DOC_ACTION)
-        self._doc_open = HandButton(bar, text="輸出資料夾…", style=skin.SKIP_PAGE_STYLE,
+        self._doc_open = HandButton(bar, text=OPEN_DIR_BUTTON, style=skin.SKIP_PAGE_STYLE,
                                     state="disabled", command=self._doc_open_dirs)
         self._action_slot(bar, self._doc_run, self._doc_open)
         # 窄視窗的退路:選檔鈕列放不下「清空」時,這兩列一起縮短、維持對齊(`_slot_fit`)
