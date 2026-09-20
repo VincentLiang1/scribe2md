@@ -217,6 +217,35 @@ LOG_BUTTON = "📂 記錄檔…"
 # 視窗,它印的是記錄檔的完整路徑)。
 LOG_HINT = "詳情見記錄檔(「❓ 使用說明」右上角的「記錄檔…」)"
 
+# 「這台電腦載不起 AI 元件」的橫幅(2026-09-20 使用者選案 C;五案實拍見
+# `docs/dev/native-ui.md` §21)。⚠️ **這一條只在壞掉的電腦上出現**,正常的機器從頭到尾
+# 看不到它——偵測是白撿的,成本見 `transcribe.native_problem`。起因是一台乾淨的虛擬機:
+# 錄了一場會議、按下停止,才在收尾時撞上 `ImportError: DLL load failed …`,而畫面上
+# 只有「收尾時出錯」五個字。⚠️ **位置在頁首底下、四個分頁都看得到**:缺這個元件的
+# 電腦上,錄音、轉檔、文件 OCR 全部做不完,不是某一頁的事。
+BANNER_TITLE = "⚠️ 這台電腦少了 AI 元件需要的系統元件,錄音與轉檔都會失敗"
+# ⚠️ **把兩種病因的處方都講完,而不是指路到說明頁**:說明頁那一條寫的就是同一件事,
+# 而這條橫幅出現的時機是「他正要開始做事」——多一次跳轉就多一次放棄。實拍也證實指路
+# 那一句會把第二行斷在「使用說/明」中間(`break_lines` 中文處處可斷)。
+BANNER_BODY = (
+    "請安裝「Microsoft Visual C++ 2015-2022 可轉散發套件(x64)」後重新啟動本工具"
+    "——虛擬機器、剛重灌或精簡安裝的 Windows 常常沒有預裝。"
+    "裝了仍然失敗的話,請重新執行一次「安裝.bat」。"
+)
+# ⚠️ **按鈕只把網址放進剪貼簿,不自己開瀏覽器**:這支工具 2026-09-05 之後就沒有瀏覽器
+# 那一層了(使用者裁定「AP 不會用瀏覽器」),為了一顆鈕破例不划算。
+# ⚠️ **圖示與字中間那個空白不可以省**(同 `LOG_BUTTON`):`split_icon` 的判準就是它。
+BANNER_COPY = "📋 複製下載網址"
+BANNER_COPIED = "✓ 已複製"
+# 微軟自己的短網址(aka.ms),貼進瀏覽器就開始下載 x64 版。⚠️ **不寫版號**:這條是
+# 「最新的那一份」,而 2015~2022 是同一個可轉散發套件、向下相容。
+VCREDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+# 「✓ 已複製」停留多久再換回原本的字。
+BANNER_COPIED_MS = 2000
+# 那顆鈕在橫幅右邊佔掉的寬度:說明文字要先扣掉它,否則句尾會壓到鈕上(同 `_wrap`
+# 的 `minus`,命名區那兩顆鈕踩過)。
+BANNER_BTN_W = 150
+
 # 說明文字裡的程式碼字(`_icon_text` 的 code tag)。Consolas 從 Vista 起隨 Windows 出貨;
 # 缺了 Tk 會自己退到預設字型,只是不等寬,不是壞掉。
 MONO_FAMILY = "Consolas"
@@ -1392,6 +1421,10 @@ class App(tk.Tk):
         # ⚠️ **預設值不在這裡決定**(要偵測 GPU,見 `ModelChoice`):開窗時不偵測,視窗畫好
         # 之後才在背景做(`_boot_done`),而值在第一次被讀的那一刻落定。
         self._probe = None                # 背景偵測 GPU 的那條執行緒(`_probe_start`)
+        # 「這台電腦載不起 AI 元件」那條橫幅(只有壞掉的機器才會長出來,見
+        # `_native_banner`)。⚠️ **不是 `_lockable`**,理由在那一支。
+        self._banner: ttk.Frame | None = None
+        self._banner_btn: HandButton | None = None
         self._probe_result: tuple[str, float] | None = None
         self._probe_reported = False
         self._run_model = ModelChoice(self, self._probe_wait)
@@ -1515,6 +1548,73 @@ class App(tk.Tk):
         self._probe_reported = True
         device, took = self._probe_result
         logger.info("轉錄裝置(偵測):%s(背景偵測 %.2f 秒)", device, took)
+        self._native_banner()
+
+    def _native_banner(self) -> None:
+        r"""偵測順手撞到「這台電腦載不起原生元件」的話,在頁首底下掛一條提示。
+
+        ⚠️ **這是「立刻講」而不是「等它炸」**(2026-09-20 使用者指定):在此之前,
+        缺 Visual C++ 執行階段的電腦要錄完一整場會議、按下停止,才在收尾時看到
+        「收尾時出錯」——而那時已經沒有人猜得到要去裝什麼。偵測本身是白撿的,
+        背景那趟本來就要 import ctranslate2(見 `transcribe.native_problem`)。
+        ⚠️ **不擋任何事、不鎖任何按鈕**:缺這個元件的電腦上**錄音其實錄得起來**
+        (音檔照樣落地在 `output`),做不完的只有「轉成逐字稿」那一段。把「開始
+        錄音」鎖掉反而讓他連素材都留不住。
+        ⚠️ **只建一次**:`_probe_report` 有 `_probe_poll` 與 `_probe_wait` 兩條路
+        進得來,哪一條先到都可能。
+        ⚠️ **記錄檔一行、不附堆疊**(同 `diarize._ensure_sherpa`):環境問題的堆疊
+        沒有診斷價值,而畫面上已經把處方講完了。"""
+        problem = transcribe.native_problem()
+        if problem is None or self._banner is not None:
+            return
+        logger.warning("AI 元件在這台電腦上載不起來(開窗偵測):%s: %s",
+                       type(problem).__name__, problem)
+        card = ttk.Frame(self._shell, style="Card.TFrame", padding=self.px(CARD_PAD))
+        row = ttk.Frame(card, style="CardBody.TFrame")
+        row.pack(fill="x")
+        row.columnconfigure(0, weight=1)
+        text = ttk.Frame(row, style="CardBody.TFrame")
+        text.grid(row=0, column=0, sticky="ew")
+        # ⚠️ **兩句都要扣掉右邊那顆鈕的寬度**:不扣的話句尾會壓到鈕上、把它擠出
+        # 卡片右緣(命名區的線索行踩過同一顆)。
+        self._wrap(ttk.Label(text, text=BANNER_TITLE, style="Warn.TLabel",
+                             justify="left"),
+                   minus=self.px(BANNER_BTN_W)).pack(anchor="w")
+        self._wrap(ttk.Label(text, text=BANNER_BODY, style="Hint.TLabel",
+                             justify="left"),
+                   minus=self.px(BANNER_BTN_W)).pack(anchor="w",
+                                                     pady=(self.px(SP_XS), 0))
+        # ⚠️ **這顆刻意不登記 `_lockable()`**(同「📂 記錄檔…」那顆):最需要它的
+        # 時刻正好是工作進行中——錄音錄到一半才看到這條的人,要的就是當下把網址抄
+        # 走請 IT 處理,而不是等散會。
+        self._banner_btn = HandButton(row, text=BANNER_COPY, style="Small.TButton",
+                                      command=self._banner_copy)
+        self._banner_btn.grid(row=0, column=1, sticky="e",
+                              padx=(self.px(SP_LG), 0))
+        # ⚠️ **`after=` 指頁首,不另外記一個屬性**:殼裡的順序是頁首 → 分頁列 →
+        # 子分頁列 → 內容區,而這條要夾在第一與第二之間。
+        card.pack(fill="x", pady=(self.px(SP_LG), 0), after=self._head)
+        self._banner = card
+        # ⚠️ **要當場算一次換行**:`_wrap` 只是登記,真正的寬度要等下一次
+        # `<Configure>`——不叫的話這兩句先用 Tk 的預設(不換行)畫一幀出來。
+        self._refit_wraps()
+
+    def _banner_copy(self) -> None:
+        """把下載網址放進剪貼簿,鈕上當場回一句「已複製」。"""
+        self.clipboard_clear()
+        self.clipboard_append(VCREDIST_URL)
+        if self._banner_btn is not None:
+            self._banner_btn.configure(text=BANNER_COPIED)
+        self.after(BANNER_COPIED_MS, self._banner_uncopy)
+
+    def _banner_uncopy(self) -> None:
+        r"""把鈕上的字換回來。
+
+        ⚠️ **要先問它還在不在**:那兩秒內使用者可能已經把視窗關掉,而 `TclError`
+        會被 Tk 吞進記錄檔——畫面上一個字都沒有。"""
+        btn = self._banner_btn
+        if btn is not None and btn.winfo_exists():
+            btn.configure(text=BANNER_COPY)
 
     # ---- 基礎 ----------------------------------------------------------- #
     def px(self, n: float) -> int:

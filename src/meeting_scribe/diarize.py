@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 
 from meeting_scribe import audio, cancel, filelog, models
-from meeting_scribe.errors import UserFacingError
+from meeting_scribe.errors import UserFacingError, native_engine_error
 from meeting_scribe.types import (
     MAX_SPEAKERS,
     UNKNOWN_SPEAKER,
@@ -65,11 +65,22 @@ sherpa_onnx = None
 def _ensure_sherpa():
     """取得 sherpa_onnx 模組(首次呼叫才真正 import)。任何 import
     sherpa_onnx 之前必須先預載 pip 版 onnxruntime DLL(見
-    _preload_pip_onnxruntime);測試 monkeypatch 過的假貨原樣回傳。"""
+    _preload_pip_onnxruntime);測試 monkeypatch 過的假貨原樣回傳。
+
+    ⚠️ **這裡是全專案唯一會第一個踩到「這台電腦跑不動原生元件」的地方**
+    (講者分離、標點、聲紋、核對全部經過它),所以翻譯成繁中也只做在這裡。
+    ⚠️ **記錄檔只留一行、不附堆疊**:環境缺 DLL 的堆疊全長在 import 機制
+    內部,對診斷一點幫助都沒有,而原文(`ImportError: DLL load failed …`)
+    一行就講完了。"""
     global sherpa_onnx
     if sherpa_onnx is None:
-        _preload_pip_onnxruntime()
-        import sherpa_onnx as _real
+        try:
+            _preload_pip_onnxruntime()
+            import sherpa_onnx as _real
+        except (ImportError, OSError) as e:   # OSError = ctypes.WinDLL 那一步
+            logger.warning("AI 元件載入失敗(sherpa-onnx):%s: %s",
+                           type(e).__name__, e)
+            raise native_engine_error(e) from e
 
         sherpa_onnx = _real
     return sherpa_onnx

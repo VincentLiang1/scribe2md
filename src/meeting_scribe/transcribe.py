@@ -23,6 +23,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from meeting_scribe import cancel, hotwords, models
+from meeting_scribe.errors import missing_dll, native_engine_error
 from meeting_scribe.types import TranscriptSegment
 
 # 轉錄語言(產品決定,非引擎細節):faster-whisper 直接吃,OV 路徑包成
@@ -38,9 +39,17 @@ WhisperModel = None
 
 
 def _ensure_whisper():
+    """⚠️ **載不起來要講人話**:理由與做法同 `diarize._ensure_sherpa`
+    ——缺 Visual C++ 執行階段的電腦上,這條路(ctranslate2)與那條路
+    (onnxruntime)會先後炸,兩邊都要翻,否則修好一邊只是換個地方噴英文。"""
     global WhisperModel
     if WhisperModel is None:
-        from faster_whisper import WhisperModel as _real
+        try:
+            from faster_whisper import WhisperModel as _real
+        except (ImportError, OSError) as e:
+            logger.warning("AI 元件載入失敗(faster-whisper):%s: %s",
+                           type(e).__name__, e)
+            raise native_engine_error(e) from e
 
         WhisperModel = _real
     return WhisperModel
@@ -79,6 +88,28 @@ ProgressFn = Callable[[float], None]
 _PREP_FRAC = 0.05
 
 
+# 開窗時的背景裝置偵測**順手**撿到的「這台電腦根本載不起原生元件」(缺 Visual C++
+# 執行階段那一類,2026-09-20 一台乾淨的虛擬機)。
+# ⚠️ **不為了問這件事多付任何成本**:底下那兩支本來就要 import ctranslate2 / openvino,
+# 正常的機器 import 得起來、這裡從頭到尾是 None;壞掉的機器則在**開窗後 0.2 秒內**就
+# 知道——在此之前,使用者要錄完一整場會議、按下停止,才在收尾時撞上它。
+# ⚠️ **只收「缺 DLL」那一種**(`errors.missing_dll`):沒有 GPU、驅動壞掉、OpenVINO 沒裝
+# 都會走同一個 `except`,而那些**不影響**轉檔(退回 CPU 就是了),拿去嚇使用者是錯的。
+_native_problem: BaseException | None = None
+
+
+def native_problem() -> BaseException | None:
+    """偵測裝置時撞到的「原生元件載不起來」;沒撞到就是 None。"""
+    return _native_problem
+
+
+def _note_native(e: BaseException) -> None:
+    """記下第一個「缺 DLL」的例外(之後的都是同一個病因,留第一個就好)。"""
+    global _native_problem
+    if _native_problem is None and missing_dll(e):
+        _native_problem = e
+
+
 @functools.lru_cache(maxsize=1)
 def _cuda_available() -> bool:
     """(結果快取,理由見 `_intel_gpu_available`。)"""
@@ -86,7 +117,8 @@ def _cuda_available() -> bool:
         import ctranslate2
 
         return ctranslate2.get_cuda_device_count() > 0
-    except Exception:
+    except Exception as e:
+        _note_native(e)
         return False
 
 
@@ -115,7 +147,8 @@ def _intel_gpu_available() -> bool:
         import openvino
 
         return any(d.startswith("GPU") for d in openvino.Core().available_devices)
-    except Exception:
+    except Exception as e:
+        _note_native(e)
         return False
 
 

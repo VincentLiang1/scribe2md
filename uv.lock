@@ -586,7 +586,7 @@ wheels = [
 
 [[package]]
 name = "meeting-scribe"
-version = "0.9.17"
+version = "0.9.18"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
