@@ -4108,10 +4108,12 @@ class App(tk.Tk):
 
         # ---- 右欄:結果 --------------------------------------------------- #
         run = ttk.Frame(right, style="Card.TFrame", padding=self.px(CARD_PAD))
-        # ⚠️ **不要 `expand=True`**(2026-09-01):撐滿的話這張卡會一路長到視窗底,多出來的
-        # 全是空灰。⚠️ **高度跟著左邊大卡走**(2026-09-17 使用者:「卡片底部跟左邊的卡片對齊,
-        # 不要一高一低」),見 `_preview_fit`——三個模式的大卡高度不同,寫死行數只對得齊一種。
-        run.pack(fill="x")
+        # ⚠️ **撐到內容區底**(2026-09-22 使用者圈出卡片底下那一大片空灰:「將逐字稿預覽延伸,
+        # 對邊界的距離請參考其他頁面」):與文件頁右卡同一種 pack,底下那段灰就是 `_pack_body`
+        # 的 `PAGE_PAD`,不必另外算。這一條推翻了兩條舊的:2026-09-01「不要 `expand`」(那時
+        # 預覽框沒撐滿卡片,多出來的是卡裡的空白;現在 `pwrap` 也撐滿,卡長到哪框就到哪),以及
+        # 2026-09-17「底緣跟左邊大卡對齊」(`_preview_fit`,已拆)。命名中也一樣撐到底。
+        run.pack(fill="both", expand=True)
         self._run_result = run
         head = ttk.Frame(run, style="CardBody.TFrame")
         head.pack(fill="x")
@@ -4149,11 +4151,10 @@ class App(tk.Tk):
         pwrap = ttk.Frame(run, style="Sunken.TFrame", padding=self.px(SP_XS))
         pwrap.pack(fill="both", expand=True, pady=(self.px(SP_SM), 0))
         self._run_pwrap = pwrap         # 進度那組要 pack 在它**前面**(見 `_stage`)
-        # ⚠️ **高度要寫死**(同網頁版的 `lines=20`,它的註解:「不讓預覽把頁面
-        # 撐滿」):`tk.Text` 不給 height 就是**預設 24 行**,實測請求 564px——
-        # 單欄時它一個人就把命名區擠成 1px。行數寫死之後,多的空間由 `expand`
-        # 給它,少的時候它自己縮,而不是把別人擠掉。⚠️ 2026-09-17 起卡片高度平常跟著左邊大卡
-        # (`_preview_fit`),這個行數只在命名中(大卡收起來、卡片回到自己的高度)才決定高度。
+        # ⚠️ **行數仍然寫死**(同文件頁的結果框):2026-09-22 起卡片撐到內容區底,畫面上的高度
+        # 由右欄決定,這個數只是請求值;但 `tk.Text` 不給 height 就是**預設 24 行**(實測請求
+        # 564px),早期單欄版面時它一個人就把命名區擠成 1px。多的空間由 `expand` 給它,少的時候
+        # 它自己縮,而不是把別人擠掉。
         self._run_preview = tk.Text(pwrap, font=(self.fam, 9), relief="flat", bd=0,
                                     highlightthickness=0, wrap="word", state="disabled",
                                     height=PREVIEW_LINES,
@@ -4164,12 +4165,6 @@ class App(tk.Tk):
         self._run_preview.configure(yscrollcommand=pbar.set)
         pbar.pack(side="right", fill="y")
         self._run_preview.pack(side="left", fill="both", expand=True)
-        # 兩張卡底緣對齊:大卡換了高度(切模式、選了檔摘要多一行、視窗拉窄字多換一行)、
-        # 或右欄換了高度(拉視窗,上限跟著變)就重算。⚠️ **綁在這兩個元件自己身上,不綁視窗**
-        # (視窗上的 `<Configure>` 會收到每一個子元件的,見 `_refit_wraps`)。⚠️ 用 lambda
-        # 包一層,測試換掉 `_preview_fit` 才接得到(同 `_slot_shrink`)。
-        self._run_card.bind("<Configure>", lambda _e: self._preview_fit(), add="+")
-        right.bind("<Configure>", lambda _e: self._preview_fit(), add="+")
 
         self._mode_show(RUN_MODES[0][0])
         # 上次沒做完的命名(關視窗、當機、隔天再開)在這裡接回來——同網頁版的
@@ -4220,31 +4215,6 @@ class App(tk.Tk):
                                       pady=(self.px(SP_MD), self.px(SP_XS)))
         else:
             self._rec_status_row.pack_forget()
-
-    def _preview_fit(self) -> None:
-        r"""右邊「逐字稿預覽」卡的高度 = 左邊大卡的高度,兩張卡的底緣對齊。
-
-        (2026-09-17 使用者:「右邊的逐字稿預覽視窗卡片高度,請調少幾列讓卡片底部跟左邊的卡片
-        對齊,不要一高一低」。)⚠️ **不是改 `PREVIEW_LINES`**:三個模式的大卡高度不同(150%
-        實拍:收音 508、轉錄音檔 674、重設講者 448 實體 px),寫死行數只對得齊其中一種;
-        卡片釘高之後,預覽框吃剩下的空間(它 `expand`),進度那組浮出來時縮的也是它。
-        ⚠️ **問 `winfo_reqheight()` 不問 `winfo_height()`**:大卡在左欄裡照請求高度排、兩者
-        相等,而請求值不必等視窗 map(測試量得到)。
-        ⚠️ **不會回授**:改的只有右卡的高度,右欄關了傳播(`_two_columns`),左邊大卡也不讀它。
-        ⚠️ **上限是右欄高**:左欄會捲、右欄不會,大卡比視窗還長時(200% 的「轉錄音檔」)照抄
-        它的高度,右卡的下緣圓角會被右欄裁掉。
-        ⚠️ **命名中大卡收起來了**:右卡放回自己的高度(預覽框 `PREVIEW_LINES` 行)——命名時
-        正是要對著逐字稿填名字,不該停在上一個模式的高度。"""
-        card, result = self._run_card, self._run_result
-        if not card.winfo_manager():
-            result.pack_propagate(True)
-            return
-        height = card.winfo_reqheight()
-        room = result.master.winfo_height()
-        if room > 1:
-            height = min(height, room)
-        result.pack_propagate(False)
-        result.configure(height=height)
 
     def _bar_pack(self, bar: ttk.Frame) -> None:
         r"""把某個模式的動作列放到大卡底下(切模式、命名收工兩條路共用)。
@@ -5755,7 +5725,6 @@ class App(tk.Tk):
                 "relabel": self._relabel_bar}
         if naming:
             self._run_card.pack_forget()
-            self._preview_fit()             # 大卡收了:右卡回到自己的高度
             for bar in bars.values():
                 bar.pack_forget()
             self._scroll_top("run")
@@ -5763,9 +5732,6 @@ class App(tk.Tk):
         self._run_card.pack(fill="x")
         self._bar_pack(bars[self._mode])
         self._scroll_top("run")
-        # ⚠️ **要自己叫**:大卡放回來時高度常常與收起來之前一樣,`<Configure>` 不會來,
-        # 右卡就一直停在命名中的高度
-        self._preview_fit()
 
     def _naming_hide(self) -> None:
         r"""命名卡收起來。
