@@ -4567,11 +4567,16 @@ class App(tk.Tk):
             src=media, audit=payload, clips=clips)))
 
     def _relabel_done(self, error) -> None:
-        """重設講者收尾。⚠️ **只解鎖、不碰命名區**:那是 `_job_say` 已經長好的。"""
+        """重設講者收尾。⚠️ **只解鎖、不碰命名區**:那是 `_job_say` 已經長好的。
+
+        ⚠️ **讀完就要把「輸出資料夾…」點亮**(同 `_run_done`;2026-09-24 使用者圈出來
+        的):開工時 `_relabel_start` 把它關掉,而這條路先前沒有任何一處再打開它——套用
+        完畫面寫著「改好的逐字稿:…」,那顆鈕卻是灰的。"""
         self._run_lock(False)
         self._run_bar.configure(value=0)
         if error is None:
             self._stage("已讀取,請在左邊替講者命名。")
+            self._run_open.configure(state="normal")
         elif isinstance(error, Cancelled):
             self._stage("已依要求停止。")
         else:
@@ -5432,6 +5437,11 @@ class App(tk.Tk):
         self._skip_btn = HandButton(foot, text="跳過命名", style=skin.SKIP_STYLE,
                                     command=self._naming_skip)
         self._skip_btn.grid(row=0, column=1, sticky="ew")
+        # ⚠️ **3:1 只是寬裕時的比例,「跳過命名」的字一定要放得下**(2026-09-24 使用者截圖:
+        # 卡片一窄就剩「跳過命4」)。`uniform` 在空間不夠時照權重一起縮,四個大字加 20 的
+        # 內距縮到 1/4 就被截;`minsize` 釘住它的實際需求寬,縮的只剩「套用」那顆(規格
+        # `docs/spec/04` 本來就寫著「權重 1,min 110px」)。寬裕時照樣是 3:1。
+        foot.columnconfigure(1, minsize=self._skip_btn.winfo_reqwidth())
         # 底下那一行狀態(重複的名字、剪不出片段之類)。⚠️ **沒話講就整行收起來**
         # (見 `_naming_say`):空的 Label 照樣佔一行高,而網頁版這裡什麼都沒有。
         self._naming_status = self._wrap(
@@ -5840,6 +5850,9 @@ class App(tk.Tk):
         # 相似度都從 npz 算、一個字節的音訊都不讀)。
         cancel.reset()
         self._run_lock(True)
+        # ⚠️ 同 `_relabel_start`:`_run_lock(True)` 把 `_run_dirs` 歸零成 `output`,而
+        # 重設講者那份 md 在使用者自己的資料夾(轉檔來的那份在 output,結果一樣)
+        self._run_dirs = [str(md_path.parent)]
         self._stage(f"{md_path.name}:重新分群…")
         cores = self._run_cores.get()
         self._run_job(lambda say: self._relabel_work(md_path, say, cores),
