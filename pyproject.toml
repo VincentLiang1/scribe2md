@@ -1,0 +1,194 @@
+[project]
+name = "meeting-scribe"
+version = "1.3.0"
+description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
+# AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
+# 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
+# 釋出。公司內部使用不算散布,所以先前無事;2026-08-12 決定公開發佈
+# (見 docs/dev/publish.md)之後這條就生效了。
+# 要拿掉 AGPL 只有一條路:改用 BSD 的 pypdfium2,代價是表格還原與圖片
+# 抽取品質下降,而輸出主要餵 RAG、表格錯了整段報廢——所以選擇留下 AGPL。
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "faster-whisper>=1.1.0",
+    "sherpa-onnx>=1.12.0",
+    # ⚠️ **macOS 一定要明寫這一條**(2026-09-24 實測):sherpa-onnx 1.13 起把原生
+    # 庫拆成獨立的 sherpa-onnx-core(wheel 裡只剩 `_sherpa_onnx...so`,原生庫
+    # 含 libonnxruntime 全在 core),而它的 `Requires-Dist: sherpa-onnx-core`
+    # **uv 沒有收進 uv.lock**(`uv lock --refresh-package sherpa-onnx` 也不會補,
+    # 連升到 1.13.8 都一樣)→ `uv sync` 裝不到 core → macOS 上 `import sherpa_onnx`
+    # 直接 `Library not loaded: @rpath/libonnxruntime.1.27.0.dylib`,講者分離/標點/
+    # 聲紋/核對全掛,而畫面上說的是「請重新執行安裝.bat」(誤導)。
+    # ⚠️ **Windows 之所以沒事不是因為不需要 core**,是 `diarize._preload_pip_onnxruntime()`
+    # 先用完整路徑載了 pip 版 onnxruntime.dll,之後依**名稱**解析就綁到它;
+    # macOS 的 dyld 對 `@rpath/...` 相依**不吃這套**(已實測 ctypes 預載無效),
+    # 所以那條 Windows 解法在這裡救不了 → 只能把 core 真的裝進來。
+    # ⚠️ **刻意只掛 darwin**:Windows 那條是對外交付線、現狀可用,多裝 16 MB 原生庫
+    # 等於在交付線上換一顆 onnxruntime,沒有理由冒這個風險。版號要跟著
+    # sherpa-onnx 一起動(上游自己寫的是 `==`)。細節見 docs/spec/mac/07 §7.1 假設 4
+    "sherpa-onnx-core==1.13.4; sys_platform == 'darwin'",
+    "opencc>=1.1.9",
+    "static-ffmpeg>=2.13",
+    "numpy>=1.26",
+    # API surface(WhisperPipeline chunks 欄位等)以 2026.2 實測驗證,下限不低於此
+    "openvino-genai>=2026.2",
+    "huggingface_hub>=0.20",
+    # ---- 公司網路的 HTTPS 憑證(見 __init__._trust_bundled_certificates 與
+    # models.with_tls_rescue;兩者治的是不同的壞法,缺一台就有一種機器裝不起來)----
+    # certifi:公開根憑證包。已是 requests 的傳遞相依,但**直接用就必須明寫**
+    # ——上游哪天換掉,那台「Windows 根憑證沒補到」的電腦會靜靜壞回去
+    "certifi>=2024.2",
+    # truststore:把驗證交給作業系統原生 API(公司代理做 TLS 攔截時唯一的解)。
+    # 純 Python、零相依;uv 自己的 --native-tls 走的也是它
+    "truststore>=0.10",
+    # 現場收音:麥克風+系統聲音(WASAPI loopback)。選 soundcard 不選
+    # sounddevice 的原因見 record.py 模組 docstring(sounddevice 內建的
+    # PortAudio 沒有 loopback,2026-07-21 本機實測)
+    "soundcard>=0.4.6",
+    # ---- Windows 桌面外殼(2026-08-29,原生介面遷移的階段 3)----
+    # 路徑、色票、Windows 整合、皮膚、捷徑、無黑框啟動器的共用層。
+    # ⚠️ **相對路徑相依是看不見的**:只把這個專案傳給別人時 `uv sync` 會失敗,
+    # 而錯誤訊息是 uv 的路徑錯誤、說不出「你少複製了 winkit」。交付版靠
+    # `package.py` 把它併進交付物(不是 `make_public.py`:那一支的輸入本來就是前者
+    # 的產出),見 docs/dev/native-ui.md §5。
+    # ⚠️ 它是 **MIT**,而本專案是 AGPL:方向是對的(MIT 進得了 AGPL 作品),
+    # 但散布時 winkit 的 LICENSE 必須跟著走。
+    "winkit",
+    # ---- 文件轉 Markdown(doc* 模組群)----
+    # Office 三兄弟:各自是該格式最成熟的純 Python 讀取器,零原生相依
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    "openpyxl>=3.1",
+    # PDF。**授權 AGPL-3.0**(使用者 2026-08-01 知悉並同意):本工具整包
+    # .py 交付給同仁,AGPL 的「連同原始碼一起給」天然滿足。選它而非
+    # pypdfium2(BSD)是因為表格還原(find_tables)與圖片抽取明顯較完整,
+    # 而輸出主要餵 RAG,表格結構錯了整段就報廢
+    "pymupdf>=1.24",
+    # HTML → md。不用 html2text:**GPL,散布會傳染**。表格另由 bs4 抽出
+    # 交給 docmd.render_table(markdownify 的表格處理弱)
+    "markdownify>=0.13",
+    "beautifulsoup4>=4.12",
+    "lxml>=5",
+    # rtf 純文字擷取。階段三 LibreOffice 就緒後 rtf 改走「升級成 docx」
+    # 的高保真路徑,這個留作 LibreOffice 不可用時的降級
+    "striprtf>=0.0.26",
+    # 台灣的 csv/txt 很多是 cp950 不是 UTF-8,判錯整份亂碼。只當
+    # doctext.read_text_auto 的「同分裁判」,不當第一判準(理由見該函式)
+    "charset-normalizer>=3.3",
+    # 影像處理(階段二 OCR 的前置正規化、原生視窗的彩色 emoji 與截圖)。
+    # ⚠️ 註解原本寫「已是 gradio 的傳遞相依,但直接用就必須明寫」——2026-09-05
+    # gradio 移除之後,它**只剩這一行撐著**,而那正是當初明寫的理由。
+    "pillow>=10",
+    # ---- 階段二:OCR(掃描頁 / 影像檔 / 文件內嵌圖)----
+    # RapidOCR 的 det/cls/rec 三顆模型**打包在 wheel 內**(2026-08-03 實測:
+    # 合計約 31MB,攔死 socket 後照樣建構成功)——所以 OCR 不動到隱私規格
+    # 「唯一連網行為是首次下載模型」那一條,不必自行托管模型。
+    # **版本下限 3.9 是準確度需求不是保養**:3.x 才帶 PP-OCRv6 模型,而
+    # 1.4.x 的 PP-OCRv4 mobile 對小字繁中會整個字吃掉(見 ocr_worker
+    # 的 build_engine docstring 的實測數據)。
+    # **只在 ocr_worker 子行程 import**:它會拖 opencv-python + shapely +
+    # pyclipper(數百 MB 原生碼),而且與 sherpa-onnx 靜態連進來的
+    # onnxruntime 同處一個行程有 DLL 解析風險(見 ocr.py 的模組 docstring)
+    "rapidocr>=3.9",
+    # OCR 的推論後端(rapidocr 支援多種,我們指定 OpenVINO CPU:同一批
+    # 1,179 張真實影像實測中位 1.78s → 0.67s,而文字只有 2 張有差異)。
+    # 已是 openvino-genai 的傳遞相依,但**直接用就必須明寫**——上游哪天
+    # 換掉,OCR 會靜靜退回較慢的 onnxruntime,只表現成「怎麼變慢了」。
+    # rapidocr 自己不會裝它(對它而言是選配)
+    "openvino>=2026.2",
+    # .heic(iPhone 拍照的預設格式)唯一的解法。內含 LGPL 的 libheif,
+    # 動態連結、公司內部使用可接受,已列進 README 的授權盤點
+    "pillow-heif>=0.16",
+    # ---- 階段三:Outlook 郵件 ----
+    # .msg 取內文與巢狀附件的唯一實用選擇(.eml 用標準函式庫的 email 即可)
+    "extract-msg>=0.48",
+    # .xlsm 的巨集**大綱**(模組/程序名/說明,不是原始碼——使用者
+    # 2026-08-02:「只是想大概知道 VBA 用途」,而一份活頁簿的原始碼
+    # 實測有 19 萬字元)。vbaProject.bin 是二進位 OLE 複合檔,自己解
+    # 要實作 MS-OVBA 的壓縮演算法。BSD;olefile 本來就是 extract-msg
+    # 的傳遞相依,但直接用就必須明寫——上游哪天換掉會靜默壞掉
+    "oletools>=0.60",
+]
+
+[project.scripts]
+# 文件轉 Markdown 的命令列入口。存在的理由是「給 AI 讀」——Claude Code
+# 讀 PDF 是逐頁當圖片送、docx/pptx 根本讀不了,先轉 md 能省一個量級的
+# token(見 doccli 模組 docstring 與使用者層級的 doc2md Skill)
+doc2md = "meeting_scribe.doccli:main"
+
+[tool.uv.sources]
+# ⚠️ **winkit 在哪只寫在這一行**:搬家或改名就只改這裡(啟動器的守門清單
+# 由產生器從這裡算出來,不准再抄第二份字面值)
+winkit = { path = "winkit", editable = true }
+
+[dependency-groups]
+dev = [
+    # 圖示產生器(`scripts/make_icon.py`)拿它把 SVG 渲染成 PNG——**不是為了測網頁**。
+    # ⚠️ 2026-09-05 移除 gradio 時差點跟著拿掉(那一輪它看起來只跟 `measure_ui.py`
+    # 有關,而那支確實是量網頁版的、已刪);漏掉的症狀是 `test_icon.py` 整支 collect
+    # 就失敗。
+    "playwright>=1.62.0",
+    # 皮膚產生器(`scripts/make_skin.py`)收尾用它把 PNG 再無損壓一次。⚠️ **Pillow 的
+    # optimize 對那批圖一個位元組都沒省**(實測),而它省 24.6%——那批佔交付 zip 的
+    # 一半。⚠️ 純 Rust binding、零系統相依;沒裝也產得出東西(只是檔案大一點)。
+    "pyoxipng>=9.0",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    # ⚠️ **2026-09-05 從傳遞相依升格成明寫**:`test_help_text.py` 拿它把 repo 裡
+    # 每一份 Markdown 真的渲染一次(CommonMark 的 flanking 有幾種寫法會讓 `**`
+    # 原樣印出來,而寫的人看原始碼完全看不出異狀)。它先前是 gradio 帶進來的,
+    # gradio 一走,那條測試會變成「找不到模組」——而它守的是全 repo 的文件。
+    "markdown-it-py>=3.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meeting_scribe"]
+
+# ⚠️ **sdist 一定要自己列白名單**(2026-08-15 code review 實測抓到):只設
+# wheel 的話,hatchling 的 sdist 走「.gitignore 沒排除的都收」——`uv build
+# --sdist` 實際產出 203 個成員,裡面有 `data/voiceprints.npz`(全部的聲紋)、
+# `data/attendees.txt`(全部同仁的真名)、`CLAUDE.md`、`.claude/`、整個
+# `docs/dev/` 與 `tests/`。一次 `uv publish`,或一次把 `dist\*` 整包附上
+# Release(那裡本來就會有 `scribe2md-win.zip`),就是**不可撤回**的外洩,而
+# 「現有 repo 的歷史含聲紋與姓名、永遠不能轉 public」是硬規格。
+# wheel 那邊本來就乾淨(只收 packages 指到的目錄),缺的只有這一段。
+# ⚠️ **是白名單不是排除清單**:少一項只是打包出來少個檔(當場看得見),
+# 多一項是外洩(看不見而且不可逆)——同 scripts/package.py 的同一條理由。
+[tool.hatch.build.targets.sdist]
+only-include = ["src/meeting_scribe", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `scripts/` 底下的開發工具(mutate.py、hook_stale_text.py、install_skill.py)
+# 也有測試。設在這裡,測試檔就不必各自 sys.path.insert 一段 preamble
+# ——那段先前抄了三份,而抄第四份時很容易連 `# noqa: E402` 一起漏掉
+pythonpath = ["scripts"]
+markers = [
+    "slow: 需要模型下載/長時間執行的測試",
+    # OCR client 的協定測試要用「真的子行程」(只有辨識引擎是假的),
+    # 所以不能套用 conftest 那份把 recognize 換掉的 autouse fixture
+    "real_ocr: 直接測 OCR 子行程協定(仍不碰真模型)",
+    "real_soffice: 直接測 LibreOffice 升級器(用假的 soffice.exe,不下載)",
+    # 同 real_ocr:轉錄/講者分析子行程的協定與兜底要直接打真函式,
+    # 不能套用 conftest 那份把 _run_transcribe/_run_diarize 換掉的 fixture
+    "real_engine_proc: 直接測轉錄/講者分析子行程的接線(仍不碰真模型)",
+]
+addopts = "-m 'not slow'"
+
+# 覆蓋率量測:uv run pytest --cov(門檻 80%,詳 spec §11)
+[tool.coverage.run]
+source = ["src/meeting_scribe"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+exclude_also = [
+    "if __name__ == .__main__.:",
+    "def main\\(",  # launch server 屬手動/E2E 驗證範疇
+]

@@ -1,0 +1,649 @@
+r"""視窗與作業系統的整合(政策層;各平台怎麼做在 `plat_*`):DPI、工作列身分、單一實例、
+視窗落點、工作列進度、深色標題列、輸入法組字的字型與位置、還原那一幀的底色。
+
+**原始出處是 `C:\SOURCE5\Python\NotebookLM_OCR\pdf2ppt_gui_2.py`**(2026-08-26
+抄進 MP4-2-SRT,使用者指定「工作列圖示與工作列進度也一起做出來」),2026-08-28 搬進
+本包。⚠️ 那時的規則是「**兩支的這一段要一起改**,它們在同一台電腦的工作列上並排,
+行為不一致比兩邊都沒做還糟」——**現在它是唯一真值,那條規則自動成立**,不必再靠人
+記得同步。
+
+全模組共用一條原則:**純外觀,任何一步失敗就安靜回到舊行為**。這些呼叫沒有一個
+值得讓轉檔停下來——一批片跑五小時,不該因為工作列的 COM 物件建不起來而收工。
+
+⚠️ **「怎麼跟作業系統講話」住在 `winkit.plat`**(2026-09-27 搬過去,Win32 本體在
+`plat_win`):這個模組留下的是**政策**——何時呼叫、失敗了怎麼辦、為什麼要做、量過而
+否決的做法——以及對下游的口子(名字、參數、回傳型別都沒變,下游測試樁的也是這邊的
+名字)。⚠️ **這裡不准再判斷平台**:要新的平台行為就去 `plat_*` 加。
+"""
+import ctypes
+
+from winkit import env_var, host, plat
+
+
+def theme_env() -> str:
+    """佈景覆寫用的環境變數名(`<前綴>_THEME`);不設就跟隨 Windows 的應用程式模式。
+
+    ⚠️ **是函式不是常數**:值要等下游 `bind()` 之後才算得出來,而模組層常數會在
+    import 當下就定死——那時前綴還不知道。⚠️ 兩支 app 在同一台機器上不可以同前綴,
+    否則覆寫佈景會互相牽動(理由在下游 `brand.ENV_PREFIX` 上方)。"""
+    return env_var("THEME")
+
+
+def enable_dpi_awareness() -> None:
+    """讓 Windows 用真實像素畫這個視窗。⚠️ **必須在建立 Tk 之前呼叫**。
+
+    不設的話,Windows 會把整個視窗當成 96dpi 畫完、再**點陣放大**到顯示縮放
+    (本機 150%,就是 1.5×),字的邊緣全是鋸齒——那跟字型無關。
+
+    設了之後 Tk 量到的是真實 DPI(NotebookLM_OCR 實測 95.9 → 143.9),**用點數
+    指定的字型會自己換算成正確的像素高**,但**寫死的像素數字不會**(geometry、
+    padx、欄寬…)——那些一律要過縮放倍率,否則 150% 下整個版面會縮成 2/3。
+    """
+    plat.enable_dpi_awareness()      # 沒有就算了:只是回到會鋸齒的舊行為
+
+
+def set_app_user_model_id() -> None:
+    """讓工作列用「視窗自己的圖示」,不要沿用啟動鏈上游那支執行檔的。
+
+    ⚠️ **必須在建立第一個視窗之前呼叫**(和 enable_dpi_awareness 一樣):視窗一旦
+    建出來,工作列就已經把它歸好隊了。
+
+    NotebookLM_OCR 2026-08-25 實際踩到的症狀是「工作列上的圖示不是我設計的那顆」
+    ——標題列那顆是對的,**工作列那顆是 wscript 的**。兩顆走的是不同的路:標題列與
+    Alt+Tab 讀的是視窗身上的圖示(`gui._apply_window_icon` 那支 `iconbitmap` 設的),
+    工作列則是先把視窗歸到某個 AppUserModelID、再用**那個身分**的圖示。行程沒有
+    自己宣告身分時,Windows 會沿用啟動鏈上游的執行檔,而這條鏈是「捷徑 →
+    wscript.exe → cmd → uv → pythonw」,於是拿到 wscript 的圖示。
+
+    ⚠️ **這一支只做了一半,另一半是那顆捷徑**(2026-08-27 本專案實測更正)。宣告身分
+    只決定「歸到哪一隊」,那個身分的**圖示登記在一顆 .lnk 上**——沒有捷徑就沒有圖示
+    可用,使用者看到的就是「ICON 圖像沒有在工具列呈現」。同一天量的證據:視窗的
+    `WM_GETICON`(BIG/SMALL/SMALL2)三個都是空的,圖示只掛在**視窗類別**上
+    (`GCLP_HICON`/`GCLP_HICONSM`,48×48)——那是 Tk 的 `wm iconbitmap -default` 放的
+    位置,標題列讀得到、工作列讀不到。姊妹專案的工作列圖示一直是對的,差別就是它的
+    「安裝.bat」會跑 `make_shortcut.py`;本專案 2026-08-27 才補上同一支
+    (下游的捷徑腳本,身分值由它讀走寫進 .lnk)。⚠️ **本模組不認得那個值是誰的**
+    ——它只從 `winkit.host()` 拿,而那是下游 `bind()` 時給的。
+    """
+    plat.set_app_user_model_id(host().app_id)    # 純外觀,失敗就回到舊行為
+
+
+def preferred_theme_mode(palettes) -> str:
+    """"light" 或 "dark":環境變數優先,否則跟隨作業系統的亮暗模式(Windows 是「應用程式
+    模式」,怎麼讀見 `plat_win.system_theme`)。讀不到就當亮色(絕大多數的情況)。
+
+    ⚠️ **macOS 2026-09-27 起也跟著系統走**(`plat_mac.system_theme` 讀
+    `AppleInterfaceStyle`)。⚠️ **兩個平台都是「開窗當下讀一次」**:行程開著的時候去切
+    系統外觀,要重開才會換。"""
+    import os
+
+    override = (os.environ.get(theme_env()) or "").strip().lower()
+    if override in palettes:
+        return override
+    return plat.system_theme() or "light"
+
+
+def window_handle(root) -> int:
+    """視窗真正的 top-level HWND(拿不到回 0)。
+
+    ⚠️ **`winfo_id()` 不是它**:那是 Tk 自己那個**子**視窗,DWM 與工作列都不認
+    ——要往上取一層才是工作列上那顆按鈕對應的視窗。⚠️ 怎麼取(以及 `restype` 為什麼
+    一定要設)見 `plat_win.window_handle`。
+    """
+    return plat.window_handle(root)
+
+
+def use_dark_titlebar(root) -> None:
+    """把視窗標題列也換成深色(Windows 10 20H1+ 的 DWM 屬性)。
+
+    不做的話深色介面會頂著一條白色標題列,比整片亮色還醜。失敗就算了。"""
+    plat.use_dark_titlebar(root, window_handle)
+
+
+# --------------------------------------------------------------------------- #
+#  輸入法組字中的那幾個字,也要用介面的字型
+# --------------------------------------------------------------------------- #
+# ⚠️ **「還沒選字」的那幾個字不歸 Tk 畫,歸輸入法畫。** Tk 只做了一半:游標一動它就
+# 呼叫 `ImmSetCompositionWindow` 告訴 IME「組字請畫在這個座標」(所以位置是對的,字就
+# 在格子裡),但它**從來沒有呼叫 `ImmSetCompositionFont`**——於是 IME 用它自己的預設值
+# 畫。2026-09-12 在 meeting-scribe-native 量到的預設值是:
+#
+#     lfFaceName='System'  lfHeight=20  lfWeight=700
+#
+# 而介面字型是 Microsoft JhengHei UI 10pt(150% 縮放下字身 20px、行高 23)。`System` 是
+# Windows 的舊點陣字型、還是粗體,畫中文得再 fallback 一次——症狀就是使用者回報的
+# 「輸入姓名時中文輸入,輸入格的輸入文字變較小,怪怪的」:**選完字就恢復正常**,因為
+# 那一刻起改由 Tk 自己畫。⚠️ 所以這不是字型設定漏了哪裡,三支 AP 的具名字型全都設對了。
+#
+# ⚠️ **IME context 是整條執行緒共用的一顆**(實測 entry 與 toplevel 拿到的 `himc` 是
+# 同一個值),所以設一次整個視窗都算數,不必逐個輸入框綁。
+# ⚠️ **視窗還藏著的時候拿不到那顆 context**(`ImmGetContext` 回 NULL,2026-09-12 實測),
+# 而字型是在 `App.__init__` 最早期設的、那時視窗還沒 `deiconify`——所以真正生效的是
+# `follow_ime_composition_font` 掛的那條 `<FocusIn>`,不是當場那一次。
+_IME_DEFAULT_CHARSET = 1
+
+
+class _LOGFONTW(ctypes.Structure):
+    """`ImmSetCompositionFontW` 吃的那張表(Win32 `LOGFONTW`)。
+
+    ⚠️ **欄位順序與型別都不能動**:它是按位元組佈局交給 Win32 的,錯一個欄位不會有
+    錯誤訊息,只會把後面每一個值都讀偏。"""
+
+    _fields_ = [("lfHeight", ctypes.c_long), ("lfWidth", ctypes.c_long),
+                ("lfEscapement", ctypes.c_long), ("lfOrientation", ctypes.c_long),
+                ("lfWeight", ctypes.c_long), ("lfItalic", ctypes.c_byte),
+                ("lfUnderline", ctypes.c_byte), ("lfStrikeOut", ctypes.c_byte),
+                ("lfCharSet", ctypes.c_byte), ("lfOutPrecision", ctypes.c_byte),
+                ("lfClipPrecision", ctypes.c_byte), ("lfQuality", ctypes.c_byte),
+                ("lfPitchAndFamily", ctypes.c_byte), ("lfFaceName", ctypes.c_wchar * 32)]
+
+
+def _ime_logfont(root, family: str, size_pt: int) -> _LOGFONTW:
+    r"""要交給輸入法的那張字型表。
+
+    ⚠️ **高度要問 Tk、不要自己拿 DPI 算**:`winfo_fpixels("10p")` 給的正是 Tk 畫那個
+    點數字型時用的像素數(實測 150% 下 19.98),跟 `GetDpiForWindow` 自己換算有兩個
+    差別——視窗還藏著時那支回 **0**,而且 Tk 的 scaling 使用者改得動,改了就對不上。
+    ⚠️ **`lfHeight` 要填負值**:正值是「連行距在內的一格有多高」,負值才是「字身多高」
+    ——填正值畫出來會比介面的字**小一號**,而那正是這支函式要修的症狀,等於沒修。
+    ⚠️ **`lfWeight` 要自己填 400**:IME 的預設是 **700**(實測),不填就是組字中的字比
+    選完之後粗一截。"""
+    lf = _LOGFONTW()
+    lf.lfHeight = -round(root.winfo_fpixels(f"{size_pt}p"))
+    lf.lfWeight = 400                             # FW_NORMAL
+    lf.lfCharSet = _IME_DEFAULT_CHARSET
+    lf.lfFaceName = family[:31]                   # 欄位是 32 個字元(含結尾的 NUL)
+    return lf
+
+
+def set_ime_composition_font(root, family: str, size_pt: int) -> bool:
+    """告訴輸入法:組字中的那幾個字請用這個字型畫。拿不到 IME context 就回 `False`。"""
+    if not plat.ime_needs_help():
+        return False
+    try:
+        hwnd = window_handle(root)
+        if not hwnd:
+            return False
+        return plat.set_ime_composition_font(hwnd, _ime_logfont(root, family, size_pt)).ok
+    except Exception:
+        return False
+
+
+def follow_ime_composition_font(root, family: str, size_pt: int) -> None:
+    r"""讓組字字型一路跟著介面字型:現在設一次,之後每次焦點落進視窗再設一次。
+
+    ⚠️ **不能只設一次**:字型是在視窗還藏著的時候設的,而那時 `ImmGetContext` 回 NULL
+    (2026-09-12 實測)——只做當場那一次等於什麼都沒做。
+    ⚠️ **綁 `<FocusIn>` 而不是 `<Map>`**:`<Map>` 只來一次,而換輸入法、切出去再切回來
+    都可能讓 IME 回到它自己的預設值;焦點事件走 bindtags 冒泡到 toplevel,所以**任何一
+    個輸入框拿到焦點**都會補一次,一行綁定就蓋住整個視窗、連之後才長出來的輸入框都算。
+    ⚠️ **`add="+"`**:下游自己也可能綁 `<FocusIn>`,不加就是把人家那條換掉。
+    """
+    if not plat.ime_needs_help():
+        return
+    try:
+        root.bind("<FocusIn>",
+                  lambda _e: set_ime_composition_font(root, family, size_pt), add="+")
+        set_ime_composition_font(root, family, size_pt)
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- #
+#  輸入法組字的位置:版面把輸入格推走時,IME 要跟著搬
+# --------------------------------------------------------------------------- #
+# 症狀是組字中的那幾個字畫在**格子外面**(meeting-scribe-native 的使用者 2026-09-12 回報:
+# 清掉名字之後線索那一行長回來、下拉整個下移 29px,注音打的字就落在格子上方那一行上)。
+#
+# ⚠️ **成因是 Tk 的 `Tk_SetCaretPos` 自己有一層快取**(2026-09-14 以 `GetCaretPos` 實測,
+# Tk 8.6.12):(widget, x, y) 跟上一次**相同**就直接 return——而 x、y 是**相對那一格**的,
+# 格子整個被推走時它們不變,所以輸入格每次閃游標重畫時的那一呼叫全部被吃掉。⚠️ **`tk caret`
+# 走的是同一支**:傳進去的值只要剛好等於快取裡的,一樣什麼都不做。
+# ⚠️ **2026-09-14 更正**:09-12 那次寫的是「Tk 只在插入點變動時告訴 IME 座標,`icursor()`
+# 即使插入點真的變了也喚不醒它」。前半是症狀、不是成因;後半跟快取對不上(插入點一變 x 就
+# 不同,不會被吃掉),較可能是當時的格子沒有真的拿到焦點——**未重測**。⚠️ 照舊說法理解的人
+# 會以為「座標算準一點」就好,而**算得愈準、愈會剛好等於快取裡那個值**。
+_IME_CARET_EVENTS = ("<Configure>", "<FocusIn>")
+
+
+def _focus_path(root) -> str:
+    r"""有焦點那個 widget 的路徑;程式不在前景時是空字串。
+
+    ⚠️ **不用 `focus_get()`**:它多一趟 `nametowidget`,而這支在畫面上每一個 `<Configure>`
+    都會被問一次、絕大多數都沒命中(2026-09-14 實測見 `follow_ime_caret_everywhere`)。
+    ⚠️ 獨立成一支是給測試換的:藏著的視窗沒有焦點。"""
+    return str(root.tk.call("focus"))
+
+
+def _ime_caret_moved(root, path: str) -> None:
+    r"""`path` 那個 widget 動了或拿到焦點:它若是有焦點那一格**自己或祖先**,就把 caret 重下一次。
+
+    ⚠️ **重下 Tk 快取裡的那一組,不自己重算位置**(2026-09-14 /simplify 改):過期的只有
+    「換算成相對 toplevel」那一步,相對格子的 (x, y, height) 是輸入格自己畫游標時存進去的,
+    本來就對。用 `bbox("insert")` 重算的那一版得另外處理類別白名單、游標在最後面、夾在格子裡、
+    還沒排版就瞄會偏 (13, 9)——每一條都是可能跟 ttk 對不上的地方,`Text` 也被排除在外。
+    `tk caret` 不帶選項時回的是**整個 display 共用的那一份**,問哪一格都一樣。
+    ⚠️ **一定要下兩次、第一次故意差 1px**:下的正是快取裡的值,單下一次必定是 no-op。
+    ⚠️ **瞄的永遠是有焦點的那一格,不是動的那一個**:`tk caret` 整個 display 共用一份,沒有
+    焦點的格子不會組字,瞄了反而把正在打字的那一格蓋掉。
+    ⚠️ 焦點剛落進另一格、它還沒畫游標的那一瞬間,快取裡是上一格的值:新格子一畫游標就自己
+    修正(值不同會穿過快取;值相同時這一呼叫本來就對)。焦點在按鈕、清單這類不畫游標的元件上
+    時,移動的是看不見的 Win32 caret,無害。"""
+    try:
+        here = _focus_path(root)
+        # ⚠️ 兩邊都補一個結尾的 `.` 再比:`.card.rows2` 不是 `.card.rows` 的子孫;`.` 是所有人的祖先
+        if not here or not (here + ".").startswith(path.rstrip(".") + "."):
+            return
+        raw = root.tk.call("tk", "caret", here)
+        caret = dict(zip(map(str, raw[::2]), map(int, raw[1::2])))
+        for dx in (1, 0):
+            root.tk.call("tk", "caret", here, "-x", caret["-x"] + dx, "-y", caret["-y"],
+                         "-height", caret["-height"])
+    except Exception:
+        pass
+
+
+def follow_ime_caret_everywhere(root) -> None:
+    r"""讓整個程式的輸入框,組字位置都一路跟著格子走:版面把它推到哪,IME 就跟到哪。
+
+    ⚠️ **綁在 `all` 這個 bindtag 上,不逐格綁**(2026-09-14 改):逐格綁必然有漏——
+    meeting-scribe-native 第一版只接了命名區的下拉,它自己的其他輸入框、另外兩支 AP 的輸入框
+    全都沒有;`all` 在每個 widget 的 bindtags 裡,連之後才長出來的都算。由 `skin.apply` 呼叫,所以
+    **下游一行都不必改**(同 `follow_ime_composition_font`)。
+    ⚠️ **不能只看輸入框自己的 `<Configure>`**:那個事件只報「相對父元件」的變動(同日實測),
+    只有祖先被推走時(例如左欄是 Canvas,滾輪一捲、動的是裡面那層 Frame)那一格自己**一個事件
+    都收不到**。所以每個 widget 的 `<Configure>` 都要看「動的是不是有焦點那一格的祖先」。
+    ⚠️ **不綁在 toplevel 上**:meeting-scribe-native 有一句沒帶 `add="+"` 的
+    `self.bind("<Configure>", …)`,會把它整條換掉,而且沒有錯誤訊息。
+    ⚠️ **`<FocusIn>` 也要**:沒有焦點時被推走的那一格沒人瞄,焦點回來時 ttk 自己那一呼叫又被
+    快取吃掉。切回視窗時 `<FocusIn>` 落在 toplevel 上,而 toplevel 是所有人的祖先,一樣算數。
+    ⚠️ **只傳 `%W`,不用 `bind_all`**:`bind_all` 每個事件要替 Python 組一整個 `Event`(十九個
+    欄位),而 `<Configure>` 是視窗一縮放畫面上**每一個**尺寸有變的 widget 都送一次。
+    同日實測(8 層深、藏著的視窗,每個事件):沒綁 0.7µs、`bind_all` 空處理常式 12µs、本包
+    沒命中 1.8µs、命中 16µs(兩下 `tk caret` 各是一次 Win32 `SetCaretPos` 加
+    `ImmSetCompositionWindow`)。
+    ⚠️ **視窗一縮放,焦點那一格的每一層祖先各重下一次**:8 層約 140µs 一步,結果都一樣。合併成
+    一次 `after_idle` 要多一份待辦狀態、測試收尾還得清掉沒跑的 idle,量過不值得。
+    ⚠️ 處理常式只下 `tk caret`、**不動任何元件的幾何**,所以沒有「綁在視窗上的
+    `<Configure>` 自我餵養」的問題(meeting-scribe-native `docs/dev/native-ui.md`)。
+    ⚠️ **同一個 Tk 只綁一次**:`all` 是整個直譯器共用的,多呼叫一次就是每個事件多跑一趟。"""
+    if not plat.ime_needs_help():
+        return
+    try:
+        top = root._root()
+        if getattr(top, "_winkit_ime_caret", False):
+            return
+        cmd = top.register(lambda path: _ime_caret_moved(top, str(path)))
+        for seq in _IME_CARET_EVENTS:
+            top.tk.call("bind", "all", seq, f"+{cmd} %W")
+        top._winkit_ime_caret = True
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- #
+#  還原那一幀:沒畫到的地方要是底色,不是黑
+# --------------------------------------------------------------------------- #
+# ⚠️ **Tk 的兩個 window class 都沒有背景 brush**(`TkTopLevel` 與 `TkChild`,2026-08-29
+# 實測 `GetClassLongPtrW(..., GCLP_HBRBACKGROUND)` 兩個都回 NULL),而 Tk 又把
+# `WM_ERASEBKGND` 攔下來回 1(「背景我自己畫」)。平常沒事——畫面本來就是 Tk 一路畫滿
+# 的;但**視窗最小化過一趟之後,client area 的內容是未定義的**,而 Tk 沒有雙緩衝、是
+# 一個 widget 一個 widget 畫上去的,於是「還沒輪到的那幾塊」在還原的那 200~300ms 裡
+# 是**純黑**,一塊一塊被內容填掉。使用者 2026-08-29 回報的「按工作列把程式叫起來時
+# 看得見它重新繪製畫面」就是這個,而**視窗愈大、widget 愈多,黑得愈久**(同日實測:
+# MP4-2-SRT 1499×1149、41 個 widget,還原後主執行緒忙 ~150ms;NotebookLM_OCR
+# 1139×757、34 個,~79ms——所以那邊也有,只是短到沒被發現)。
+#
+# 實測(MP4-2-SRT,1521×1205 @150%,連拍螢幕比對相鄰兩幀):還原後 249ms 那一幀,
+# 拖放區、清單與兩條卡片標題整片是黑的(單次變化 72% 的畫面);設了 brush 之後同一條
+# 路的峰值降到 38%,而且**看不到黑**——沒畫到的地方是底色,像內容還沒進來的骨架。
+#
+# ⚠️ **量過而否決:`WS_EX_COMPOSITED`**(Windows 對整個視窗做雙緩衝繪製,本來就是為了
+# 消除這種逐塊繪製而存在的)。2026-08-29 交錯量 6 次:還原從 244ms 變成 **1162ms**、
+# 畫面更新從 4 段變成 16 段——它疊在 DWM 上會讓每次重繪都整片重跑。
+#
+# ⚠️ **量過而否決:在 `<Map>` 時 `update_idletasks()` 把重繪併成一次。** 主執行緒的
+# 忙碌段數確實從 4 降到 2.5,但**連拍到的畫面變化次數反而從 6 次變成 13 次**——那個
+# 指標量的是「主執行緒忙不忙」,不是「使用者看到幾次半成品」。⚠️ 這條的教訓比結論
+# 值錢:**黑色才是問題,分幾段不是。**
+def set_backdrop(root, colour: str) -> None:
+    """把 Tk 的 window class 底色設成 `colour`(給的就是視窗自己的背景色)。
+
+    ⚠️ **改的是 window class、不是這一個視窗**:行程內所有 Tk 視窗(含之後才開的
+    `Toplevel`)一起生效。這正是要的——它們的底色本來就該是同一個。原生的檔案對話框
+    與訊息框是另一個 class(`#32770`),不受影響。
+
+    ⚠️ **要排在 `withdraw()` 之後**:這一支會 `update_idletasks()`(HWND 得先存在),
+    而根視窗正是在**第一次 `update_idletasks()` 當下**被貼上螢幕的。
+
+    失敗就安靜回到舊行為(同本模組其餘各支):底色不對只是難看一點。"""
+    plat.set_backdrop(root, colour, window_handle)
+
+
+# --------------------------------------------------------------------------- #
+#  視窗落點:每次啟動都在同一個地方
+# --------------------------------------------------------------------------- #
+# ⚠️ **`geometry()` 只給 `WxH`、不給 `+x+y`,落點就不是「置中」也不是「上次那裡」**
+# ——Tk 把位置交還給 Windows,而 Windows 走的是 `CW_USEDEFAULT` 的**層疊**規則:每
+# 開一次往右下推一格,推到螢幕邊再從左上重來。使用者 2026-08-28 回報的「啟動位置
+# 每次都不同」就是這個,而在那之前**兩支 app 都只設了尺寸**(MP4-2-SRT 的
+# `gui.App.__init__`、NotebookLM_OCR 的 `pdf2ppt_gui_2.App.__init__`)。
+#
+# ⚠️ **策略寫死在這裡、不開參數**:兩支在同一台電腦上輪流開,落點的規矩不一樣就是
+# 「這台電腦的兩支程式各有各的脾氣」(同一位使用者 2026-08-26 對色票說過同一句話:
+# 「兩支程式在桌面上是一套」)。呼叫端只給尺寸——**視窗多大**才是那支 app 自己的事。
+
+# 垂直落點:工作區扣掉視窗以後,**上方分這麼多**。⚠️ **不是 0.5**:幾何正中在眼睛
+# 看起來偏低,而且「視窗比工作區小得多」時最明顯——本機 2880×1800 工作區 2880×1704
+# (200%)上量到 NotebookLM_OCR 置中 y=271、偏上 y=206。⚠️ 反過來,視窗把工作區塞
+# 滿時這個係數幾乎不起作用,而那是對的:MP4-2-SRT 在同一台機器上外框高 1598、工作
+# 區只有 1704,兩種算法差 13px。
+_TOP_BIAS = 0.38
+
+# 視窗外緣到內容區頂端(標題列 + 上外框),以 96dpi 為單位的**估計值**。
+# ⚠️ **只能估**:真值是 `winfo_rooty() - winfo_y()`,而那條要**視窗 map 之後**才
+# 算得準(NotebookLM_OCR 實測 map 後是 31,還 `withdraw()` 著的時候讀到的是殘值
+# 135)——而我們非在 map 之前擺不可(理由見 `place_window`)。取 32 是往「高估一點」
+# 那一邊靠:估多了視窗往上一點點,估少了底端會壓到工作列。
+_CHROME_96 = 32
+
+
+def work_area(root) -> tuple[int, int, int, int] | None:
+    """視窗所在螢幕的**工作區**(左, 上, 右, 下;實體像素),取不到回 None。
+
+    工作區 = 螢幕矩形扣掉工作列。⚠️ **要問視窗待的那一個螢幕,不是主螢幕**:接了
+    外接螢幕的機器上兩者可以差好幾百像素,而拿它去算「視窗擺哪、最高能多高」時,
+    算錯的方向是**視窗有一塊掉到螢幕外**。
+
+    ⚠️ **座標可以是負的**:(0, 0) 是主螢幕的左上角,擺在它左邊或上面的第二螢幕整個
+    都在負座標裡。所有算式一律照 `left`/`top` 走,不可以假設它們是 0。
+    """
+    return plat.work_area(root, window_handle)
+
+
+def _work_and_chrome(root) -> tuple[tuple[int, int, int, int], int]:
+    """`root` 那個螢幕的工作區,以及這台機器上標題列 + 上外框的實體高度。
+
+    ⚠️ 拿不到工作區時退回 **Tk 問到的螢幕矩形**,那是**主螢幕、而且沒扣工作列**——
+    降級是刻意的(純外觀,不值得讓程式開不起來)。⚠️ **這個降級會讓鉗位失準**(多算
+    了工作列那一條),所以它只是退路,不是可以拿來省事的等價寫法。
+    """
+    chrome = max(1, int(round(_CHROME_96 * root.winfo_fpixels("1i") / 96.0)))
+    work = work_area(root) or (0, 0, root.winfo_screenwidth(),
+                               root.winfo_screenheight())
+    return work, chrome
+
+
+def _fit(work, w: int, h: int, chrome: int) -> tuple[int, int]:
+    r"""把想要的 `w`×`h` 縮到工作區裝得下的大小——**只縮、不放大**。
+
+    ⚠️ **這件事非做不可,「擺得好」救不了它**(2026-09-12 meeting-scribe-native 的
+    使用者回報):他把顯示縮放調到 200%,而那支 app 的標稱尺寸 1216×820 於是變成實體
+    2432×1640、外高 1704,工作區只有 1368——**下緣 336 px 整片落在工作列底下**。
+    症狀不是「視窗有點大」而是「**最下面那一排功能再也按不到**」:那一頁的左欄本身
+    是可捲的,捲到底時內容底部對齊的是**看不見的那個視窗底**,所以最後一張卡
+    (「進階參數設定」)怎麼捲都在螢幕外;把視窗最大化(Windows 自己把它壓回工作區)
+    才正常,而那正是使用者找到的繞法。
+    ⚠️ **`_placement` 的鉗位擋不住這一類**:它保的是左上角,被犧牲的正是右下角那一
+    塊——在「視窗比工作區大」這件事已經發生之後,擺在哪裡都有一塊到不了。所以順序
+    是**先縮尺寸、再算落點**,`_placement` 那道鉗位從此只是退化路徑的安全網
+    (拿不到工作區、或 `chrome` 估太小)。
+    ⚠️ **只縮不放大**:呼叫端給的是它自己版面的目標尺寸,工作區比它大時撐開只會把
+    版面拉稀(內容有 `MAX_CONTENT` 之類的上限,撐開的是空白)。
+    ⚠️ **`chrome` 只扣高度**:它是標題列 + 上外框,左右那兩條外框在 Win11 上只有 1px
+    可見。寬度扣一個高估的 32(@96dpi)反而會讓視窗莫名其妙地窄一截。
+    """
+    left, top, right, bottom = work
+    # ⚠️ `max(1, …)` 不是防禦性程式碼:工作區在 `work_area()` 失敗時退回 Tk 問到的
+    # 螢幕矩形,而**那一條在測試的無頭環境裡會是很小的值**;鉗成 0 的視窗 Tk 不會
+    # map,症狀是「程式跑起來了但看不到視窗」,沒有任何錯誤訊息。
+    return max(1, min(w, right - left)), max(1, min(h, bottom - top - chrome))
+
+
+def _placement(work, w: int, h: int, chrome: int) -> tuple[int, int]:
+    """工作區 `work` 裡,內容 `w`×`h`、頂上再加 `chrome` 的視窗該擺在哪。"""
+    left, top, right, bottom = work
+    outer = h + chrome                   # 使用者看到的視窗總高
+    x = left + (right - left - w) // 2
+    y = top + int(round((bottom - top - outer) * _TOP_BIAS))
+    # ⚠️ 鉗的方向是**保住左上角**:視窗比工作區大時,被切掉的是右下角。反過來(貼齊
+    # 右下)會把標題列推出工作區上緣,而**標題列一旦看不見,這個視窗就再也搬不動了**
+    # ——那比看不到最下面一列嚴重得多。
+    # ⚠️ **這一段現在是退化路徑的安全網,不是主要防線**(2026-09-12 加了 `_fit`):
+    # 正常路徑上視窗已經先被縮進工作區了,走到這裡還裝不下的只剩「`work_area()` 問
+    # 不到、退回沒扣工作列的螢幕矩形」與「`chrome` 估少了」兩種。⚠️ 別因此把它刪掉
+    # ——降級路徑同樣要保住標題列。
+    # ⚠️ **右下不必再鉗**:`_TOP_BIAS` 在 0~1 之間,所以裝得下的時候 `y` 本來就
+    # ≤ `bottom - outer`(水平置中同理),裝不下的時候下面這個 `max()` 又會蓋過去。
+    # 補一道 `min(y, bottom - outer)` 在這條算式底下**永遠不會觸發**,只會讓讀的人
+    # 以為它在守某種情況。
+    return max(left, x), max(top, y)
+
+
+def place_window(root, w: int, h: int) -> None:
+    """把視窗設成 `w`×`h`(**實體像素**)並擺到工作區的水平正中、垂直偏上。
+
+    取代下游那句只給尺寸的 `geometry(f"{w}x{h}")`(位置沒給就是層疊,見本段開頭)。
+
+    ⚠️ **`w`×`h` 是「想要多大」不是保證**:裝不進工作區時會先被縮(見 `_fit`,
+    2026-09-12 加)。呼叫端因此**不可以拿它當成視窗的實際尺寸**去算版面——要問就
+    在 `deiconify()` 之後問 `winfo_width()`/`winfo_height()`。高 DPI 的機器上這不是
+    邊角情況:標稱 1216×820 在 200% 縮放下就是實體 2432×1640,已經比多數筆電的整個
+    螢幕還高。
+
+    ⚠️ **呼叫時機是 `deiconify()` 之前、而且視窗高度已經定案。** 兩個都會錯:
+
+    - **擺在 `deiconify()` 之後**就是「先出現在 A、再跳到 B」。兩支 app 都刻意把整
+      段建介面藏在 `withdraw()` 底下、只讓使用者看到最終那一幀,那個不變式是它們
+      花力氣建立的,不要在這裡打破它。
+    - **拿還沒定案的高度擺**會讓偏上係數算在錯的數字上:`geometry()` 事後改高度時
+      Tk **不動左上角**(視窗只往下長),所以擺完再長高,視窗就整個偏上了
+      (NotebookLM_OCR 的初值 460 與 `_fit_window()` 量完的 549 差 89 邏輯像素)。
+      那邊的順序要是 `_fit_window()` → `place_window()` → `deiconify()`。
+
+    ⚠️ 拿不到工作區時退回 **Tk 問到的螢幕矩形**,那是**主螢幕、而且沒扣工作列**——
+    降級是刻意的(純外觀,不值得讓程式開不起來),而偏上的落點讓它在實務上還是看得
+    到整個視窗。真的連這條都炸掉就只設尺寸,位置交還給 Windows。
+    """
+    try:
+        work, chrome = _work_and_chrome(root)
+        # ⚠️ **順序是「先縮、再擺」**:擺得再好也救不了一個比工作區大的視窗,理由與
+        # 實跡見 `_fit`。
+        w, h = _fit(work, w, h, chrome)
+        x, y = _placement(work, w, h, chrome)
+        root.geometry(f"{w}x{h}+{x}+{y}")
+    except Exception:
+        root.geometry(f"{w}x{h}")
+
+
+def fit_to_work_area(root, w: int, h: int) -> tuple[int, int]:
+    r"""把 `w`×`h`(**實體像素**)縮到 `root` 那個螢幕的工作區裝得下,回傳鉗過的尺寸。
+
+    `place_window` 內部走的就是這一條;⚠️ **另外開一個公開的口子是為了 `minsize()`**
+    ——三支 app 都在 `place_window` 的下一行設最小尺寸,而**最小尺寸會蓋過擺放時的
+    鉗位**(Tk 讓 `minsize` 贏)。在工作區比它還小的機器上,視窗於是又被推回螢幕外,
+    而且這一次連手動拉小都辦不到。實際的門檻:meeting-scribe-native 的
+    `minsize(px(760), px(520))` 在 200% 縮放下是 1520×1040,而 1920×1080 的螢幕開
+    200% 時工作區只剩約 984 高——差得不多,但差的方向是「最下面那排按鈕按不到」。
+
+    ⚠️ **`w`、`h` 傳的是「內容區」尺寸**(`geometry()` 與 `minsize()` 都是),所以
+    標題列由這一支自己扣,呼叫端不要先扣一次。
+    ⚠️ 問不到工作區就**原樣回傳**:降級的方向是「照呼叫端說的做」,不是猜一個數字。
+    """
+    try:
+        work, chrome = _work_and_chrome(root)
+        return _fit(work, w, h, chrome)
+    except Exception:
+        return w, h
+
+
+# --------------------------------------------------------------------------- #
+#  工作列:使用者切走之後,唯一還看得見的東西
+# --------------------------------------------------------------------------- #
+# ⚠️ 這一整段的存在理由是「**使用者不會盯著這個視窗看**」,而本專案比姊妹專案更
+# 極端:一批 300 部片要跑五、六個小時,是半夜掛著跑的(見 app.note_eta 的
+# 「使用者半夜要決定跑不跑得完」)。那段時間視窗裡的清單、進度條、結果列**全部
+# 看不見**。Windows 對這件事有兩個原生答案,這裡兩個都用——轉檔中把工作列按鈕
+# 本身畫成進度條,收工時閃那顆按鈕。
+#
+# ⚠️ **絕對不要改成把視窗搶到前景**(`focus_force` / `deiconify` / `-topmost`):
+# 使用者這時正在別的視窗打字,搶焦點會把他的按鍵吃掉。而且 Windows 本來就有前景
+# 鎖擋著,擋下來的結果**還是閃工作列**——差別只在系統選的閃法比我們吵。
+
+# TBPFLAG(shellapi.h)。⚠️ 這是**位元旗標**不是序號,別自己重排。下游讀的是這一份,
+# `plat_win` 裡那份同值的私有常數由測試釘著。
+TBPF_NOPROGRESS = 0x0
+TBPF_INDETERMINATE = 0x1
+TBPF_NORMAL = 0x2
+TBPF_ERROR = 0x4
+TBPF_PAUSED = 0x8
+
+
+def taskbar_progress(root, done: int, total: int) -> None:
+    """把工作列按鈕畫成進度條。`total <= 0` 代表「還不知道總量」(跑馬燈)。
+
+    對應視窗底部那條整批進度條的兩個階段:按下開始到第一支片交貨之間沒有分母
+    (第一階段可能要聽二十分鐘),那段用 indeterminate;收到第一則 `deliver`
+    之後才有「第幾部 / 共幾部」。"""
+    plat.taskbar_progress(window_handle(root), done, total)
+
+
+def taskbar_finish(root, flag: int) -> None:
+    """收工時的工作列狀態。`flag` 是 TBPF 旗標:`NOPROGRESS` 清掉、`PAUSED` 留黃的、
+    `ERROR` 留紅的。
+
+    ⚠️ **收的是旗標,不是本專案的收場字串**(2026-08-27 改):哪一種收場配哪個旗標
+    是畫面那一層的事(見 `gui.OUTCOMES`),而這裡只管「怎麼跟 Windows 講話」。上一版
+    在這裡自己 `.get(state, NOPROGRESS)` 對一次,而結果列那邊的預設是「未知 = 紅」
+    ——兩個相反的預設,一個打錯的字串就會得到「紅色結果列 ＋ 乾淨的工作列」。
+
+    ⚠️ **有失敗或中止要「留在那裡」**,不是清掉:那條顏色正是給「還沒切回來的
+    人」看的——工作列上一眼就知道這趟不是乾淨完成,不必先切回視窗才發現。下一趟
+    按開始會把它蓋掉,關掉視窗也就沒了。
+
+    ⚠️ **`ERROR` / `PAUSED` 要先有長度才看得到顏色**:那兩個狀態只換色、不動
+    數值,前一刻若停在 0% 就等於畫了一條看不見的紅線。所以先推到滿格再換色。"""
+    plat.taskbar_finish(window_handle(root), flag)
+
+
+def flash_taskbar(root) -> None:
+    """閃工作列按鈕,直到使用者把視窗切回前景。
+
+    ⚠️ **視窗已經在前景就什麼都不做**:人就坐在這個畫面前面,結果列已經把話講完
+    了,再閃一次只是噪音(而且前景視窗閃自己在 Windows 上根本看不出來)。"""
+    hwnd = window_handle(root)
+    if hwnd:
+        plat.flash_taskbar(hwnd)
+
+
+# --------------------------------------------------------------------------- #
+#  單一實例(同一個登入 session 只開一個)
+# --------------------------------------------------------------------------- #
+# ⚠️ **範圍是「同一個登入 session」**:切換使用者、遠端桌面各自開一個才是對的(Windows
+# 用 `Local\` 的互斥鎖、macOS 用每個使用者各一份的 `$TMPDIR` 裡的勸告鎖,見 `plat_*`)。
+# ⚠️ **這個 handle 要活到行程結束**:被 GC 收掉的話互斥鎖跟著消失,下一個實例就會
+# 以為自己是第一個。所以存在模組層,不交給呼叫端保管——回傳 handle 的 API 遲早有人
+# 寫成 `if claim_single_instance(): ...` 而把它丟掉,而那種壞法**沒有任何徵狀**
+# (開發時開一個視窗永遠是對的)。
+_instance_lock = None
+
+
+def claim_single_instance() -> bool:
+    r"""搶下「這個登入 session 只有我一個」。回 `True` = 我是第一個,照常開視窗。
+
+    ⚠️ **判斷靠一把具名的鎖(Windows 是互斥鎖、macOS 是 `flock`),不是「有沒有同名的
+    視窗」**:專案資料夾往往與程式同名
+    (下游的 `APP_DIR_NAME`),使用者開著那個資料夾時,檔案總管那個視窗的標題就是
+    同一串字——只認標題會把它誤判成「程式已經開著」,於是程式再也啟動不了,而畫面上
+    什麼都不會說。名字取自 `host().app_id`:那本來就是「這支程式是誰」的唯一真值,
+    與工作列的身分同一份,不會有第二個地方要跟著改。
+
+    ⚠️ **拿不到作業系統的 API 就一律放行(回 `True`)**:這是便利、不是安全邊界——寧可
+    開出兩個視窗,也不要讓程式因為它而開不起來(同本模組「任何一步失敗就回到舊行為」
+    那條原則)。
+    """
+    global _instance_lock
+    first, lock = plat.claim_single_instance(host().app_id)
+    if lock is not None:
+        _instance_lock = lock
+    return first
+
+
+def _release_single_instance() -> None:
+    """把互斥鎖放掉。⚠️ **只給測試的復位用**——正常的執行路徑靠行程結束來釋放,
+    而 `_instance_lock` 是模組級全域:忘了清會變成跨檔案、依順序才重現的偽失敗。"""
+    global _instance_lock
+    if _instance_lock is not None:
+        plat.release_single_instance(_instance_lock)
+        _instance_lock = None
+
+
+def raise_existing_window(class_name: str = "TkTopLevel") -> bool:
+    r"""把已經開著的那個視窗給使用者看(最小化或隱藏的話先還原)。回**有沒有找到
+    它**——找到了就一定給過使用者看得見的回應(叫到前景,或前景鎖擋下來時閃工作列)。
+
+    ⚠️ **這不牴觸「絕對不要把視窗搶到前景」**:那條管的是**轉檔中與收工時**不可以
+    打斷使用者手上的事(見 `flash_taskbar`);這裡是他自己剛按下桌面圖示,而唯一
+    合理的回應就是把已經開著的那個視窗給他看——什麼都不做的話,他會以為程式壞了、
+    再點兩三次。
+
+    ⚠️ **認的是 class ＋ 標題兩個條件**:同上,只認標題會撈到同名資料夾的檔案總管
+    視窗(它的 class 是 `CabinetWClass`,Tk 的頂層視窗是 `TkTopLevel`)。⚠️ class
+    名開參數是因為它綁的是**工具包**不是這個包——哪天下游換掉 Tk,改的是呼叫端。
+    """
+    return plat.raise_existing_window(class_name, host().app_title)
+
+
+def single_instance_or_raise(class_name: str = "TkTopLevel") -> bool:
+    r"""「我該開視窗嗎?」回 `True` = 開;回 `False` = 已經有一個了,而且**已經給
+    使用者看過**(叫到前景,或至少閃了工作列)。
+
+    ⚠️ **這一支存在的理由是「找不到視窗」那一格**。`claim_single_instance()` 與
+    `raise_existing_window()` 各自只回答一半,而把它們接起來的那三行政策——搶輸之後
+    **找不到**既有視窗時該怎麼辦——原本是手抄在每個下游的 `main()` 裡的,兩邊逐字
+    相同、卻沒有任何機制偵測分歧(共用包的 `check_downstreams` 只跑各下游自己的
+    測試,而那些測試又各自把這兩支樁掉)。2026-08-28 從下游收上來。
+
+    ⚠️ **失效方向往「放行」倒**:鎖被拿走、卻找不到那個視窗時,回 `True` 讓這一份
+    照常開。那個狀態是真的到得了的——第一個實例還在 `__init__`、卡在某個訊息框、
+    正在 `destroy()` 與行程結束之間,或者根本是個已經沒有視窗的殘留行程(下游在
+    daemon thread 裡跑 onnxruntime,直譯器關不掉時就是這一種)。這時候安靜地
+    `return 0` 等於「按了圖示什麼都沒發生」,而使用者只會以為程式壞了、再點兩三次;
+    多開一個視窗雖然也不對,但他**看得見**、關得掉。這是便利、不是安全邊界。
+
+    呼叫端要守的三件事(2026-08-28 補;三件都是被下游各自獨立踩出來的):
+
+    ⚠️ **一、有資格持鎖的行程,必須保證接下來會開出一個「找得到」的視窗。** 所以
+    這一支要排在「這份安裝跑不跑得起來」的檢查**之後**——跑不起來的那一份若先搶到
+    鎖、接著跳一個**留在螢幕上的** modal(訊息框的 class 與標題都不是主視窗那一組,
+    比對不到),另一份好的副本就從此既搶不到鎖、也找不到視窗可以叫。⚠️ 今天只有一個
+    下游有那種路徑,另一個下游安全**是碰巧**(它的啟動期失敗都是行程直接死掉,
+    Windows 順手收走 handle)——哪天那邊加一個啟動期的訊息框就是同一顆地雷。
+
+    ⚠️ **二、收到 `False` 要用「正常結束」收工(離開碼 0)。** 這條的成因在本包:
+    `winkit.launcher` 產的 `.vbs` 有「非 0 就跳訊息框」與「非正常結束又不到 5 秒
+    就用 uv 再跑一次」兩道,踩到第二道會**真的開出第二個視窗**——正好是這一支要
+    擋的事。
+
+    ⚠️ **三、內部組成也是契約。** 兩個下游的測試樁的是底下 `claim_single_instance()`
+    與 `raise_existing_window()` **兩支零件**,不是樁這一支——只有那樣才走得到第三格
+    (樁掉這一支的話,「找不到視窗」那一格在下游永遠測不到),而且有人把那三行抄回
+    下游時測試會紅。代價是這一支的**內部**換掉時三個 repo 的測試會一起紅,所以要
+    連同下游測試一起改。
+    """
+    if claim_single_instance():
+        return True
+    # 用關鍵字傳純粹是可讀性(呼叫點看得出那個字串是什麼)。⚠️ **它不是一道保護**:
+    # 這裡原本寫著「替身只吃位置參數時會當場 TypeError」,但兩個下游的替身這一輪
+    # 都放寬成 `lambda *a, **k:` 了,那個機制一次都使不出來。要擋「參數換了名字
+    # 沒人發現」,守的是本包自己的 `test_the_window_class_is_passed_through`。
+    return not raise_existing_window(class_name=class_name)
+
+
+def restore_on_reopen(root) -> None:
+    """使用者再開一次 App(Dock 圖示、雙擊)時,把縮在 Dock 裡的主視窗放回來。
+
+    macOS 專用(理由見 `plat.restore_on_reopen`);其他平台什麼都不做。建完根視窗
+    之後呼叫一次即可。失敗就安靜回到舊行為(同本模組其餘各支):視窗只是要自己
+    從 Dock 點回來。"""
+    plat.restore_on_reopen(root)

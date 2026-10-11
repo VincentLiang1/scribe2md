@@ -1,0 +1,69 @@
+@echo off
+setlocal
+chcp 950 >nul
+rem 本檔存成 cp950(Big5),chcp 須在任何中文之前——原因見「啟動.bat」開頭註解。
+cd /d "%~dp0"
+
+where uv >nul 2>nul
+rem 區塊內的訊息不可出現半形 ")",會被 cmd 當成區塊結尾提前收掉
+if errorlevel 1 (
+    echo 正在安裝 uv 套件管理器...
+    powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://astral.sh/uv/install.ps1 | iex"
+    if errorlevel 1 (
+        echo [錯誤] uv 安裝失敗。請檢查網路或代理伺服器設定。
+        pause
+        exit /b 1
+    )
+    set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+)
+
+echo 正在建置 Python 執行環境(第一次需要幾分鐘)...
+uv sync
+if errorlevel 1 (
+    echo [錯誤] 環境建置失敗。請參考上方訊息,然後重新執行這個檔案。
+    pause
+    exit /b 1
+)
+
+rem 建好之後**真的叫一次**:uv sync 成功不代表跑得起來——2026-08-13 有人
+rem 回報安裝看似成功、啟動卻出現 uv trampoline failed to spawn Python child
+rem process(Python 被搬走或被資安軟體隔離)。那種情況要在這裡就講,
+rem 不要等使用者雙擊「啟動.bat」才發現,那時他已經不知道該回頭做什麼了。
+uv run python -c "import meeting_scribe" >nul 2>&1
+if errorlevel 1 goto broken
+
+echo.
+echo 環境建置完成。
+
+rem 捷徑要指的三段路徑只有這一刻算得出來:同仁把工具解壓到哪裡是他的自由,
+rem 所以「啟動.vbs」、工作目錄與圖示都由腳本從自己的位置往上推,一段都不寫死。
+rem 中文全留在那支 UTF-8 的 Python 裡,這行維持純 ASCII:字串過 cmd 這一層
+rem 會被重新編碼。捷徑建不出來不算安裝失敗,只是換一句話收尾。
+rem 捷徑的目標寫死是「啟動.vbs」(見 scripts/make_shortcut.py),所以在 git
+rem worktree(.git 是檔案而不是資料夾)裡建下去,會把桌面與開始功能表那顆
+rem 圖示無聲改指到這個開發資料夾、蓋掉原本那顆。環境仍然要建,只跳過捷徑。
+if not exist ".git" goto lnk
+if exist ".git\" goto lnk
+echo 這裡是開發用的 worktree,略過桌面捷徑。
+echo 這條線請雙擊這個資料夾裡的「啟動.vbs」啟動。
+pause
+exit /b 0
+
+:lnk
+uv run python scripts/make_shortcut.py
+if errorlevel 1 goto nolnk
+pause
+exit /b 0
+
+:nolnk
+echo 不影響使用,雙擊這個資料夾裡的「啟動.vbs」一樣能啟動工具。
+pause
+exit /b 0
+
+:broken
+echo.
+echo [錯誤] 環境建好了,但實際執行時失敗。最常見的原因是防毒或資安軟體
+echo 把 Python 隔離了。請把這個工具資料夾與 %%APPDATA%%\uv 加入白名單,
+echo 再執行一次這個檔案;若是公司電腦,請把這兩行轉給 IT。
+pause
+exit /b 1

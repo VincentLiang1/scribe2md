@@ -1,0 +1,36 @@
+[project]
+name = "winkit"
+version = "0.1.0"
+description = "Windows 桌面 AP 的共用層:路徑、色票、Windows 整合、皮膚、捷徑、紀錄檔"
+# MIT 是**刻意挑的**,不是隨手填(2026-08-29 定,理由見 CLAUDE.md〈這是什麼〉):
+# meeting-scribe 會把本包併進它的公開交付物,而它自己是 AGPL——MIT 的程式碼進得了
+# AGPL 作品(方向對),同時**不會替另外兩個下游決定它們要不要公開**。掛 AGPL 就是
+# 替它們決定了,而那不是本包該做的事。
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    # 皮膚產生器(`skingen`)畫底板要它。⚠️ **這是執行期相依,不是開發相依**:顯示
+    # 縮放對不上出貨資產的那幾檔時,皮膚載入器會**就地畫一份**,而那段程式碼在
+    # 使用者的機器上也要跑得起來——放進 dev 群組的話它只在開發機上成立,到了別人
+    # 那裡必定走進 except 回 None,整個畫面掉皮膚(而那看起來像「這台沒裝好」)。
+    "pillow>=10",
+    # 圖形介面的佈景(Sun Valley:模仿 Windows 11 Fluent / WinUI 的 ttk 佈景)。
+    # 皮膚載入器把它的 layout 複製一份、只換掉背景元件。⚠️ **少了它視窗照樣開得
+    # 起來**(`skin.apply` 有 fallback,畫面回到系統原生長相)——外觀不值得賠上
+    # 「開得起來」,所以那一段是 try/except。列在這裡是因為它是**正常路徑**的相依。
+    "sv-ttk>=2.6",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/winkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
