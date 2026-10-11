@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "1.4.0"
+version = "1.4.1"
 description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
 # AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
 # 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
@@ -91,10 +91,12 @@ dependencies = [
     # **版本下限 3.9 是準確度需求不是保養**:3.x 才帶 PP-OCRv6 模型,而
     # 1.4.x 的 PP-OCRv4 mobile 對小字繁中會整個字吃掉(見 ocr_worker
     # 的 build_engine docstring 的實測數據)。
-    # **只在 ocr_worker 子行程 import**:它會拖 opencv-python + shapely +
+    # **只在 ocr_worker 子行程 import**:它會拖 OpenCV(headless)+ shapely +
     # pyclipper(數百 MB 原生碼),而且與 sherpa-onnx 靜態連進來的
     # onnxruntime 同處一個行程有 DLL 解析風險(見 ocr.py 的模組 docstring)
-    "rapidocr>=3.9",
+    # 3.9.2 → 3.10.0(2026-10-11):內建三顆模型逐位元相同,100 張真實圖片(簡報照片、
+    # 繁簡中書頁、技術書)文字與框完全相同、速度在誤差內——升的是程式,不是模型
+    "rapidocr>=3.10",
     # OCR 的推論後端(rapidocr 支援多種,我們指定 OpenVINO CPU:同一批
     # 1,179 張真實影像實測中位 1.78s → 0.67s,而文字只有 2 張有差異)。
     # 已是 openvino-genai 的傳遞相依,但**直接用就必須明寫**——上游哪天

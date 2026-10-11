@@ -10,7 +10,7 @@ onnxruntime 整套拉進主行程,隔離就白做了。子行程以
    ORT 的單一 .pyd」,再讓 pip 版 `onnxruntime.dll` 進來,加上 Windows
    System32 那份舊版的名稱優先解析(見 `plat.preload_onnxruntime`
    的血淚),就是三方混戰。子行程只載入 OCR 需要的那一份。
-2. **原生相依不進主行程**。RapidOCR 會拖 opencv-python + shapely +
+2. **原生相依不進主行程**。RapidOCR 會拖 OpenCV(3.10 起是 headless 版)+ shapely +
    pyclipper(數百 MB 原生碼),啟動路徑永遠不必付這筆。
 3. **崩潰隔離**。segfault 只殺子行程,父行程看到 returncode 就把它記成
    「這一張圖的失敗」,其餘幾百張照跑。
