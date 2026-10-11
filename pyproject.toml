@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "1.3.0"
+version = "1.4.0"
 description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
 # AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
 # 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
@@ -32,8 +32,11 @@ dependencies = [
     "opencc>=1.1.9",
     "static-ffmpeg>=2.13",
     "numpy>=1.26",
-    # API surface(WhisperPipeline chunks 欄位等)以 2026.2 實測驗證,下限不低於此
-    "openvino-genai>=2026.2",
+    # API surface(WhisperPipeline chunks 欄位等)以 2026.2 實測驗證;2026.4 起才能跑
+    # Qwen3.5(2026.2 上一推論就 segfault)。2026.4.1 與 2026.2.1 對照(2026-10-11):
+    # OCR 25 張逐字相同;Whisper 內顯同一段 10 分鐘錄音相似度 97.8%/98.9%,錯字換一批、
+    # 看不出優劣(2026.2 重跑逐字相同,差異確實來自換版),見 docs/dev/pipeline.md
+    "openvino-genai>=2026.4",
     "huggingface_hub>=0.20",
     # ---- 公司網路的 HTTPS 憑證(見 __init__._trust_bundled_certificates 與
     # models.with_tls_rescue;兩者治的是不同的壞法,缺一台就有一種機器裝不起來)----
@@ -97,7 +100,7 @@ dependencies = [
     # 已是 openvino-genai 的傳遞相依,但**直接用就必須明寫**——上游哪天
     # 換掉,OCR 會靜靜退回較慢的 onnxruntime,只表現成「怎麼變慢了」。
     # rapidocr 自己不會裝它(對它而言是選配)
-    "openvino>=2026.2",
+    "openvino>=2026.4",
     # .heic(iPhone 拍照的預設格式)唯一的解法。內含 LGPL 的 libheif,
     # 動態連結、公司內部使用可接受,已列進 README 的授權盤點
     "pillow-heif>=0.16",

@@ -59,6 +59,7 @@ from meeting_scribe import (attendees, audit, cancel, diarize, docpipe, docsrc,
                             helpmd, pending, plat, relabel, roster, settings, skin,
                             srcfile, transcribe, update, vpsync, wordlists)
 from meeting_scribe import transcribe_apple
+from meeting_scribe import minutes
 from meeting_scribe import export
 from meeting_scribe.types import SpeechBlock
 from meeting_scribe import live as live_scribe
@@ -562,6 +563,16 @@ ADV_BUTTON = "⚙ 進階參數設定…"
 # ⚠️ **文件頁那顆受 `ACTION_BTN_W` 限制**(與主要動作鈕同寬並排):圖示是實打實的寬度,
 # 改字樣之前先跑 `test_the_output_folder_buttons_wear_the_folder_icon`。
 OPEN_DIR_BUTTON = "📂 輸出資料夾…"
+# 「地端 AI」模式(`minutes.py`;2026-10-11 使用者選定 B 案、草稿存 App 自己的資料夾)。
+# ⚠️ **「它是 AI 草稿」要講在按下去之前**:小模型會漏、會寫錯,而沒參加會議的人分不出來
+# (手機版三輪實測,scribe2md-ios `docs/spec/08` §8.12)。
+MINUTES_HINT = ("挑一份轉好的 .md(建議先替講者命名)。整理出摘要、主要議題、待辦(附約略時間);"
+                "是 AI 草稿,正式紀錄請對照逐字稿另行整理。")
+# 動作列右邊那顆:開草稿資料夾。⚠️ 草稿**不在**逐字稿旁邊(見 `minutes.drafts_dir`),
+# 不給這顆的話使用者找不到它
+MINUTES_DIR_BUTTON = "📂 草稿資料夾…"
+# 命名收工之後右邊預覽卡上那顆捷徑(B 案的後半):帶入剛寫好的那份、直接開始
+MINUTES_SHORTCUT = "✨ 用這份產生會議紀錄草稿"
 
 # 使用說明裡那張 Claude 隱私設定截圖(全篇唯一一張圖)。
 PRIVACY_IMG = repo_root() / "docs" / "claude-privacy-setting.jpg"
@@ -635,7 +646,7 @@ SUBTABS = (
 # 話,使用者會在眼前這一頁找那顆根本不在這裡的鈕。
 # ⚠️ **分頁名不帶 emoji**(同 `TABS`:圖示與文字本來就是分開的兩欄):照抄網頁版那
 # 串會把 VS16 一起抄進來,而 Tk 把它畫成一個 30px 寬的方塊。
-# 「要做什麼」:(鍵, 圖示, 名稱, 說明小字)。三種模式**互斥**(同網頁版的
+# 「要做什麼」:(鍵, 圖示, 名稱, 說明小字)。幾種模式**互斥**(同網頁版的
 # `app._MODE_*`):一次只顯示一組控制項——把收音與選檔同時攤開,正是 2026-08-30
 # 「預覽框沒露出來、命名區被擠成 1px」的成因。
 # ⚠️ **「🔄 重設講者」2026-09-01 才接上**(使用者在版面提案裡選定「這次一起接上」):
@@ -647,6 +658,15 @@ RUN_MODES = (
     ("file", "🎧", "轉錄音檔", "挑已經錄好的錄音/錄影檔,轉成逐字稿"),
     ("relabel", "\U0001F504", "重設講者",
      "拿一份已經轉好的逐字稿,重新命名裡面的講者(不會重轉)"),
+    # ⚠️ **只在用得了地端語言模型的機器上出現**(2026-10-11 使用者選 B 案:第四個模式 ＋
+    # 命名收工的捷徑):Mac 要 Apple Intelligence(或打開就能用),Windows 一律有(Qwen3.5,
+    # 見 `minutes._backend`)。開窗時先藏著,背景偵測問完才放出來(`App._minutes_tab_sync`)。
+    # ⚠️ 格子上的名字是使用者定的「地端 AI」(同日把第一版的「紀錄草稿」改掉:不直覺)。
+    # 「它是 AI 草稿」改由底下那行說明與 `MINUTES_HINT` 講,草稿檔第一行另有警語
+    # (`minutes.draft_notice()`)——**改名時那兩處不能跟著拿掉**。⚠️ 這句兩個平台共用,
+    # 所以不寫「不連網」:Windows 第一次用要下載模型(逐字稿內容一樣不出這台電腦)
+    ("minutes", "\u2728", "地端 AI",
+     "拿一份轉好的逐字稿,用這台電腦上的 AI 整理成摘要、議題與待辦的草稿(內容不上傳)"),
 )
 
 # 「文字、圖像→MD」上方那段說明、備註與路徑框的提示字(2026-09-03 照網頁版重排;三段都
@@ -1131,6 +1151,7 @@ REC_PAUSED_HINT = (f"暫停期間的聲音不會錄進去。按「{REC_RESUME}�
                    f"按「{REC_ACTION.busy}」就直接收尾、產生逐字稿。")
 FILE_ACTION = ActionText("● 開始轉檔", "■ 停止轉檔")
 RELABEL_ACTION = ActionText("● 讀取並開始命名", "■ 停止分析")
+MINUTES_ACTION = ActionText("● 產生草稿", "■ 停止整理")
 DOC_ACTION = ActionText("● 開始轉檔", "■ 停止轉檔")
 
 
@@ -1644,6 +1665,11 @@ class App(tk.Tk):
         # ⚠️ **預設值不在這裡決定**(要偵測 GPU,見 `ModelChoice`):開窗時不偵測,視窗畫好
         # 之後才在背景做(`_boot_done`),而預設在每次被讀的當下才算。
         self._probe = None                # 背景偵測 GPU 的那條執行緒(`_probe_start`)
+        # 「地端 AI」那一格與收工捷徑(轉檔頁建好之前是 None;見 `_minutes_tab_sync`)。
+        # ⚠️ **先有初值**:背景偵測可能比轉檔頁先跑完,而那條路會來問它們
+        self._minutes_tab: ttk.Frame | None = None
+        self._minutes_jump: ttk.Frame | None = None
+        self._minutes_jump_md: Path | None = None
         # 「這台電腦載不起 AI 元件」那條橫幅(只有壞掉的機器才會長出來,見
         # `_native_banner`)。⚠️ **不是 `_lockable`**,理由在那一支。
         self._banner: ttk.Frame | None = None
@@ -1772,6 +1798,11 @@ class App(tk.Tk):
                 transcribe_apple.capability()
             except Exception:
                 logger.debug("背景偵測 Apple 語音辨識失敗", exc_info=True)
+            # 「地端 AI」那一格出不出現也看它(同一支小程式,再零點幾秒)
+            try:
+                minutes.capability()
+            except Exception:
+                logger.debug("背景偵測 Apple Intelligence 失敗", exc_info=True)
             self._probe_result = (device, time.perf_counter() - t0)
 
         self._probe = threading.Thread(target=run, name="device-probe", daemon=True)
@@ -1804,6 +1835,7 @@ class App(tk.Tk):
         device, took = self._probe_result
         logger.info("轉錄裝置(偵測):%s(背景偵測 %.2f 秒)", device, took)
         self._native_banner()
+        self._minutes_tab_sync()
 
     def _native_banner(self) -> None:
         r"""偵測順手撞到「這台電腦載不起原生元件」的話,在頁首底下掛一條提示。
@@ -3849,7 +3881,8 @@ class App(tk.Tk):
         phase = self._action_phase(key)
         if phase == "idle":
             {"rec": self._rec_start, "run": self._run_start,
-             "relabel": self._relabel_start, "doc": self._doc_start}[key]()
+             "relabel": self._relabel_start, "minutes": self._minutes_start,
+             "doc": self._doc_start}[key]()
         elif phase == "busy" and key == "rec":
             self._rec_stop()
         elif phase in ("busy", "finish"):
@@ -4695,7 +4728,7 @@ class App(tk.Tk):
         堆疊,而內容區只有 997px、五張卡要 1832px——**預覽框幾乎沒露出來、命名區被
         擠成 1px**(使用者實測回報「錄音中沒有逐字稿」「錄完沒進命名畫面」,那是同
         一個病)。
-        ⚠️ **三種模式互斥,一次只顯示一組控制項**(見 `RUN_MODES`):把收音與選檔
+        ⚠️ **幾種模式互斥,一次只顯示一組控制項**(見 `RUN_MODES`):把收音與選檔
         同時攤開正是上面那件事的成因。
         ⚠️ **「一次一檔」是裁決過的**(使用者 2026-07-26):講者編號每檔獨立分群,
         命名是一檔一檔當場做的事。多檔要批次轉就走「文字、圖像→MD」那一頁。
@@ -4770,6 +4803,20 @@ class App(tk.Tk):
         track, self._mode_cells = self._segmented(
             card, [(m[0], m[1], m[2]) for m in RUN_MODES], self._mode_show, tabs=True)
         track.pack(fill="x", pady=(self.px(SP_SM), 0))
+        # 「地端 AI」那一格先藏著(見 `_minutes_tab_sync`)。⚠️ 藏的是**整欄**(膠囊 ＋ 藍條
+        # 那一層),只藏膠囊的話藍條與灰線還留著一格空位
+        self._minutes_tab = self._mode_cells["minutes"][0].master
+        self._minutes_tab.grid_remove()
+        # 四格時窄視窗放不下字(見 `_mode_compact_fit`)。⚠️ 字的需求寬要**現在**量:縮成只剩
+        # 圖示之後 `body` 的請求寬就變小了,拿那個數判斷會在兩種長相之間來回跳
+        self._mode_track = track
+        self._mode_text_w = max(c[1].winfo_reqwidth() for c in self._mode_cells.values())
+        self._mode_compact = False
+        track.bind("<Configure>", lambda e: self._mode_compact_fit(e.width), add="+")
+        for key, (cell, body, ico, lab, _bar, _seg) in self._mode_cells.items():
+            for w in (cell, body, lab) + ((ico,) if ico is not None else ()):
+                w.bind("<Enter>", lambda _e, k=key: self._mode_hover(k), add="+")
+                w.bind("<Leave>", lambda _e: self._mode_hover(None), add="+")
 
         # 段二:這個模式自己的東西(收音情境 / 選檔),一次只出現一組
         self._mode_body = ttk.Frame(card, style="CardBody.TFrame")
@@ -4777,6 +4824,7 @@ class App(tk.Tk):
         self._rec_box = self._rec_build(self._mode_body)
         self._file_box = self._file_build(self._mode_body)
         self._relabel_box = self._relabel_build(self._mode_body)
+        self._minutes_box = self._minutes_build(self._mode_body)
 
         # 段三:講者人數(兩個模式共用,同網頁版)
         spk = ttk.Frame(card, style="CardBody.TFrame")
@@ -4806,11 +4854,13 @@ class App(tk.Tk):
         self._speakers_spin.pack(fill="x", pady=(self.px(SP_SM), 0))
 
         # ---- 卡外:狀態一行,主要動作鈕與「進階參數設定」並排 ------------------ #
-        # 三個模式各一顆入口鈕(`_adv_button`),跟著自己那一列一起換上換下。
+        # 收音、轉檔、重設講者各一顆入口鈕(`_adv_button`),跟著自己那一列一起換上換下;
+        # 「地端 AI」沒有(它用不到任何一個參數,那個位置是「草稿資料夾…」)。
         self._adv_btns: list[HandButton] = []
         self._rec_bar = self._rec_actions(inner)
         self._file_bar = self._file_actions(inner)
         self._relabel_bar = self._relabel_actions(inner)
+        self._minutes_bar = self._minutes_actions(inner)
 
         # ---- 右欄:結果 --------------------------------------------------- #
         run = ttk.Frame(right, style="Card.TFrame", padding=self.px(CARD_PAD))
@@ -4844,6 +4894,11 @@ class App(tk.Tk):
         self._run_open.pack(side="right")
         # 錄音狀態列(只在「現場收音」模式 pack,見 `_mode_show`;排在標題與進度那組之間)
         self._rec_status_build(run)
+        # 命名收工之後的捷徑(「地端 AI」B 案的後半;平常收著,見 `_minutes_jump_show`)
+        jump = ttk.Frame(run, style="CardBody.TFrame")
+        HandButton(jump, text=MINUTES_SHORTCUT, style=skin.CTA_STYLE,
+                   command=self._minutes_jump_go).pack(side="left")
+        self._minutes_jump = jump
         # 階段文字與進度條:**閒置時整組收起來**(2026-09-01,對齊網頁版的乾淨畫面)。
         # ⚠️ **不是刪掉**——原生版沒有黑視窗,第一次轉檔那 2-3 GB 的模型下載進度與長
         # 階段的心跳訊息**只剩這裡出得來**(`docs/dev/native-ui.md` §4,那是硬需求)。
@@ -4873,12 +4928,13 @@ class App(tk.Tk):
         self._run_preview.pack(side="left", fill="both", expand=True)
 
         self._mode_show(RUN_MODES[0][0])
+        self._minutes_tab_sync()        # 背景偵測比這一頁先跑完的話,這時才放得出來
         # 上次沒做完的命名(關視窗、當機、隔天再開)在這裡接回來——同網頁版的
         # `demo.load → _restore_pending`;這一頁建好才有地方長命名卡。
         self._naming_restore()
         return page
 
-    # ---- 「要做什麼」:三種模式互斥 -------------------------------------- #
+    # ---- 「要做什麼」:幾種模式互斥 -------------------------------------- #
     def _mode_show(self, key: str) -> None:
         r"""切到某個模式:只有那一組控制項留在畫面上。
 
@@ -4905,7 +4961,8 @@ class App(tk.Tk):
         card_packed = bool(self._run_card.winfo_manager())
         for k, box, bar in (("rec", self._rec_box, self._rec_bar),
                             ("file", self._file_box, self._file_bar),
-                            ("relabel", self._relabel_box, self._relabel_bar)):
+                            ("relabel", self._relabel_box, self._relabel_bar),
+                            ("minutes", self._minutes_box, self._minutes_bar)):
             if k == key:
                 box.pack(fill="x", pady=(self.px(SP_XL), 0))
                 if card_packed:
@@ -4913,7 +4970,8 @@ class App(tk.Tk):
             else:
                 box.pack_forget()
                 bar.pack_forget()
-        if key == "relabel":
+        # 「地端 AI」也不用講者人數(不分群,只讀現成的 md)
+        if key in ("relabel", "minutes"):
             self._speakers_box.pack_forget()
         else:
             self._speakers_box.pack(fill="x", pady=(self.px(SP_XL), 0))
@@ -4924,6 +4982,44 @@ class App(tk.Tk):
                                       pady=(self.px(SP_MD), self.px(SP_XS)))
         else:
             self._rec_status_row.pack_forget()
+
+    def _mode_compact_fit(self, width: int) -> None:
+        r"""「要做什麼」那一排每格分到的寬度放不下字時,四格一起只留圖示(反過來就放回字)。
+
+        (2026-10-11 使用者選定:「地端 AI」那一格放出來之後是四格等分,實測每格在最窄
+        視窗 760 只分到 61、字要 74,Tk 直接裁字、不給省略號;內容區最寬 1080 時是 98。)
+        ⚠️ **門檻就是「字放不放得下」,不另外留餘裕**:三格時(Windows、沒有 Apple
+        Intelligence 的 Mac)最窄視窗每格 81,原本就放得下,不可以因為這一支變成只剩圖示。
+        ⚠️ **四格一起換**:有的有字、有的沒字,看起來像壞了。
+        ⚠️ **寬度還沒排出來(≤ 1)當成放得下**(同 `_slot_fit`)。"""
+        shown = [c for c in self._mode_cells.values() if c[0].master.winfo_manager()]
+        if width <= 1 or not shown:
+            return
+        compact = width / len(shown) < self._mode_text_w
+        if compact == self._mode_compact:
+            return
+        self._mode_compact = compact
+        for _cell, _body, _ico, lab, _bar, _seg in self._mode_cells.values():
+            if compact:
+                lab.pack_forget()
+            else:
+                lab.pack(side="left")
+        if not compact:
+            self._mode_hover(None)
+
+    def _mode_hover(self, key: str | None) -> None:
+        r"""只剩圖示時,滑到哪一格,底下那行說明就換成那一格的名字與說明;移開換回選中那格的。
+
+        (選案時說好的「滑過去有提示」;不另做浮動提示框——說明那一行本來就在那裡,
+        而那一行講的正是「這一格是做什麼的」。)有字的時候不動它。"""
+        if not self._mode_compact and key is not None:
+            return
+        info = {m[0]: m for m in RUN_MODES}
+        if key is None:
+            self._mode_info.configure(text=info[self._mode][3])
+        else:
+            _k, icon, name, desc = info[key]
+            self._mode_info.configure(text=f"{icon} {name}:{desc}")
 
     def _bar_pack(self, bar: ttk.Frame) -> None:
         r"""把某個模式的動作列放到大卡底下(切模式、命名收工兩條路共用)。
@@ -5291,6 +5387,161 @@ class App(tk.Tk):
             self._stage("已讀取,請在左邊替講者命名。")
             self._run_open.configure(state="normal")
         elif isinstance(error, Cancelled):
+            self._stage("已依要求停止。")
+        else:
+            self._stage("")
+            self._run_set_preview(
+                error.args[0] if isinstance(error, UserFacingError)
+                else f"未預期的錯誤,{LOG_HINT}。")
+
+    # ---- 會議紀錄草稿(地端語言模型:Mac 是 Apple、Windows 是 Qwen3.5)--------- #
+    def _minutes_build(self, parent) -> ttk.Frame:
+        r"""「地端 AI」模式在卡片裡的那一段:挑一份轉好的逐字稿(同「重設講者」那一段)。
+
+        (2026-10-11 使用者:照手機版的「手機 AI 產生會議紀錄(草稿)」做 Mac 版;邏輯在
+        `minutes.py`,規格 `docs/spec/mac/05` §5.4b。)"""
+        box = ttk.Frame(parent, style="CardBody.TFrame")
+        ttk.Label(box, text="要整理哪一份逐字稿", style="CardH.TLabel").pack(anchor="w")
+        self._wrap(ttk.Label(box, text=MINUTES_HINT, style="Hint.TLabel",
+                             justify="left")).pack(anchor="w", pady=(self.px(SP_XS), 0))
+        row = ttk.Frame(box, style="CardBody.TFrame")
+        row.pack(fill="x", pady=(self.px(SP_SM), self.px(SP_SM)))
+        self._lockable(HandButton(row, text="選擇逐字稿…", style=skin.CTA_STYLE,
+                                  command=self._minutes_pick)).pack(side="left")
+        self._lockable(HandButton(row, text="清空", style="Small.TButton",
+                                  command=lambda: self._minutes_set_path(""))).pack(
+                                      side="left", padx=(self.px(SP_SM), 0))
+        wrap = ttk.Frame(box, style="Sunken.TFrame", padding=self.px(SP_XS))
+        wrap.pack(fill="x")
+        self._minutes_src = tk.Text(wrap, font=(self.fam, 10), height=2,
+                                    relief="flat", bd=0, highlightthickness=0,
+                                    wrap="none", bg=self.pal["field"],
+                                    fg=self.pal["ink"],
+                                    insertbackground=self.pal["ink"],
+                                    selectbackground=self.pal["row_sel"],
+                                    padx=self.px(SP_SM), pady=self.px(SP_XS))
+        self._lockable(self._minutes_src).pack(fill="x")
+        return box
+
+    def _minutes_actions(self, parent) -> ttk.Frame:
+        r"""「地端 AI」的動作列。右邊那顆是「草稿資料夾…」,不是「進階參數設定」:
+        這條路沒有任何一個參數用得到(不轉錄、不分群;模型 Mac 由 macOS 決定、Windows 依
+        有沒有內顯自動挑,見 `minutes._ov_plan`)。"""
+        bar = ttk.Frame(parent, style="Page.TFrame")
+        self._minutes_btn = self._action_btn(bar, "minutes", MINUTES_ACTION)
+        # 樣式同文件頁同一個位置的「輸出資料夾…」(坐在頁面底色上,`CTA_STYLE` 是卡片白用的)
+        folder = HandButton(bar, text=MINUTES_DIR_BUTTON, style=skin.SKIP_PAGE_STYLE,
+                            command=self._minutes_open_dir)
+        self._action_slot(bar, self._minutes_btn, folder)
+        self._slot_shrink(bar)
+        return bar
+
+    def _minutes_open_dir(self) -> None:
+        r"""「📂 草稿資料夾…」。⚠️ **先建再開**:這顆鈕一直按得到,而第一份草稿做出來之前
+        那個資料夾還不存在——`open_output_dirs` 對不存在的路徑丟例外,Tk 把它吞進記錄檔,
+        畫面上就是「按了沒反應」(別的「輸出資料夾…」都是做完才亮,碰不到這個情況)。"""
+        folder = minutes.drafts_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        doctab.open_output_dirs([str(folder)])
+
+    def _minutes_pick(self) -> None:
+        """「選擇逐字稿…」(同 `_relabel_pick`,起始位置一樣是 `OUTPUT_DIR`)。"""
+        picked = relabel.pick_md(self, initialdir=OUTPUT_DIR,
+                                 title="選擇要整理成會議紀錄草稿的逐字稿(.md)")
+        if picked:
+            self._minutes_set_path(picked)
+
+    def _minutes_set_path(self, text: str) -> None:
+        with unlocked(self._minutes_src):
+            self._minutes_src.delete("1.0", "end")
+            if text:
+                self._minutes_src.insert("1.0", text)
+
+    def _minutes_tab_sync(self) -> None:
+        r"""「地端 AI」那一格出不出現(主執行緒;開頁與背景偵測收尾兩條路都會叫)。
+
+        ⚠️ **只在背景偵測跑完之後才問**:`minutes.capability()` 第一次要起一支小程式,
+        在主執行緒上問就是開窗卡一下。偵測跑完時答案已經在它的快取裡,這裡問是瞬間的。
+        ⚠️ **`failed` 也要放出來**(Apple Intelligence 沒打開、模型還在下載):使用者
+        自己解得了,按下去會講怎麼解;只有 `unsupported` 才藏(那台 Mac 怎樣都用不了)。"""
+        if self._minutes_tab is None or not self._probe_reported:
+            return
+        if minutes.capability().state != "unsupported":
+            self._minutes_tab.grid()
+            self._mode_compact_fit(self._mode_track.winfo_width())
+
+    def _minutes_jump_show(self, md: Path | None) -> None:
+        """收工捷徑:給一份 md 就放出來(只在這台用得了「地端 AI」時),`None` 就收起來。"""
+        self._minutes_jump_md = md
+        if self._minutes_jump is None:
+            return
+        if md is not None and self._minutes_tab is not None \
+                and self._minutes_tab.winfo_manager():
+            self._minutes_jump.pack(fill="x", after=self._run_head,
+                                    pady=(self.px(SP_MD), 0))
+        else:
+            self._minutes_jump.pack_forget()
+
+    def _minutes_jump_go(self) -> None:
+        """按下收工捷徑:切到「地端 AI」、帶入剛寫好的那份、直接開始(一按就做)。"""
+        md = self._minutes_jump_md
+        if md is None:
+            return
+        self._mode_show("minutes")
+        self._minutes_set_path(str(md))
+        self._minutes_start()
+
+    def _minutes_start(self) -> None:
+        r"""按下「產生草稿」。
+
+        ⚠️ **清畫面要在把關之前**(同 `_run_start` 那條)。
+        ⚠️ **能不能用要當場重問**(`clear_capability_cache`):使用者看到「去系統設定打開
+        Apple Intelligence」之後,會開著程式去打開它再回來按——用開窗時那份快取的話,
+        他得重開程式才用得了,而畫面上沒有任何東西告訴他要重開。"""
+        self._stage("")
+        self._run_bar.configure(value=0)
+        self._run_open.configure(state="disabled")
+        self._naming_hide()
+        busy = self._busy_reason("run")
+        if busy:
+            self._stage(busy)
+            return
+        try:
+            md_path = minutes.validate(self._minutes_src.get("1.0", "end-1c"))
+            md_text = relabel.read(md_path)
+        except UserFacingError as e:
+            self._run_set_preview(str(e))
+            return
+        cancel.reset()
+        self._run_lock(True)
+        self._run_dirs = [str(minutes.drafts_dir())]   # 要在 `_run_lock(True)` 之後,它會歸零
+        # Windows 的等待提示要問有沒有內顯(`minutes._ov_plan`):先等背景偵測,理由見 `_probe_wait`
+        self._probe_wait()
+        hint = minutes.wait_hint(minutes.duration_sec(md_text))
+        first = f"{md_path.name}:整理中…" + (f"({hint})" if hint else "")
+        self._stage(first)
+        self._run_set_preview("")
+        self._run_job(lambda say: self._minutes_work(md_path, md_text, first, say),
+                      self._minutes_done)
+
+    def _minutes_work(self, md_path: Path, md_text: str, first: str, say) -> None:
+        """「地端 AI」的主體(**工作執行緒**上)。"""
+        minutes.clear_capability_cache()
+        body = minutes.generate(md_text, lambda f: say(("run_stage", (first, f))))
+        text = minutes.render(md_path, body)
+        out = minutes.save(md_path, text)
+        say(("run_preview", text))
+        say(("run_stage", (f"完成。草稿存在:{out}", 1.0)))
+
+    def _minutes_done(self, error) -> None:
+        """「地端 AI」收尾。成功時階段那一行已經由工作執行緒寫好了。"""
+        self._run_lock(False)
+        if error is None:
+            self._run_bar.configure(value=0)
+            self._run_open.configure(state="normal")
+            return
+        self._run_bar.configure(value=0)
+        if isinstance(error, Cancelled):
             self._stage("已依要求停止。")
         else:
             self._stage("")
@@ -6775,7 +7026,7 @@ class App(tk.Tk):
         使用者 2026-09-04 回報的「設定完講者,左邊的功能選單不見了」就是這個(病因與
         實測見 `_scroll_top`)。"""
         bars = {"rec": self._rec_bar, "file": self._file_bar,
-                "relabel": self._relabel_bar}
+                "relabel": self._relabel_bar, "minutes": self._minutes_bar}
         if naming:
             self._run_card.pack_forget()
             for bar in bars.values():
@@ -6810,6 +7061,10 @@ class App(tk.Tk):
 
         ⚠️ **預覽不留舊內容**(網頁版的理由,使用者回報過:「畫面留著舊內容會讓人誤以為
         還沒套用完」);成品在哪一句話講清楚,右上角那顆「輸出資料夾…」照亮。"""
+        # ⚠️ **要在 `_naming_hide` 之前取**:它會把 `_naming_result` 清掉
+        result = self._naming_result[0] if isinstance(self._naming_result, tuple) else None
+        mds = [Path(p) for p in getattr(result, "outputs", None) or ()
+               if Path(p).suffix.lower() == ".md"]
         pending.clear()
         # ⚠️ **工作列那個黃的到這裡才熄**:它問的是「你回來把名字填完了嗎」,而套用與
         # 跳過都算填完了(這是那顆黃色唯一的收工點——別的收場沒有人會回來「收掉」它,
@@ -6823,6 +7078,7 @@ class App(tk.Tk):
         self._stage("")
         if not self._busy["rec"]:
             self._rec_say(REC_IDLE, "wait")
+        self._minutes_jump_show(mds[0] if len(mds) == 1 else None)
 
     def _naming_skip(self) -> None:
         """「跳過命名」(使用者指定 2026-07-24:有時不想改名):成品**不**刪,只清畫面
@@ -7500,7 +7756,7 @@ class App(tk.Tk):
     def _run_lock(self, running: bool, outcome: int = winui.TBPF_NOPROGRESS) -> None:
         r"""鎖住/放開「檔案轉檔」這條路的按鈕;`outcome` 是收工時留在工作列上的顏色。
 
-        ⚠️ **三個模式的鈕都要一起管**(2026-09-01 加上重設講者之後):它們共用
+        ⚠️ **每個模式的鈕都要一起管**(2026-09-01 加上重設講者之後;2026-10-11 多了地端 AI):它們共用
         `_busy["run"]` 這一個旗標與同一顆停止鈕的語意,漏掉哪一組,那一組就會在
         工作進行中還亮著——按下去是第二趟,而第一趟還在跑。"""
         self._busy["run"] = running
@@ -7513,6 +7769,7 @@ class App(tk.Tk):
         if running:
             self._taskbar(None)
             self._run_dirs = None       # 這一趟的成品位置由這一趟自己說
+            self._minutes_jump_show(None)   # 收工捷徑指的是上一趟的成品
         else:
             self._taskbar_end(outcome)
         # ⚠️ **收工時要清 `_stopping`**:不清的話下一趟一開跑,那顆鈕就直接是灰的

@@ -483,6 +483,67 @@ def _ov_cache_complete(target: Path) -> bool:
     )
 
 
+# 會議紀錄草稿的語言模型(Windows;Mac 走 Apple 的裝置端模型,不下載)。
+# 選哪顆見 `minutes._ov_plan`;數字見 docs/spec/mac/05 §5.4b 的 Windows 那段。
+# ⚠️ Qwen3.5 是多模態架構:LLMPipeline 載得起來、一推論就炸,只能走 VLMPipeline,
+# 而它建構時要讀視覺那幾顆——所以視覺檔也在必要清單裡(少了就是載入失敗)
+_LLM_REPOS = {
+    "4b": "OpenVINO/Qwen3.5-4B-int4-ov",
+    "2b": "OpenVINO/Qwen3.5-2B-int4-ov",
+}
+_LLM_REQUIRED_STEMS = (
+    "openvino_language_model",
+    "openvino_text_embeddings_model",
+    "openvino_vision_embeddings_model",
+    "openvino_vision_embeddings_merger_model",
+    "openvino_vision_embeddings_pos_model",
+    "openvino_tokenizer",
+    "openvino_detokenizer",
+)
+#: 下載量(GB,給「第一次要等多久」那句話用;實際檔案大小)
+LLM_DOWNLOAD_GB = {"4b": 3.4, "2b": 2.0}
+_llm_dirs: dict[str, Path] = {}
+
+
+def _llm_target(size: str) -> Path:
+    return cache_dir() / "llm" / _LLM_REPOS[size].split("/")[-1]
+
+
+def llm_cached(size: str) -> bool:
+    """這顆已經下載好了沒(不連網)。"""
+    return size in _llm_dirs or _llm_cache_complete(_llm_target(size))
+
+
+def _llm_cache_complete(target: Path) -> bool:
+    return (target / "config.json").exists() and all(
+        (target / f"{stem}.xml").exists() and (target / f"{stem}.bin").exists()
+        for stem in _LLM_REQUIRED_STEMS
+    )
+
+
+def minutes_llm_dir(size: str) -> Path:
+    """下載(或沿用快取)會議紀錄草稿用的語言模型(`4b` 3.4 GB / `2b` 2.0 GB)。
+
+    同 `ov_whisper_dir`:快取完整就不連網;進度走 `hub_tqdm`(原生視窗沒有主控台)。"""
+    if size in _llm_dirs:
+        return _llm_dirs[size]
+    repo = _LLM_REPOS[size]
+    target = _llm_target(size)
+    if not _llm_cache_complete(target):
+        from huggingface_hub import snapshot_download
+
+        try:
+            with_tls_rescue(lambda: snapshot_download(
+                repo, local_dir=target, tqdm_class=hub_tqdm(f"AI 模型 {repo.split('/')[-1]}")),
+                "AI 模型")
+        except Exception as e:
+            raise download_failed("AI 模型", repo, e) from e
+        if not _llm_cache_complete(target):
+            raise UserFacingError(f"AI 模型下載內容不完整,請重試:{repo}")
+    _llm_dirs[size] = target
+    return target
+
+
 def ov_whisper_dir(model_key: str) -> Path:
     """下載(或沿用快取)OpenVINO 預轉換 Whisper 模型目錄。
 

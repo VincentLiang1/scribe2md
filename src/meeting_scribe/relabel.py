@@ -428,7 +428,7 @@ def validate(text) -> Path:
     return p
 
 
-def pick_md(parent=None, initialdir=None) -> str:
+def pick_md(parent=None, initialdir=None, title="選擇要重設講者的逐字稿(.md)") -> str:
     """「選擇逐字稿…」:原生對話框,只挑一份 md。取消回空字串。
 
     ⚠️ **`parent` 要把主視窗交進來**:macOS 的原生面板貼著 parent 定位,
@@ -446,7 +446,7 @@ def pick_md(parent=None, initialdir=None) -> str:
     if initialdir and Path(initialdir).is_dir():
         extra["initialdir"] = str(initialdir)
     picked = srcfile.native_dialog(lambda fd, root: fd.askopenfilename(
-        parent=root, title="選擇要重設講者的逐字稿(.md)",
+        parent=root, title=title,
         filetypes=[("逐字稿", "*.md"), ("所有檔案", "*.*")], **extra,
     ), parent)
     return str(Path(picked)) if picked else ""
