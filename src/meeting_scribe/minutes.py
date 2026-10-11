@@ -339,11 +339,12 @@ def drafts_dir() -> Path:
 
 #: 草稿檔的第一行。⚠️ **檔案之後會在 Finder 裡被單獨打開**,那時畫面上的警語都不在了,
 #: 能提醒「這是 AI 寫的」只剩這一行
-DRAFT_NOTICE = ("> AI 草稿:Apple Intelligence 在這台 Mac 上整理,可能漏掉或寫錯,"
-                "正式紀錄請對照逐字稿另行整理。")
+#: ⚠️ 「品質比不上雲端 AI」是使用者 2026-10-11 要求明講的(地端小模型能力有限)
+DRAFT_NOTICE = ("> ⚠ AI 草稿:由這台 Mac 上的 Apple Intelligence 整理,能力有限、品質比不上"
+                "雲端 AI,可能漏掉或寫錯;正式紀錄請對照逐字稿另行整理。")
 #: Windows 那條的警語(模型是這台電腦上跑的小模型,不是 Apple Intelligence)
-DRAFT_NOTICE_OV = ("> AI 草稿:地端 AI 模型在這台電腦上整理,可能漏掉或寫錯,"
-                   "正式紀錄請對照逐字稿另行整理。")
+DRAFT_NOTICE_OV = ("> ⚠ AI 草稿:由這台電腦上的地端小模型整理,能力有限、品質比不上雲端 AI,"
+                   "可能漏掉或寫錯;正式紀錄請對照逐字稿另行整理。")
 
 
 def draft_notice() -> str:
