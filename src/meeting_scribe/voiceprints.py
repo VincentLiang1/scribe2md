@@ -485,7 +485,11 @@ def close_calls(
     `taken` = 已經被自動填給別人的名字,一律排除:同一場會議一個名字只能
     給一位講者(recognize_batch 的約束),把已經確定屬於別人的名字列進
     來,等於邀請使用者製造一個「兩群同名」的成品——那在逐字稿裡看起來
-    是「少了一個人」,不是「認錯人」,而使用者不會發現。"""
+    是「少了一個人」,不是「認錯人」,而使用者不會發現。
+
+    ⚠️ **這條排除只管「分不開」**:這裡沒給、也沒自動填的講者,另由 `nearest`
+    給「聲音最接近(僅供參考)」,**那一支刻意不排除 taken**(理由在它的
+    docstring,2026-10-13 使用者選定)——兩條規則不同是故意的,別把它們「統一」。"""
     taken = set(taken)
     out: dict[int, CloseCall] = {}
     for speaker, ranked in _ranked_matches(vecs, threshold):
@@ -499,6 +503,43 @@ def close_calls(
         if rivals:
             out[speaker] = CloseCall(rivals[:limit], gap)
     return out
+
+
+def nearest(
+    vecs: dict[int, "np.ndarray"],
+    skip=(),
+    limit: int = _MAX_RIVALS,
+) -> dict[int, list[str]]:
+    """「誰都不夠像」的講者聲音最接近哪幾位;{講者編號: [名字…由高到低]}。
+
+    命名時聲紋比對有三種結果:認得出來(`recognize_batch` 自動填名)、分不開
+    (`close_calls`,「聲音同時像」+ 琥珀底)、以及**誰都不夠像**——這一支只管
+    第三種。`skip` 由呼叫端傳「已自動填名的」與「已在 close_calls 結果裡的」
+    講者,這兩種一律不給。
+
+    **只當線索,絕不自動填名**,畫面上**不寫分數、不加琥珀底**,標「僅供參考」。
+    依據:使用者 2026-10-13 選定(手機版 `VoiceprintStore.nearest` 同日實機測過、
+    兩邊命名邏輯一致)。沿革:2026-10-10 曾經拿掉「相似度最高幾位 + 百分比」,
+    這次是**不寫分數**、標「僅供參考」的版本——分數會讓人把 0.6 讀成六成把握
+    (見 docs/spec/09「不要把分數搬到畫面上」)。
+
+    **不設門檻**(`_ranked_matches` 用 -inf):這裡就是要給「不夠像」的人線索。
+    同名多筆樣本只算最高分那筆(`_ranked_matches` 已經合併,不要再寫一份)。
+
+    ⚠️ **刻意不排除已被自動填給別人的名字**——與 `close_calls` 的 `taken` 規則
+    **相反,而且是故意的**,別「統一」回去:自動模式常把**同一個人**拆成好幾群,
+    名字只會給分數最高的那群(`recognize_batch`),其餘幾群最像的**正是這個名字**。
+    10-13 手機實機:自動分出 7 群、主講者被拆成三群,排除 taken 之後另外兩群
+    完全看不到他。`close_calls` 那邊擋 taken 的理由(兩群同名在逐字稿裡看起來像
+    「少了一個人」)仍然成立,所以它維持不變;這裡不寫分數、不塗色、標明「可能
+    都不是」,使用者聽過才選,而**同一個人被拆成兩群時,兩群填同一個名字正是
+    正確答案**。"""
+    skip = set(skip)
+    return {
+        speaker: [name for name, _score in ranked[:limit]]
+        for speaker, ranked in _ranked_matches(vecs, float("-inf"))
+        if speaker not in skip
+    }
 
 
 def _log_inconsistent(name: str, q: "np.ndarray", names, vecs) -> None:

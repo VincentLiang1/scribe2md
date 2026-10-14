@@ -293,9 +293,14 @@ _AUDIT_CLOSE_CALLS = 3
 
 
 def _naming_clues(count, voiceprints, audit_flags, has_audit):
-    """自動填名、聲紋分不開的候選、以及該亮「🔍 核對」的那幾列。
+    """自動填名、聲紋分不開的候選、該亮「🔍 核對」的那幾列,以及「誰都不夠像」
+    那幾位的聲音最接近者。
 
-    回 (預填名, {講者: 候選名字}, 該亮核對鈕的講者集合)。
+    回 (預填名, {講者: 候選名字}, 該亮核對鈕的講者集合, {講者: 最接近的名字})。
+    後兩份名單**互斥**:最接近只給「沒自動填、也不在分不開名單裡」的講者
+    (`voiceprints.nearest`,2026-10-13 使用者選定)——一位講者的線索只會是三種
+    結果之一。⚠️ 最接近**不影響核對鈕**:那條上限是給「分不開」的(見
+    `_AUDIT_CLOSE_CALLS`),誰都不夠像在大型會議是常態,一起算就全亮了。
 
     ⚠️ **轉檔完成與開頁還原共用這一份**:候選不隨命名進度落地,而是兩邊
     各自從聲紋向量重算——落地的話,使用者中途改了名單或聲紋庫之後,重新
@@ -315,11 +320,15 @@ def _naming_clues(count, voiceprints, audit_flags, has_audit):
     guesses = voiceprints_store.recognize_batch(vecs)
     close = voiceprints_store.close_calls(vecs, taken=guesses.values())
     rivals = {spk: cc.rivals for spk, cc in close.items()}
+    # ⚠️ skip 用 `close` 的鍵、不是「過得了門檻卻差距不夠」的全部:候選全被別人拿走
+    # 的那一位不在 close 裡,它該拿到最接近(而最接近照列被拿走的名字,理由見
+    # voiceprints.nearest)
+    nearest = voiceprints_store.nearest(vecs, skip={*guesses, *close})
     flags = set(audit_flags or ())
     if has_audit:
         hardest = sorted(close.items(), key=lambda kv: (kv[1].gap, kv[0]))
         flags |= {spk for spk, _cc in hardest[:_AUDIT_CLOSE_CALLS]}
-    return guesses, rivals, flags
+    return guesses, rivals, flags, nearest
 
 
 def _labels_in(text: str) -> dict[int, str]:
@@ -477,8 +486,14 @@ def _save_draft_names(*name_values) -> None:
 _HINT_QUOTE_CHARS = 24
 
 
-def rival_order(known: list[str], rivals) -> tuple[list[str], int]:
+def rival_order(known: list[str], rivals, nearest=()) -> tuple[list[str], int]:
     """名字選單的順序:聲紋分不開的那幾位排到最前面。回 (選項, 提前的筆數)。
+
+    沒有分不開的候選時,改把 `nearest`(誰都不夠像時聲音最接近的幾位,見
+    `voiceprints.nearest`)排到最前面——**兩份只會用一份**:分不開的優先,而
+    `_naming_clues` 本來就保證同一位講者兩份不會同時有。畫面上兩種前綴的標示不同
+    (分不開 = 琥珀底;最接近 = 灰字區塊標題、不塗色),那是呼叫端的事,這裡的
+    筆數兩種一樣算。
 
     ⚠️ **選項字串只重排、不加任何標記**:這個欄位的選項字串**就是**最後寫進逐字稿
     與 `data/voiceprints.npz` 的名字——把「★」或「(候選)」寫進去,那幾個字就會
@@ -491,14 +506,18 @@ def rival_order(known: list[str], rivals) -> tuple[list[str], int]:
     前綴長度對不上,底色就落在別人身上——而**標錯人比不標更糟**。"""
     head = list(dict.fromkeys(rivals or ()))      # 保序去重
     if not head:
+        head = list(dict.fromkeys(nearest or ()))
+    if not head:
         return known, 0
     seen = set(head)
     return head + [x for x in known if x not in seen], len(head)
 
 
-def _hint_text(hint, rivals=None) -> str | None:
+def _hint_text(hint, rivals=None, nearest=None) -> str | None:
     """命名欄位下的認人線索:「共 N 段發言・『最長一句摘錄』」,聲紋分不開
-    的那幾位再加一行候選。
+    的那幾位再加一行候選;誰都不夠像的那幾位改加一行「最接近(參考):…」
+    (`voiceprints.nearest`,2026-10-13 使用者選定;**不寫分數**,理由同下)。
+    分不開優先:兩份同時給的話只講分不開那一行。
 
     讓使用者不必翻預覽找「講者 N 說了什麼」就能認人。無線索回 None
     (該講者沒有合格的摘錄句;線索與聲紋同源,見 speaker_hints)。
@@ -531,6 +550,9 @@ def _hint_text(hint, rivals=None) -> str | None:
         # 多 33px,十位講者就是 330px。而「🔍 核對」「▶️ 試聽」本來就在同一列
         # 的右邊,按鈕自己就是指路;那句話改成整個面板頂部講一次
         parts.append(f"聲音同時像:{'、'.join(rivals)}")
+    elif nearest:
+        # 「(參考)」不能省:這幾位是「都不夠像」裡面相對最像的,可能一個都不是
+        parts.append(f"最接近(參考):{'、'.join(nearest)}")
     return "\n".join(parts) or None
 
 

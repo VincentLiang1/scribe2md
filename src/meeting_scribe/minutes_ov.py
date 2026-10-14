@@ -1,4 +1,5 @@
-r"""會議紀錄草稿的語言模型子行程,父端(Windows;協定見 `minutes_worker` 檔頭)。
+r"""會議紀錄草稿的語言模型子行程,父端(Qwen 那兩條:Windows 的 OpenVINO、Mac 的 MLX;協定見
+`minutes_worker` 檔頭)。
 
 一次 `minutes.generate` 一支:`start()` → `ask()`×N → `close()`。跟 `transproc` 同樣的
 三條規矩(都是那邊被實測逼出來的):子行程 `-u`、另起執行緒 drain stderr(OpenVINO

@@ -483,7 +483,7 @@ def _ov_cache_complete(target: Path) -> bool:
     )
 
 
-# 會議紀錄草稿的語言模型(Windows;Mac 走 Apple 的裝置端模型,不下載)。
+# 會議紀錄草稿的語言模型(Windows 的 OpenVINO 版;Mac 的 MLX 版在下面 `mlx_llm_dir`)。
 # 選哪顆見 `minutes._ov_plan`;數字見 docs/spec/mac/05 §5.4b 的 Windows 那段。
 # ⚠️ Qwen3.5 是多模態架構:LLMPipeline 載得起來、一推論就炸,只能走 VLMPipeline,
 # 而它建構時要讀視覺那幾顆——所以視覺檔也在必要清單裡(少了就是載入失敗)
@@ -541,6 +541,92 @@ def minutes_llm_dir(size: str) -> Path:
         if not _llm_cache_complete(target):
             raise UserFacingError(f"AI 模型下載內容不完整,請重試:{repo}")
     _llm_dirs[size] = target
+    return target
+
+
+# 會議紀錄草稿的 Qwen3.5-4B,Mac 那一份(MLX,跑在 GPU;使用者 2026-10-14 選定,見
+# docs/spec/mac/05 §5.4b)。⚠️ **跟手機版 `Qwen.swift` 是同一個固定版本、同一份 sha256**:
+# 版本不釘,上游哪天重傳權重,兩邊的草稿就不再是同一顆模型寫的,而那正是兩邊實測對照的前提。
+# 只下文字要用的 7 個檔(repo 裡另有視覺那一半,MLX 只問文字用不到)。
+MLX_LLM_REPO = "mlx-community/Qwen3.5-4B-4bit"
+MLX_LLM_REVISION = "0e7ffd5c629ef7719d4cbc04069232580bfa9d9c"
+#: 檔名 → (位元組數, sha256)
+MLX_LLM_FILES = {
+    "config.json": (3366, "f3efc81b2ea8d96a45301037d3ccccbcccdef44a961845c87f286aaddbc6eaaa"),
+    "chat_template.jinja": (7756, "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715"),
+    "tokenizer_config.json": (1139, "e98f1901ac6f0adff67b1d540bfa0c36ac1a0cf59eb72ed78146ef89aafa1182"),
+    "vocab.json": (6722759, "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003"),
+    "tokenizer.json": (19989343, "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4"),
+    "model.safetensors.index.json": (101944, "52e534c41f7b97708329c85f762e5882bf48bd5955a422c6ae74eba321e6048a"),
+    "model.safetensors": (3034300695, "5fb9acd0246866381cf8c5c354c6db1019f6498eec4ccb4f5edcc71ffeacb2db"),
+}
+#: 下載量(GB,給確認框與等待提示那幾句話用)
+MLX_LLM_DOWNLOAD_GB = round(sum(n for n, _ in MLX_LLM_FILES.values()) / 1e9, 1)
+
+
+def mlx_llm_target() -> Path:
+    return cache_dir() / "llm" / "Qwen3.5-4B-4bit-mlx"
+
+
+def mlx_llm_cached() -> bool:
+    """下載好了沒(不連網、不核 sha256:3 GB 核一次要十幾秒,只在剛下載完核)。
+
+    ⚠️ **判準含大小**:下載中斷時留下的是不完整的檔,只看「在不在」會把它當成好的、
+    載入時才炸——而那時給的是「模型載入失敗」,看不出是下載沒完。"""
+    target = mlx_llm_target()
+    return all((target / name).is_file() and (target / name).stat().st_size == size
+               for name, (size, _) in MLX_LLM_FILES.items())
+
+
+def mlx_llm_size() -> int:
+    """模型資料夾現在佔多少位元組(含下載到一半的;「進階參數設定」顯示用)。"""
+    target = mlx_llm_target()
+    if not target.is_dir():
+        return 0
+    return sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
+
+
+def delete_mlx_llm() -> None:
+    """刪掉 Mac 的 Qwen 模型(使用者在「進階參數設定」按的;下次用時重新下載)。"""
+    target = mlx_llm_target()
+    if target.is_dir():
+        shutil.rmtree(target)
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def mlx_llm_dir() -> Path:
+    """下載(或沿用)Mac 的 Qwen3.5-4B,回模型資料夾。
+
+    下載完逐檔核 sha256,對不上的那個檔刪掉、叫使用者再按一次(同手機版:中斷了再按一次
+    會從沒下完的檔重來——`snapshot_download` 本來就會略過已經在的檔)。"""
+    target = mlx_llm_target()
+    if mlx_llm_cached():
+        return target
+    from huggingface_hub import snapshot_download
+
+    name = f"AI 模型 {MLX_LLM_REPO.split('/')[-1]}"
+    try:
+        with_tls_rescue(lambda: snapshot_download(
+            MLX_LLM_REPO, revision=MLX_LLM_REVISION, allow_patterns=list(MLX_LLM_FILES),
+            local_dir=target, tqdm_class=hub_tqdm(name)), "AI 模型")
+    except Exception as e:
+        raise download_failed("AI 模型", MLX_LLM_REPO, e) from e
+    report_progress("核對下載的 AI 模型檔案中…", 1.0)
+    for fname, (size, digest) in MLX_LLM_FILES.items():
+        path = target / fname
+        if not path.is_file() or path.stat().st_size != size or _sha256(path) != digest:
+            path.unlink(missing_ok=True)
+            logger.warning("Qwen 模型檔核對不符,已刪除:%s", fname)
+            raise UserFacingError("下載的 AI 模型檔案不完整,請再按一次重新下載。")
     return target
 
 

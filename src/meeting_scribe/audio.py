@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
+from meeting_scribe import plat
 from meeting_scribe.errors import UserFacingError
 
 logger = logging.getLogger(__name__)
@@ -72,8 +73,14 @@ def read_wav16k(path: str | Path) -> np.ndarray:
 
 def _run_ffmpeg(cmd: list[str], dest: Path, log_msg: str, user_msg: str) -> Path:
     """跑 ffmpeg 並確認成品落地;失敗把完整 stderr 記進 log(黑視窗診斷用),
-    對使用者只拋繁中訊息(spec §8)。"""
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    對使用者只拋繁中訊息(spec §8)。
+
+    ⚠️ **一定要帶 `plat.spawn_kwargs`**(2026-10-12 使用者回報):視窗本體是
+    `pythonw`、沒有主控台,ffmpeg 是主控台程式,不帶 `CREATE_NO_WINDOW` 就
+    **每跑一次彈一個黑視窗**——重設講者載入時每位講者剪一段試聽,畫面上就是
+    黑視窗連閃好幾次。從命令列跑時它借用現有主控台,所以開發時看不出來。"""
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          **plat.spawn_kwargs(low_priority=False))
     if proc.returncode != 0 or not dest.exists():
         logger.error("%s:%s", log_msg, proc.stderr)
         raise UserFacingError(user_msg)

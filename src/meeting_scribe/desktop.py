@@ -229,6 +229,21 @@ LOG_BUTTON = "📂 記錄檔…"
 # 視窗,它印的是記錄檔的完整路徑)。
 LOG_HINT = "詳情見記錄檔(「❓ 使用說明」右上角的「記錄檔…」)"
 
+
+def relabel_stage(have_media: bool, have_features: bool) -> str:
+    r"""重設講者讀完時,進度條上方那一行。
+
+    ⚠️ **缺檔要在這一行講**(2026-10-12 使用者選案:「進度條上方那一行」、兩種都提示):
+    預覽區開頭那句排在整份逐字稿前面,沒人看到——而缺錄音檔的下場是一顆試聽鈕都
+    沒有,使用者只會以為功能壞了。⚠️ **只講缺了什麼、少了哪幾樣**,怎麼補(放回同一個
+    資料夾、檔名相同)寫在預覽區那句與使用說明裡,這一行放不下。"""
+    if not have_media:
+        return ("已讀取,但旁邊沒有同名的錄音檔:只能改名字"
+                "(沒有試聽、不記聲紋、不能改人數)。")
+    if not have_features:
+        return "已讀取,但旁邊沒有同名的分群檔(.分群.npz):不能改講者人數,其餘照常。"
+    return "已讀取,請在左邊替講者命名。"
+
 # 檢查新版(2026-10-07 使用者在四張設計稿裡選案 B:說明頁內容框底下一列「目前版本 /
 # 檢查更新 / 結果 / 啟動時自動檢查新版」;啟動時發現新版另跳一扇對話框)。
 # ⚠️ **那顆勾選框就是「不要再提醒」的回頭路**:對話框勾了「不要再提醒」之後,唯一
@@ -567,15 +582,50 @@ OPEN_DIR_BUTTON = "📂 輸出資料夾…"
 # ⚠️ **「它是 AI 草稿」要講在按下去之前**:小模型會漏、會寫錯,而沒參加會議的人分不出來
 # (手機版三輪實測,scribe2md-ios `docs/spec/08` §8.12)。
 # ⚠️ 「品質比不上雲端 AI」那句是使用者 2026-10-11 要求特別提醒的:地端小模型能力有限,
-# 按下去之前就要讓人知道(「⚠」不帶 VS16,Tk 畫得出來)
-MINUTES_HINT = ("挑一份轉好的 .md(建議先替講者命名)。整理出摘要、主要議題、待辦(附約略時間)。"
-                "⚠ 用的是這台電腦上的小模型,能力有限、品質比不上雲端 AI,只能當草稿;"
-                "正式紀錄請對照逐字稿另行整理。")
+# 按下去之前就要讓人知道(「⚠」不帶 VS16,Tk 畫得出來)。2026-10-14 使用者嫌字多,選了兩句版
+# (「正式紀錄請對照逐字稿另行整理」改由草稿檔第一行的警語與使用說明講)
+MINUTES_HINT = ("挑一份轉好的 .md(建議先替講者命名),整理出摘要、議題、待辦。"
+                "⚠ 地端小模型,品質比不上雲端 AI,只能當草稿。")
 # 動作列右邊那顆:開草稿資料夾。⚠️ 草稿**不在**逐字稿旁邊(見 `minutes.drafts_dir`),
 # 不給這顆的話使用者找不到它
 MINUTES_DIR_BUTTON = "📂 草稿資料夾…"
 # 命名收工之後右邊預覽卡上那顆捷徑(B 案的後半):帶入剛寫好的那份、直接開始
 MINUTES_SHORTCUT = "✨ 用這份產生會議紀錄草稿"
+# 「地端 AI」那一格的模型選擇(Mac;2026-10-14 使用者選案 A:膠囊二選一 ＋ 底下一行說明;
+# 只有一個能用時整排收起來,見 `minutes.choices`)。⚠️ 說明那一行是「選之前」唯一講得到
+# 「要下載 3 GB」與「比較慢」的地方,不可以為了省高度拿掉(量過:最窄視窗多 102 px、
+# 視窗本身不變高)。上面原本有一行小標「用哪個模型整理」,同日使用者指定拿掉
+MINUTES_ENGINE_OPTIONS = ((minutes.ENGINE_APPLE, "", "Apple"), (minutes.ENGINE_QWEN, "", "Qwen 4B"))
+
+
+def minutes_engine_note(engine: str, can: plat.Outcome | None, downloaded: bool) -> str:
+    """選模型那一排底下那一行。用不了(`failed`)就直接講怎麼解——按下去也是這一句。"""
+    if can is not None and not can.ok:
+        return can.reason
+    if engine == minutes.ENGINE_QWEN:
+        first = "已下載" if downloaded else f"第一次用時下載約 {models.MLX_LLM_DOWNLOAD_GB} GB"
+        return f"Qwen 4B:{first};整理得比較完整,比 Apple 慢約五成。"
+    return "Apple:不必下載、比較快;偶爾有幾段整理不出來。"
+
+
+# 第一次選 Qwen 按下去時的確認框(使用者 2026-10-14 選「先問一次」;實測這台下載花過 24 分鐘)
+MINUTES_DOWNLOAD_ASK = ("要先下載 Qwen 4B 模型(約 {gb} GB)。\n\n"
+                        "可能要二三十分鐘,下載完接著整理。中斷了再按一次,會接著下載。")
+MINUTES_DOWNLOAD_OK = "下載並開始"
+# 「進階參數設定」裡那一列(Mac、這台能用 Qwen 時才有;使用者 2026-10-14 選放這裡)
+QWEN_ROW_TITLE = "地端 AI 模型"
+QWEN_DELETE = "刪除模型…"
+QWEN_DELETE_ASK = "要刪除 Qwen 4B 模型({gb:.1f} GB)嗎?\n\n刪除後,下次選 Qwen 4B 時會重新下載。"
+
+
+def qwen_row_info() -> str:
+    """那一列的說明(一行):下載了沒、佔多少。"""
+    size = models.mlx_llm_size()
+    if models.mlx_llm_cached():
+        return f"會議紀錄草稿用的 Qwen 4B,已下載 {size / 1e9:.1f} GB"
+    if size:
+        return f"會議紀錄草稿用的 Qwen 4B,下載到一半({size / 1e9:.1f} GB)"
+    return "會議紀錄草稿用的 Qwen 4B,還沒下載"
 
 # 使用說明裡那張 Claude 隱私設定截圖(全篇唯一一張圖)。
 PRIVACY_IMG = repo_root() / "docs" / "claude-privacy-setting.jpg"
@@ -854,6 +904,16 @@ PICK_ROW_H = 28                   # 列高(邏輯 px)
 PICK_MAX_ROWS = 10                # 一次露幾列,多的捲
 PICK_MARK = "✓"                   # 目前那一筆前面的記號——只畫在清單上,絕不進字串
 PICK_HOVER_LIGHT, PICK_HOVER_DARK = "#e8e8ed", "#3a3a3f"   # hover/選中列(網頁版量到的灰)
+# 「誰都不夠像」時排到最前面的那幾位(`voiceprints.nearest`,2026-10-13 使用者選定、
+# 同手機版):清單裡用**灰字標題列**圈出一個區塊、**不塗琥珀底**——琥珀是「分不開」的
+# 意思,兩種塗成一樣就分不出「同時像好幾位」與「誰都不像」。⚠️ 標題列**不是選項**:
+# 只活在清單的 Treeview 裡(非數字 iid,見 `_pick_open`),絕不進 combobox 的 values
+# ——進了 values,收起來時按 ↑↓ 會把這句話輪進欄位、變成人名。
+# ⚠️ **標題分兩列**:Treeview 的列不換行,整句擠一列在命名欄那個寬度(150% 實拍 420px)
+# 會被截掉後半——而被截掉的正是「可能都不是,先聽再選」。字比名字小一號、灰色。
+PICK_NEAREST_HEAD = ("聲音最接近(僅供參考)", "都不夠像,可能都不是,先聽再選。")
+PICK_NEAREST_REST = "─── 全部名單 ───"
+PICK_HEAD_TAG = "head"            # 標題列的 tag 與 iid 前綴(iid 不是數字 = 選不到)
 
 WORK_BUSY_TEXT = {
     "doc": "文件轉檔還在跑,請先等它結束,或到「文字、圖像→MD」按停止。",
@@ -1585,6 +1645,7 @@ class App(tk.Tk):
         # 自畫的下拉清單:同時最多開一張;候選筆數照下拉的 Tk 路徑記(`_mark_rivals`)
         self._pick: dict | None = None
         self._combo_rivals: dict[str, int] = {}
+        self._combo_nearest: set[str] = set()   # 前綴是「最接近」而不是「分不開」的下拉
         # 三條工作路徑「正在跑」的旗標(見 `_busy_reason`)。⚠️ **記在視窗上、不是
         # 回頭去問按鈕**:分頁是「用到才建」的,那一頁沒被點過時按鈕根本不存在。
         self._busy = dict.fromkeys(WORK_BUSY_TEXT, False)
@@ -1621,6 +1682,8 @@ class App(tk.Tk):
         # ⚠️ **由工作執行緒回報、每趟開頭歸零**(`_run_job`):收工那一刻才問得到的東西
         # 只有錯誤,而「12 個檔裡有 3 個轉失敗」不是錯誤——它成功跑完了。
         self._job_outcome = ""
+        # 重設講者讀完時那一行(`relabel_stage`),由工作執行緒送回、`_relabel_done` 取用
+        self._relabel_stage = ""
         # 現在這一場錄音(recorder / live / dir / stem / scene)與它的起算時刻。
         # ⚠️ **放在這裡而不是 `_rec_build`**:關視窗時要問「還在錄音嗎」,而那是在
         # 「使用者從沒點過轉檔那一頁」也成立的問題(同 `_busy` 那條)。
@@ -1675,6 +1738,11 @@ class App(tk.Tk):
         self._minutes_tab: ttk.Frame | None = None
         self._minutes_jump: ttk.Frame | None = None
         self._minutes_jump_md: Path | None = None
+        # Mac 選了哪個模型整理(`minutes.ENGINE_*`);那一排收著時是 None(見 `_minutes_engine_sync`)
+        self._minutes_engine: str | None = None
+        # 「進階參數設定」裡 Qwen 那一列(對話框點了才建、這台能用 Qwen 才有;見 `_adv_open`)
+        self._qwen_hint: ttk.Label | None = None
+        self._qwen_delete: HandButton | None = None
         # 「這台電腦載不起 AI 元件」那條橫幅(只有壞掉的機器才會長出來,見
         # `_native_banner`)。⚠️ **不是 `_lockable`**,理由在那一支。
         self._banner: ttk.Frame | None = None
@@ -2344,8 +2412,13 @@ class App(tk.Tk):
             return False
         return (r + g + b) / 3 < 32768
 
-    def _mark_rivals(self, combo: ttk.Combobox, count: int) -> None:
+    def _mark_rivals(self, combo: ttk.Combobox, count: int, nearest: bool = False) -> None:
         r"""下拉展開後最前面 `count` 筆標成琥珀底(= 聲紋分不開的候選 / 這場會議裡的人)。
+
+        `nearest=True`:那 `count` 筆是「誰都不夠像」時聲音最接近的幾位(2026-10-13),
+        **不塗琥珀底**,改在清單裡用灰字標題列圈成一個區塊(`PICK_NEAREST_HEAD`)。
+        ⚠️ 兩種標示**必須不同**:琥珀底的意思是「聲紋覺得像、分不開」,最接近的意思是
+        「都不夠像、可能都不是」——塗成一樣,使用者會把後者當成前者那種把握去選。
 
         ⚠️ **只改順序不標色是不夠的**(網頁版 2026-08-15 第一版就是那樣,使用者當場
         回報):提到最前面而沒有視覺區隔,他會以為那是名單本來的順序——名單一長
@@ -2355,6 +2428,10 @@ class App(tk.Tk):
         清單是自畫的(`_pick_open`),展開時照這裡記的筆數給 tag;筆數與順序必須出自
         同一次計算,否則底色落在別人身上。"""
         self._combo_rivals[str(combo)] = max(0, int(count))
+        if nearest:
+            self._combo_nearest.add(str(combo))
+        else:
+            self._combo_nearest.discard(str(combo))
 
     # ---- 下拉選單:自畫的清單(案 ②)------------------------------------ #
     def _combo_setup(self, combo: ttk.Combobox) -> None:
@@ -2430,7 +2507,15 @@ class App(tk.Tk):
         win.overrideredirect(True)
         win.attributes("-topmost", True)
         win.configure(background=self.pal["card"])
-        rows = min(len(values), PICK_MAX_ROWS)
+        n_rivals = self._combo_rivals.get(str(combo), 0)
+        # 「最接近」的前綴不塗琥珀(`n_rivals` 歸零),改在區塊上方一列灰字標題、下方一列
+        # 「全部名單」隔開(見 `PICK_NEAREST_HEAD`)。⚠️ 標題列的 iid 不是數字:名字列的
+        # iid **就是** values 的索引(`_pick_choose` 拿它取值),標題列一插進去就不准佔號
+        n_near = n_rivals if str(combo) in self._combo_nearest else 0
+        if n_near:
+            n_rivals = 0
+        heads = (len(PICK_NEAREST_HEAD) + (n_near < len(values))) if n_near else 0
+        rows = min(len(values) + heads, PICK_MAX_ROWS)
         tree = ttk.Treeview(win, columns=("mark", "name"), show="tree",
                             style="Pick.Treeview", selectmode="browse", height=rows)
         tree.column("#0", width=0, stretch=False)
@@ -2438,9 +2523,13 @@ class App(tk.Tk):
         tree.column("name", anchor="w")
         tree.tag_configure("rival", background=(RIVAL_AMBER_DARK if self._dark()
                                                 else RIVAL_AMBER_LIGHT))
+        tree.tag_configure(PICK_HEAD_TAG, foreground=self.pal["muted"], font=(self.fam, 9))
         current = combo.get().strip()
-        n_rivals = self._combo_rivals.get(str(combo), 0)
         for i, name in enumerate(values):
+            if n_near and i in (0, n_near):
+                for k, text in enumerate(PICK_NEAREST_HEAD if i == 0 else (PICK_NEAREST_REST,)):
+                    tree.insert("", "end", iid=f"{PICK_HEAD_TAG}{i}-{k}", tags=(PICK_HEAD_TAG,),
+                                values=("", text))
             tree.insert("", "end", iid=str(i),
                         values=(PICK_MARK if name == current else "", name),
                         tags=("rival",) if i < n_rivals else ())
@@ -2456,7 +2545,9 @@ class App(tk.Tk):
         start = values.index(current) if current in values else 0
         tree.selection_set(str(start))
         tree.focus(str(start))
-        tree.see(str(start))
+        # ⚠️ 停在最接近那幾位之一(或還沒填)時,要看得見最上面的標題:`see` 對還沒畫過的
+        # 清單會把那一列捲到頂,標題就被捲掉了(2026-10-13 實拍:一打開就停在第一個名字)
+        tree.see(f"{PICK_HEAD_TAG}0-0" if start < n_near else str(start))
         x = combo.winfo_rootx()
         y = combo.winfo_rooty() + combo.winfo_height() + self.px(2)
         w, h = max(combo.winfo_width(), 1), rows * self.px(PICK_ROW_H) + pad * 2
@@ -2467,6 +2558,11 @@ class App(tk.Tk):
         tree.bind("<ButtonRelease-1>", self._pick_click)
         tree.bind("<Return>", lambda _e: self._pick_choose())
         tree.bind("<Escape>", lambda _e: self._pick_close())
+        if heads:
+            # Treeview 自己的 ↑↓ 會停在標題列上;有標題時改走只在名字之間跳的那支
+            # (與 macOS 共用,它照 values 的索引移動,標題列天然被跳過)
+            tree.bind("<Up>", lambda _e, c=combo: self._pick_mac_key(c, "up"))
+            tree.bind("<Down>", lambda _e, c=combo: self._pick_mac_key(c, "down"))
         tree.bind("<KeyPress>", lambda e, c=combo: "break" if self._combo_typed(c, e.char)
                   else None)
         tree.bind("<FocusOut>", lambda _e: self.after_idle(self._pick_focus_lost))
@@ -2523,7 +2619,7 @@ class App(tk.Tk):
         else:
             tree = pick["tree"]
             sel = tree.selection()
-            i = int(sel[0]) if sel else -1
+            i = int(sel[0]) if sel and sel[0].isdigit() else -1
             i = max(0, min(len(pick["values"]) - 1, i + (1 if what == "down" else -1)))
             tree.selection_set(str(i))
             tree.see(str(i))
@@ -2560,7 +2656,7 @@ class App(tk.Tk):
         if pick is None:
             return
         iid = pick["tree"].identify_row(event.y)
-        if iid:
+        if iid.isdigit():                # 標題列(非數字 iid)不是選項,不亮
             pick["tree"].selection_set(iid)
 
     def _pick_click(self, event) -> None:
@@ -2569,7 +2665,7 @@ class App(tk.Tk):
         if pick is None:
             return
         iid = pick["tree"].identify_row(event.y)
-        if iid:
+        if iid.isdigit():                # 點在標題列上:什麼都不做,清單留著
             pick["tree"].selection_set(iid)
             self._pick_choose()
 
@@ -2591,6 +2687,8 @@ class App(tk.Tk):
         if pick is None:
             return
         sel = pick["tree"].selection()
+        if sel and not sel[0].isdigit():
+            return                       # 選在標題列上(Home/End 走得到):不是選項,清單留著
         self._pick_close()
         if not sel:
             return
@@ -2627,6 +2725,7 @@ class App(tk.Tk):
     def _pick_close_for(self, combo: ttk.Combobox) -> None:
         """某個下拉被銷毀:它的清單跟著關、候選筆數忘掉。"""
         self._combo_rivals.pop(str(combo), None)
+        self._combo_nearest.discard(str(combo))
         if self._pick is not None and self._pick["combo"] is combo:
             self._pick_close()
 
@@ -4038,6 +4137,9 @@ class App(tk.Tk):
         elif kind == "run_dirs":
             # 「聲音→MD」批次的成品所在(同上;單檔那條不送,留 None = output)
             self._run_dirs = payload
+        elif kind == "relabel_stage":
+            # 重設講者讀完時那一行(缺錄音檔/分群檔各一句),`_relabel_done` 取用
+            self._relabel_stage = payload
 
     # ---- 聲音→MD:名單與聲紋 --------------------------------------------- #
     def _roster_page(self) -> ttk.Frame:
@@ -4808,9 +4910,11 @@ class App(tk.Tk):
         track, self._mode_cells = self._segmented(
             card, [(m[0], m[1], m[2]) for m in RUN_MODES], self._mode_show, tabs=True)
         track.pack(fill="x", pady=(self.px(SP_SM), 0))
-        # 「地端 AI」那一格先藏著(見 `_minutes_tab_sync`)。⚠️ 藏的是**整欄**(膠囊 ＋ 藍條
-        # 那一層),只藏膠囊的話藍條與灰線還留著一格空位
+        # 「地端 AI」那一格放不放:開窗先照猜的,偵測完再更正(見 `_minutes_tab_sync`)。
+        # ⚠️ 藏的是**整欄**(膠囊 ＋ 藍條那一層),只藏膠囊的話藍條與灰線還留著一格空位;
+        # ⚠️ 而且**那一欄的等分設定也要拿掉**(`_minutes_tab_show`)
         self._minutes_tab = self._mode_cells["minutes"][0].master
+        self._minutes_col = int(self._minutes_tab.grid_info()["column"])
         self._minutes_tab.grid_remove()
         # 四格時窄視窗放不下字(見 `_mode_compact_fit`)。⚠️ 字的需求寬要**現在**量:縮成只剩
         # 圖示之後 `body` 的請求寬就變小了,拿那個數判斷會在兩種長相之間來回跳
@@ -4933,7 +5037,7 @@ class App(tk.Tk):
         self._run_preview.pack(side="left", fill="both", expand=True)
 
         self._mode_show(RUN_MODES[0][0])
-        self._minutes_tab_sync()        # 背景偵測比這一頁先跑完的話,這時才放得出來
+        self._minutes_tab_sync()        # 偵測還沒跑完就先照猜的放;已經跑完就照真的結果
         # 上次沒做完的命名(關視窗、當機、隔天再開)在這裡接回來——同網頁版的
         # `demo.load → _restore_pending`;這一頁建好才有地方長命名卡。
         self._naming_restore()
@@ -4993,8 +5097,8 @@ class App(tk.Tk):
 
         (2026-10-11 使用者選定:「地端 AI」那一格放出來之後是四格等分,實測每格在最窄
         視窗 760 只分到 61、字要 74,Tk 直接裁字、不給省略號;內容區最寬 1080 時是 98。)
-        ⚠️ **門檻就是「字放不放得下」,不另外留餘裕**:三格時(Windows、沒有 Apple
-        Intelligence 的 Mac)最窄視窗每格 81,原本就放得下,不可以因為這一支變成只剩圖示。
+        ⚠️ **門檻就是「字放不放得下」,不另外留餘裕**:三格時(Apple、Qwen 都用不了的
+        Mac)最窄視窗每格 81,原本就放得下,不可以因為這一支變成只剩圖示。
         ⚠️ **四格一起換**:有的有字、有的沒字,看起來像壞了。
         ⚠️ **寬度還沒排出來(≤ 1)當成放得下**(同 `_slot_fit`)。"""
         shown = [c for c in self._mode_cells.values() if c[0].master.winfo_manager()]
@@ -5369,6 +5473,11 @@ class App(tk.Tk):
         note = (f"已讀取「{md_path.name}」,共 {len(named)} 位講者"
                 + (f"(當初是{origin}分出來的)" if origin else "") + "。" + tail)
         say(("run_preview", f"{note}\n\n{md_text}"))
+        # ⚠️ **缺檔要再講一次在進度條上方那一行**(2026-10-12 使用者指定):上面那句
+        # 夾在預覽區、排在整份逐字稿前面,實際上沒人看到——而缺錄音檔的下場是試聽鈕
+        # 一顆都沒有,使用者只會以為功能壞了。兩種缺法各一句(使用者選「兩種都提示」)
+        say(("relabel_stage", relabel_stage(media is not None and bool(voiceprints),
+                                            features is not None)))
         # ⚠️ **這個 result 只是「命名區要的那幾個欄位」**,不是 `PipelineResult`:
         # 這條路沒有跑過管線,裝置、耗時、品質診斷通通不存在。
         # ⚠️ `clips` 一律給 dict(空的也給):它代表「已經剪過了」——沒有媒體檔時就
@@ -5389,7 +5498,7 @@ class App(tk.Tk):
         self._run_lock(False)
         self._run_bar.configure(value=0)
         if error is None:
-            self._stage("已讀取,請在左邊替講者命名。")
+            self._stage(self._relabel_stage or relabel_stage(True, True))
             self._run_open.configure(state="normal")
         elif isinstance(error, Cancelled):
             self._stage("已依要求停止。")
@@ -5409,8 +5518,18 @@ class App(tk.Tk):
         ttk.Label(box, text="要整理哪一份逐字稿", style="CardH.TLabel").pack(anchor="w")
         self._wrap(ttk.Label(box, text=MINUTES_HINT, style="Hint.TLabel",
                              justify="left")).pack(anchor="w", pady=(self.px(SP_XS), 0))
+        # 選模型那一排(Mac 兩個都列得出來時才放出來,見 `_minutes_tab_sync`;建好先不 pack)
+        pick = ttk.Frame(box, style="CardBody.TFrame")
+        track, self._minutes_engine_cells = self._segmented(
+            pick, MINUTES_ENGINE_OPTIONS, self._minutes_engine_show)
+        track.pack(fill="x")
+        self._minutes_engine_note = self._wrap(ttk.Label(pick, text="", style="Hint.TLabel",
+                                                         justify="left"))
+        self._minutes_engine_note.pack(anchor="w", pady=(self.px(SP_XS), 0))
+        self._minutes_engine_row = pick
         row = ttk.Frame(box, style="CardBody.TFrame")
         row.pack(fill="x", pady=(self.px(SP_SM), self.px(SP_SM)))
+        self._minutes_pick_row = row
         self._lockable(HandButton(row, text="選擇逐字稿…", style=skin.CTA_STYLE,
                                   command=self._minutes_pick)).pack(side="left")
         self._lockable(HandButton(row, text="清空", style="Small.TButton",
@@ -5430,7 +5549,7 @@ class App(tk.Tk):
 
     def _minutes_actions(self, parent) -> ttk.Frame:
         r"""「地端 AI」的動作列。右邊那顆是「草稿資料夾…」,不是「進階參數設定」:
-        這條路沒有任何一個參數用得到(不轉錄、不分群;模型 Mac 由 macOS 決定、Windows 依
+        這條路沒有任何一個參數用得到(不轉錄、不分群;模型 Mac 在卡片裡那一排選、Windows 依
         有沒有內顯自動挑,見 `minutes._ov_plan`)。"""
         bar = ttk.Frame(parent, style="Page.TFrame")
         self._minutes_btn = self._action_btn(bar, "minutes", MINUTES_ACTION)
@@ -5469,11 +5588,68 @@ class App(tk.Tk):
         在主執行緒上問就是開窗卡一下。偵測跑完時答案已經在它的快取裡,這裡問是瞬間的。
         ⚠️ **`failed` 也要放出來**(Apple Intelligence 沒打開、模型還在下載):使用者
         自己解得了,按下去會講怎麼解;只有 `unsupported` 才藏(那台 Mac 怎樣都用不了)。"""
-        if self._minutes_tab is None or not self._probe_reported:
+        if self._minutes_tab is None:
             return
-        if minutes.capability().state != "unsupported":
+        if not self._probe_reported:
+            # 偵測還沒跑完:照「不必偵測就知道的/上次偵測的」先放(2026-10-14 使用者回報開窗時
+            # 那一排會從三格跳成四格)。Windows 一律有,所以那邊從頭到尾不會跳
+            self._minutes_tab_show(minutes.expected_available())
+            return
+        can = minutes.capability().state != "unsupported"
+        minutes.remember_available(can)
+        self._minutes_tab_show(can)
+        if not can and self._mode == "minutes":
+            # 猜錯了而使用者剛好已經點進去(開窗後零點幾秒內):退回第一個模式
+            self._mode_show(RUN_MODES[0][0])
+        self._minutes_engine_sync()
+
+    def _minutes_tab_show(self, on: bool) -> None:
+        r"""放出/收起「地端 AI」那一格。
+
+        ⚠️ **收起來時那一欄的等分設定要一起拿掉**(2026-10-14 使用者:「如果不支援地端 AI,
+        要消失,注意下面的灰線,不要消失」):每一格等分靠的是 `uniform`,而**沒有格子的欄
+        照樣留著那一份寬度**——實測 1000 寬時三格各 86、槽寬 343,右邊空 85 px、灰線斷在那裡
+        (灰線是每一格各畫一段)。拿掉之後三格撐滿整條,灰線連到底。"""
+        track = self._minutes_tab.master
+        if on:
+            track.columnconfigure(self._minutes_col, weight=1, uniform="seg")
             self._minutes_tab.grid()
-            self._mode_compact_fit(self._mode_track.winfo_width())
+        else:
+            self._minutes_tab.grid_remove()
+            track.columnconfigure(self._minutes_col, weight=0, uniform="")
+        self._mode_compact_fit(self._mode_track.winfo_width())
+
+    def _minutes_engine_sync(self) -> None:
+        r"""選模型那一排:列得出兩個才放出來(使用者 2026-10-14 選「只有一個時整排收起來」),
+        選中記住的那個、底下那行說明跟著重寫。⚠️ **只問 `minutes.choices()`**:它用的是背景偵測
+        時就問好的快取,在主執行緒上不起任何行程。"""
+        opts = minutes.choices()
+        if len(opts) < 2:
+            self._minutes_engine = None
+            self._minutes_engine_row.pack_forget()
+            return
+        self._minutes_engine = minutes.default_engine()
+        self._segment_show(self._minutes_engine_cells, self._minutes_engine)
+        self._minutes_engine_note_sync()
+        self._minutes_engine_row.pack(fill="x", pady=(self.px(SP_SM), 0),
+                                      before=self._minutes_pick_row)
+
+    def _minutes_engine_note_sync(self) -> None:
+        if self._minutes_engine is None:
+            return
+        self._minutes_engine_note.configure(text=minutes_engine_note(
+            self._minutes_engine, minutes.engines().get(self._minutes_engine),
+            models.mlx_llm_cached()))
+
+    def _minutes_engine_show(self, key: str) -> None:
+        """點了一格:記住(下一場、下次開程式都沿用)。⚠️ **整理中不准換**:這一場的模型在
+        按下去那一刻就定了。"""
+        if self._busy["run"] or self._busy["rec"]:
+            return
+        minutes.remember_engine(key)
+        self._minutes_engine = key
+        self._segment_show(self._minutes_engine_cells, key)
+        self._minutes_engine_note_sync()
 
     def _minutes_jump_show(self, md: Path | None) -> None:
         """收工捷徑:給一份 md 就放出來(只在這台用得了「地端 AI」時),`None` 就收起來。"""
@@ -5517,22 +5693,34 @@ class App(tk.Tk):
         except UserFacingError as e:
             self._run_set_preview(str(e))
             return
+        # 這一場用誰:畫面上選的那個;那一排收著時(只有一個能用)問 `minutes` 會挑誰。
+        # ⚠️ **收著時不可以當成「沒有選擇」就略過下面那一問**:不支援 Apple Intelligence、
+        # 只剩 Qwen 的 Mac 那一排正是收著的,而它第一次按下去一樣要下載 3 GB。
+        # 先等背景偵測(`_probe_wait`):那之後 `default_engine` 用的是快取,不在主執行緒起行程
+        self._probe_wait()
+        engine = self._minutes_engine or minutes.default_engine()
+        # 第一次用 Qwen:先講清楚要下載 3 GB、可能等很久(使用者 2026-10-14 選「先問一次」)
+        if engine == minutes.ENGINE_QWEN and not models.mlx_llm_cached() and not self._ask_close(
+                MINUTES_DOWNLOAD_ASK.format(gb=models.MLX_LLM_DOWNLOAD_GB),
+                ok_text=MINUTES_DOWNLOAD_OK):
+            return
         cancel.reset()
         self._run_lock(True)
         self._run_dirs = [str(minutes.drafts_dir())]   # 要在 `_run_lock(True)` 之後,它會歸零
-        # Windows 的等待提示要問有沒有內顯(`minutes._ov_plan`):先等背景偵測,理由見 `_probe_wait`
-        self._probe_wait()
-        hint = minutes.wait_hint(minutes.duration_sec(md_text))
+        # (Windows 的等待提示要問有沒有內顯,`minutes._ov_plan`:背景偵測上面已經等過了)
+        hint = minutes.wait_hint(minutes.duration_sec(md_text), engine)
         first = f"{md_path.name}:整理中…" + (f"({hint})" if hint else "")
         self._stage(first)
         self._run_set_preview("")
-        self._run_job(lambda say: self._minutes_work(md_path, md_text, first, say),
+        self._run_job(lambda say: self._minutes_work(md_path, md_text, first, say, engine),
                       self._minutes_done)
 
-    def _minutes_work(self, md_path: Path, md_text: str, first: str, say) -> None:
-        """「地端 AI」的主體(**工作執行緒**上)。"""
+    def _minutes_work(self, md_path: Path, md_text: str, first: str, say,
+                      engine: str | None = None) -> None:
+        """「地端 AI」的主體(**工作執行緒**上)。`engine` 是 None 時由 `minutes` 自己挑
+        (Windows,或 Mac 只有一個能用時)。"""
         minutes.clear_capability_cache()
-        body = minutes.generate(md_text, lambda f: say(("run_stage", (first, f))))
+        body = minutes.generate(md_text, lambda f: say(("run_stage", (first, f))), engine=engine)
         text = minutes.render(md_path, body)
         out = minutes.save(md_path, text)
         say(("run_preview", text))
@@ -5541,6 +5729,9 @@ class App(tk.Tk):
     def _minutes_done(self, error) -> None:
         """「地端 AI」收尾。成功時階段那一行已經由工作執行緒寫好了。"""
         self._run_lock(False)
+        # 第一次用 Qwen 下載完了:說明那一行從「第一次用時下載」換成「已下載」(失敗也重寫:
+        # 下載到一半停掉時它仍是沒下載)
+        self._minutes_engine_note_sync()
         if error is None:
             self._run_bar.configure(value=0)
             self._run_open.configure(state="normal")
@@ -5823,8 +6014,12 @@ class App(tk.Tk):
         body.columnconfigure(0, minsize=self.px(ADV_TEXT_W), weight=1)
         body.columnconfigure(1, minsize=self.px(ADV_CTL_W))
         # 這扇窗有幾列(分隔線要靠它算出「哪一列是最後」,見 `section`)。
-        # ⚠️ 第四列只在護欄真的會動東西的機器上才有(見 `HONOR_TITLE`)
-        rows = 4 if live_scribe.guardrail_applies() else 3
+        # ⚠️ 後兩列只在用得到的機器上才有:Qwen 那列要這台能用 Qwen(Mac,見 `QWEN_ROW_TITLE`),
+        # 現場收音那列要護欄真的會動東西(見 `HONOR_TITLE`)——用不到的機器上冒出一列按了
+        # 沒作用的控制項,就是一個那個平台看得到的文案變更
+        has_qwen = minutes.qwen_available()
+        has_honor = live_scribe.guardrail_applies()
+        rows = 3 + has_qwen + has_honor
 
         def section(n: int, title: str, hint: str, build):
             r"""一列:左邊小標＋一行說明,右邊控制項;段與段之間一條細線。
@@ -5904,13 +6099,24 @@ class App(tk.Tk):
 
         self._cores_hint = section(2, "CPU 核心數", cores_info(), cores)
 
+        # ---- 地端 AI 模型(Mac 的 Qwen 4B:看大小、刪除) --------------------------- #
+        # (2026-10-14 使用者選放這裡:刪模型是很少做的維護動作。)⚠️ **它不是這一趟工作的
+        # 參數**,但一樣要跟著工作鎖:整理中刪掉,子行程讀到一半的權重就不見了。
+        if has_qwen:
+            def qwen(parent):
+                self._qwen_delete = HandButton(parent, text=QWEN_DELETE, style="Small.TButton",
+                                               command=self._qwen_delete_ask)
+                self._qwen_delete.pack(fill="x")
+
+            self._qwen_hint = section(3, QWEN_ROW_TITLE, qwen_row_info(), qwen)
+
         # ---- 現場收音也照上面的設定跑 -------------------------------------- #
         # (2026-09-28 使用者:「現場錄音請改為還是能讓我調整模型為精準,因為我想
         # 測試看看」;選案「加一顆開關,預設關」。)
         # ⚠️ **勾了要立刻 `_adv_sync()`**:上面兩列的釘死狀態是算出來的,不重算的話
         # 畫面還停在「灰著、顯示快速」,而錄音已經照精準跑了——正好是這一整族要修掉
         # 的那種落差。
-        if rows == 4:
+        if has_honor:
             def honor(parent):
                 self._honor_check = ttk.Checkbutton(
                     parent, text=HONOR_LABEL, variable=self._rec_honor,
@@ -5919,7 +6125,7 @@ class App(tk.Tk):
                     style="Card.TCheckbutton", command=self._adv_sync)
                 self._honor_check.pack(fill="x")
 
-            section(3, HONOR_TITLE, HONOR_INFO, honor)
+            section(rows - 1, HONOR_TITLE, HONOR_INFO, honor)
 
         bar = ttk.Frame(pad, style="Page.TFrame")
         bar.pack(fill="x", pady=(self.px(CARD_GAP), 0))
@@ -5961,6 +6167,7 @@ class App(tk.Tk):
         self._model_cells = self._device_cells = None
         self._cores_spin = None
         self._honor_check = None
+        self._qwen_hint = self._qwen_delete = None
         self._model_hint = self._device_hint = self._cores_hint = None
         if win is not None and win.winfo_exists():
             win.destroy()
@@ -6069,6 +6276,26 @@ class App(tk.Tk):
         # 放開釘死的那顆開關。
         if self._honor_check is not None:
             self._honor_check.configure(state="disabled" if busy else "normal")
+        # 沒有東西可刪(還沒下載)也灰著
+        if self._qwen_delete is not None:
+            self._qwen_delete.configure(
+                state="disabled" if busy or not models.mlx_llm_size() else "normal")
+
+    def _qwen_delete_ask(self) -> None:
+        """「刪除模型…」:問一次再刪;刪完那一列與「地端 AI」那一格的說明一起重寫。"""
+        if self._params_busy() or not models.mlx_llm_size():
+            return
+        if not self._ask_close(QWEN_DELETE_ASK.format(gb=models.mlx_llm_size() / 1e9),
+                               ok_text="刪除"):
+            return
+        try:
+            models.delete_mlx_llm()
+        except OSError as e:
+            logger.warning("刪除 Qwen 模型失敗:%s", e)
+        if self._qwen_hint is not None:
+            self._qwen_hint.configure(text=qwen_row_info())
+        self._adv_lock()
+        self._minutes_engine_note_sync()
 
     def _device_show(self, key: str) -> None:
         r"""切運算裝置(自動／只用 CPU)。⚠️ **轉檔中不准切**,同「模型」那排。
@@ -6170,6 +6397,8 @@ class App(tk.Tk):
         own = self._busy["rec"] or self._busy["run"]
         self._segment_enable(self._mode_cells, not own)
         self._segment_enable(self._scene_cells, not own)
+        # 「地端 AI」選模型那一排同一個道理(收著的時候鎖不鎖都看不到,一律照鎖)
+        self._segment_enable(self._minutes_engine_cells, not own)
         self._adv_lock()
         for btn in self._adv_btns:
             btn.configure(state="disabled" if busy else "normal")
@@ -6816,7 +7045,10 @@ class App(tk.Tk):
         has_audit = bool(self._naming_audit)
         seed = (set(audit_flags) if audit_flags is not None
                 else naming_core._audit_flags(getattr(result, "quality", None)))
-        guesses, rivals, flags = naming_core._naming_clues(
+        # `nearest` = 誰都不夠像的那幾位聲音最接近誰(2026-10-13,同手機版):只當線索、
+        # 絕不自動填名;與 `rivals` 互斥。⚠️ **不交給 `_naming_persist`**——那份 rivals
+        # 會進核對的改掛選單、被塗成琥珀底,而琥珀是「分不開」的意思
+        guesses, rivals, flags, nearest = naming_core._naming_clues(
             count, result.voiceprints or {}, seed, has_audit)
         prefill = dict(guesses) if names is None else dict(names)
         # ⚠️ **存的是 guesses 不是 prefill**:開頁還原時 prefill 是使用者的草稿,
@@ -6838,13 +7070,14 @@ class App(tk.Tk):
             # ⚠️ **顯示名稱走 `export.speaker_label`**(全 repo 唯一那一份):它是
             # **1-based**(講者 0 顯示成「講者 1」),而 md 裡寫的也是那個。
             mine = rivals.get(spk) or []
-            choices, n_rivals = naming_core.rival_order(known, mine)
+            near = [] if mine else (nearest.get(spk) or [])
+            choices, n_rivals = naming_core.rival_order(known, mine, near)
             self._naming_block(
                 spk, f"{export.speaker_label(spk)} 的名字",
-                naming_core._hint_text(hints.get(spk), mine),
+                naming_core._hint_text(hints.get(spk), mine, near),
                 prefill.get(spk, ""), choices, n_rivals,
                 play=(clips is None or spk in clips),
-                audit_btn=has_audit and spk in flags)
+                audit_btn=has_audit and spk in flags, nearest=bool(near))
         # 「未知」那一塊(逐字稿有未知段落才有;同網頁版 `_name_section_updates`):
         # 有核對可用時**只留核對鈕**——給整批未知一個名字正是檔尾診斷勸阻的事(它常是
         # 多人混合),而試聽只播最長一句、混合群裡那一句是誰的都不知道(使用者 2026-08-13
@@ -6874,7 +7107,7 @@ class App(tk.Tk):
             self._naming_persist(result, hints, prefill, flags, rivals)
 
     def _naming_block(self, spk: int, label: str, clue, value, choices, n_rivals: int,
-                      play: bool, audit_btn: bool) -> None:
+                      play: bool, audit_btn: bool, nearest: bool = False) -> None:
         r"""命名卡裡的一個區塊(一位講者,或「未知」)。
 
         第 0 欄由上而下三列:欄位名、認人線索、滿寬的下拉;第 1 欄是疊著的兩顆鈕,
@@ -6914,7 +7147,8 @@ class App(tk.Tk):
             self._combo_setup(combo)          # 點整條就展開、展開後可打字、清單圓角
             # 聲紋分不開的那幾位:候選排到選單最前面、標成琥珀底(同網頁版的 3 案,
             # 使用者 2026-08-15 選定)。認得出來的人 `n_rivals` 是 0,這一塊就與先前一樣。
-            self._mark_rivals(combo, n_rivals)
+            # `nearest`:那幾筆是「誰都不夠像」的最接近者,灰字標題圈起來、不塗琥珀
+            self._mark_rivals(combo, n_rivals, nearest=nearest)
             var.trace_add("write", lambda *_a, s=spk: self._naming_changed(s))
             if value.strip() and spk in self._naming_clues:
                 self._naming_clues[spk].grid_remove()
@@ -7774,6 +8008,7 @@ class App(tk.Tk):
         if running:
             self._taskbar(None)
             self._run_dirs = None       # 這一趟的成品位置由這一趟自己說
+            self._relabel_stage = ""    # 上一份的缺檔提示不得殘留到這一份
             self._minutes_jump_show(None)   # 收工捷徑指的是上一趟的成品
         else:
             self._taskbar_end(outcome)

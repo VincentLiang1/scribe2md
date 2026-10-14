@@ -34,6 +34,14 @@ KEY_CPU_ONLY = "cpu_only"
 # 啟動時要不要問 GitHub 有沒有新版(預設要;2026-10-07 使用者指定「勾了不要再提醒
 # 就不要檢查」)。描述的是「這台電腦的人要不要被提醒」,不是某一份工作,所以落地。
 KEY_UPDATE_CHECK = "update_check"
+# Mac 的會議紀錄草稿上次用哪個模型(`minutes.ENGINE_*`)。⚠️ **它描述的是「一份工作」,
+# 照這一檔的原則本來不該記**——是使用者 2026-10-14 指定「每場選、記住上次的」(同手機版
+# `AISummary.$engine`):要不要下載 3 GB、要等多久是他自己權衡過的,不該每次重選。
+KEY_MINUTES_ENGINE = "minutes_engine"
+# Mac 上次背景偵測時「地端 AI」用不用得了(`minutes.expected_available`)。描述的是**這台
+# 電腦**,所以落地:開窗時照它先放那一格,偵測完再更正——不記的話每次開窗都是三格 → 四格
+# 跳一次(2026-10-14 使用者回報「會卡一下」)
+KEY_MINUTES_AVAILABLE = "minutes_available"
 
 
 def store_file() -> Path:

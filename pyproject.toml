@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "1.4.3"
+version = "1.5.0"
 description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
 # AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
 # 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
@@ -38,6 +38,10 @@ dependencies = [
     # 看不出優劣(2026.2 重跑逐字相同,差異確實來自換版),見 docs/dev/pipeline.md
     "openvino-genai>=2026.4",
     "huggingface_hub>=0.20",
+    # 會議紀錄草稿的 Qwen3.5-4B(Mac;GPU 跑,同手機版那一份模型)。只在 `minutes_worker`
+    # 子行程裡 import。⚠️ **只掛 Apple Silicon 的 Mac**:MLX 只有那裡有,Windows 走上面的
+    # OpenVINO。實測與「repetition_context_size 要放大」見 docs/spec/mac/05 §5.4b
+    "mlx-lm>=0.32; sys_platform == 'darwin' and platform_machine == 'arm64'",
     # ---- 公司網路的 HTTPS 憑證(見 __init__._trust_bundled_certificates 與
     # models.with_tls_rescue;兩者治的是不同的壞法,缺一台就有一種機器裝不起來)----
     # certifi:公開根憑證包。已是 requests 的傳遞相依,但**直接用就必須明寫**
