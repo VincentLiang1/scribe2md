@@ -32,6 +32,12 @@ logger = logging.getLogger(__name__)
 # 新增種類要同步更新 docs/spec/02 的對照表(README 已經沒有這張表)。
 KIND_MERGED_CELLS = "merged_cells"
 KIND_CELL_COLOR = "cell_color"
+# 儲存格裡被劃掉的字。md 裡**有**照樣以 `~~` 標出來,但仍算失真:RAG 端常把
+# markdown 記號剝掉再切塊,剝完之後被劃掉的字看起來就是有效內容——那正是
+# 原本整批照常輸出的毛病(2026-10-16 使用者指出)
+KIND_STRIKE = "strike"
+# 儲存格註解:內容完整列在工作表末尾,只是告知(lossy=False)
+KIND_CELL_COMMENT = "cell_comment"
 KIND_CHART = "chart"
 KIND_PIVOT = "pivot"
 KIND_COND_FORMAT = "conditional_format"

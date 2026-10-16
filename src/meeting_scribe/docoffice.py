@@ -12,6 +12,7 @@ import hashlib
 import html
 import logging
 import re
+import unicodedata
 import zipfile
 from pathlib import Path
 
@@ -1272,6 +1273,210 @@ def _fmt(value) -> str:
     return str(value)
 
 
+# ---- 儲存格內的刪除線與多段字色(rich text)----
+#
+# 公司的 Excel 很常用「劃掉」表示異動(「一部、~~甲組、乙組~~」),
+# 而 `data_only=True` 讀到的是純字串,同一格裡哪幾個字被劃掉全部消失——被劃掉
+# 的字照常輸出,看起來就是有效內容(2026-10-16 使用者指出)。只有另外用
+# `rich_text=True` 讀才拿得到每一段的字型。
+
+_RICH_RUN_RE = re.compile(rb"<(?:\w+:)?rPr\b")
+
+
+def _has_rich_runs(src: Path) -> bool:
+    """活頁簿裡有沒有「同一格內分段設字型」的文字。
+
+    第三次 `load_workbook` 是整份重讀(非 read_only,見 `convert_xlsx`),
+    絕大多數檔案根本沒有分段字型,先掃一眼 zip 就省下來。分段字型只會住在
+    共用字串表或工作表內嵌字串(`<is>`)裡,兩處都看。"""
+    try:
+        with zipfile.ZipFile(src) as z:
+            for name in z.namelist():
+                if name == "xl/sharedStrings.xml" or (
+                    name.startswith("xl/worksheets/") and name.endswith(".xml")
+                ):
+                    if _RICH_RUN_RE.search(z.read(name)):
+                        return True
+    except Exception:  # pragma: no cover - 讀不到就當沒有,絕不拖垮轉檔
+        logger.debug("讀不到 %s 的分段字型資訊", src, exc_info=True)
+    return False
+
+
+def _is_strike_sep(ch: str) -> bool:
+    """`~~` 不可以貼著的字元:空白與標點(含全形)。
+
+    GFM 的刪除線跟粗體一樣吃 flanking 規則:收尾的 `~~` 前面是標點、後面
+    又接著中文字時**不算收尾**,整段原樣印出兩個波浪號(「~~甲組、~~乙」
+    就是這樣壞掉的)。把邊界上的分隔符移到 `~~` 外面,兩端貼著的就一定是
+    文字本身。"""
+    if ch.isspace():
+        return True
+    if ch.isascii():
+        return not ch.isalnum()
+    return unicodedata.category(ch)[0] in "PS"
+
+
+def _colour_key(color):
+    """字色 → 可比較的鍵;「沒設」與預設黑色都算 None(同一種顏色)。"""
+    if color is None:
+        return None
+    kind = getattr(color, "type", None)
+    value = getattr(color, "value", None)
+    if (kind == "rgb" and value in ("FF000000", "00000000")) or (kind == "theme" and value == 1):
+        return None
+    return (kind, value, getattr(color, "tint", 0) or 0)
+
+
+def _rich_runs(value, cell_font) -> list[tuple[str, bool, object]]:
+    """儲存格的值 → [(文字, 有沒有刪除線, 字色鍵)]。
+
+    分段沒有自己設刪除線/字色的,**繼承整格的字型**(Excel 的規則):整格
+    劃掉、其中一段另外改了顏色,那一段仍然是劃掉的。"""
+    cell_strike = bool(getattr(cell_font, "strike", None))
+    cell_colour = _colour_key(getattr(cell_font, "color", None))
+    if not isinstance(value, list):   # CellRichText 是 list 的子類別
+        return [(_fmt(value), cell_strike, cell_colour)]
+    runs = []
+    for part in value:
+        font = getattr(part, "font", None)
+        if font is None:
+            runs.append((str(part), cell_strike, cell_colour))
+            continue
+        strike = font.strike if font.strike is not None else cell_strike
+        colour = _colour_key(font.color) if font.color is not None else cell_colour
+        runs.append((str(part.text or ""), bool(strike), colour))
+    return runs
+
+
+def _strike_markup(runs: list[tuple[str, bool, object]]) -> tuple[str, int]:
+    """分段 → (帶 `~~` 的文字, 幾處刪除線)。
+
+    兩條規則都是為了 GFM 渲染得出來:
+    1. **只隔著分隔符的刪除段合併成一段**(「~~甲組~~、~~乙組~~」→
+       「~~甲組、乙組~~」),否則每段都要各自過一次 flanking
+    2. **刪除段頭尾的分隔符移到外面**(見 `_is_strike_sep`)
+    整段只有分隔符被劃掉的(一個頓號)不標:標了也渲染不出來,而且沒有意義。"""
+    text = "".join(t for t, _s, _c in runs)
+    flags = [s for t, s, _c in runs for _ch in t]
+    spans: list[list[int]] = []
+    i, n = 0, len(text)
+    while i < n:
+        if not flags[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and flags[j]:
+            j += 1
+        if spans and all(_is_strike_sep(ch) for ch in text[spans[-1][1]:i]):
+            spans[-1][1] = j
+        else:
+            spans.append([i, j])
+        i = j
+    out: list[str] = []
+    pos = count = 0
+    for lo, hi in spans:
+        while lo < hi and _is_strike_sep(text[lo]):
+            lo += 1
+        while hi > lo and _is_strike_sep(text[hi - 1]):
+            hi -= 1
+        if lo == hi:
+            continue
+        out.append(text[pos:lo])
+        out.append(f"~~{text[lo:hi]}~~")
+        pos = hi
+        count += 1
+    out.append(text[pos:])
+    return "".join(out), count
+
+
+def _has_mixed_colours(runs: list[tuple[str, bool, object]]) -> bool:
+    return len({c for t, _s, c in runs if t.strip()}) > 1
+
+
+# ---- 儲存格註解 ----
+#
+# Excel 365 的「新式註解」(threaded comment,可以回覆的那種)openpyxl 不解析,
+# 它讀到的是 Excel 為舊版另存的**相容副本**:作者是 `tc={GUID}`、內文開頭是
+# 一段英文說明「[Threaded comment] Your version of Excel…」。真的作者名與回覆
+# 要自己去 `xl/threadedComments/` 與 `xl/persons/` 拿;GUID 全活頁簿唯一,
+# 所以不必走工作表的 rels 也對得上。
+
+_THREADED_PREFIX = "[Threaded comment]"
+_THREADED_SECTION_RE = re.compile(r"^(?:Comment|Reply):[ \t]*$", re.MULTILINE)
+_XML_ATTR_RE = re.compile(r'([\w:]+)="([^"]*)"')
+
+
+def _threaded_comments(src: Path) -> dict[str, list[tuple[str, str]]]:
+    """新式註解 → {討論串 GUID: [(作者, 內容), …]}(第一則是原註解,之後是回覆)。"""
+    out: dict[str, list[tuple[str, str]]] = {}
+    try:
+        with zipfile.ZipFile(src) as z:
+            names = z.namelist()
+            people: dict[str, str] = {}
+            for name in names:
+                if name.startswith("xl/persons/") and name.endswith(".xml"):
+                    xml = z.read(name).decode("utf-8", "replace")
+                    for m in re.finditer(r"<(?:\w+:)?person\b([^>]*)/?>", xml):
+                        attrs = dict(_XML_ATTR_RE.findall(m.group(1)))
+                        if "id" in attrs:
+                            people[attrs["id"]] = html.unescape(attrs.get("displayName", ""))
+            replies: list[tuple[str, str, str]] = []
+            for name in names:
+                if not (name.startswith("xl/threadedComments/") and name.endswith(".xml")):
+                    continue
+                xml = z.read(name).decode("utf-8", "replace")
+                for m in re.finditer(
+                    r"<(?:\w+:)?threadedComment\b([^>]*)>(.*?)</(?:\w+:)?threadedComment>",
+                    xml, re.S,
+                ):
+                    attrs = dict(_XML_ATTR_RE.findall(m.group(1)))
+                    t = re.search(r"<(?:\w+:)?text>(.*?)</(?:\w+:)?text>", m.group(2), re.S)
+                    entry = (people.get(attrs.get("personId", ""), ""),
+                             html.unescape(t.group(1)) if t else "")
+                    if attrs.get("parentId"):
+                        replies.append((attrs["parentId"], *entry))
+                    elif "id" in attrs:
+                        out[attrs["id"]] = [entry]
+            for parent, author, text in replies:
+                if parent in out:
+                    out[parent].append((author, text))
+    except Exception:  # pragma: no cover - 讀不到就退回相容副本
+        logger.debug("讀不到 %s 的新式註解", src, exc_info=True)
+    return out
+
+
+def _comment_row(
+    author: str, text: str, threaded: dict[str, list[tuple[str, str]]],
+) -> tuple[str, str]:
+    """一則註解 → (作者, 內容),內容壓成一行。
+
+    舊式註解的內文開頭照慣例是「作者:」(Excel 自動帶的),表格另有作者欄,
+    重複一次是純雜訊——但**只砍真的跟作者同名的那一段**,內文本來就以冒號
+    開頭的句子不動。"""
+    author = (author or "").strip()
+    text = text or ""
+    if author.startswith("tc=") or text.startswith(_THREADED_PREFIX):
+        thread = threaded.get(author[3:]) if author.startswith("tc=") else None
+        if thread:
+            first, *rest = thread
+            parts = [first[1]] + [
+                f"回覆({who}):{what}" if who else f"回覆:{what}" for who, what in rest
+            ]
+            return first[0], docmd.one_line(";".join(parts))
+        # 對不上 GUID:退回相容副本,剝掉那段英文說明、保留每一則的內文
+        sections = _THREADED_SECTION_RE.split(text)[1:]
+        bodies = [docmd.one_line(s) for s in sections if s.strip()]
+        if bodies:
+            text = ";".join([bodies[0]] + [f"回覆:{b}" for b in bodies[1:]])
+        author = ""
+    elif author:
+        for sep in (":", "："):   # 半形、全形冒號
+            if text.startswith(author + sep):
+                text = text[len(author) + len(sep):]
+                break
+    return author, docmd.one_line(text)
+
+
 def _chart_notes(ws) -> list[Block]:
     """圖表 → 先試著把底層資料的位置講出來,再退回單純標註。
 
@@ -1507,45 +1712,124 @@ def _layout_blocks(ws, rows: list[list[str]]) -> list[Block]:
     return out
 
 
-def _sheet_blocks(ws, ws_formula, huge: bool) -> tuple[list[Block], bool]:
+def _comment_blocks(ws, comments, labels: dict[int, str], threaded) -> list[Block]:
+    """工作表的儲存格註解 → 一節表格(沒有註解回 [])。
+
+    ⚠️ 標題用 `Heading(2)`(渲染成 `###`)不是更深一層:寬表走逐筆區塊時每筆
+    是 `### 第 N 筆`、並排版面的區塊也是 `###`,再深一層就會被切塊器掛到
+    **最後一筆/最後一個區塊**底下。標題帶工作表名同 `convert_xlsx` 的整表
+    附屬內容,chunk 脫離上下文時才知道是哪一張表的註解。"""
+    if not comments:
+        return []
+    body = [["儲存格", "項目", "作者", "內容"]]
+    for coord, row_no, author, text in comments:
+        who, what = _comment_row(author, text, threaded)
+        body.append([coord, docmd.one_line(labels.get(row_no, "")), who, what])
+    return [
+        Heading(2, f"{ws.title}:儲存格註解"),
+        Table(body, has_header=True, caption=f"{ws.title} · 儲存格註解(共 {len(comments)} 則)"),
+    ]
+
+
+def _sheet_blocks(
+    ws, ws_formula, huge: bool, ws_rich=None, threaded=None,
+) -> tuple[list[Block], bool]:
     """單一工作表 → (Blocks, 有沒有拆成並排區塊)。
 
     huge=True 時只讀值、跳過所有 metadata 檢查。⚠️ 「有沒有拆」要**由這裡
     回報**,不可以讓呼叫端回頭去嗅輸出裡的 `KIND_*`:那些 token 是給 RAG 端
     篩 `lossy_kinds` 用的,拿它當內部控制訊號的話,以後任何人為了多說一句話
     而增減一個 Note 都會遠端改到版面(huge 模式同樣會放 KIND_SIDE_BY_SIDE
-    的警告 Note,卻**沒有**拆——2026-08-20 /simplify 抓到的實例)。"""
+    的警告 Note,卻**沒有**拆——2026-08-20 /simplify 抓到的實例)。
+
+    `ws_rich` 是同一張表以 `rich_text=True` 讀的版本(沒有分段字型的檔案是
+    None,見 `_has_rich_runs`),只拿來查「同一格裡哪幾段被劃掉/換了顏色」。"""
     blocks: list[Block] = [Heading(1, str(ws.title))]
+    tail: list[Block] = []     # 工作表末尾的附屬內容(註解),每條 return 都要帶
     if huge:
         blocks.append(Note(
-            "本工作表資料量龐大,已略過合併儲存格、底色與圖表的檢查以節省記憶體"
-            "(資料本身完整,一列都沒有省略)",
+            "本工作表資料量龐大,已略過合併儲存格、底色、刪除線、儲存格註解與圖表的"
+            "檢查以節省記憶體(資料本身完整,一列都沒有省略)",
             docmd.KIND_HUGE_SHEET,
         ))
         rows = [[_fmt(v) for v in row] for row in ws.iter_rows(values_only=True)]
     else:
         merges, n_merged = _merge_map(ws)
-        coloured = 0
+        coloured = struck = mixed = 0
+        marked: dict[tuple[int, int], str] = {}   # 帶 `~~` 的文字,只記左上角
+        comments: list[tuple[str, int, str, str]] = []
+        labels: dict[int, str] = {}                # 每列第一個非空文字(註解的「項目」)
         rows = []
         for row in ws.iter_rows():
             line = []
             for cell in row:
                 value = merges.get((cell.row, cell.column), cell.value)
                 # has_style 短路:實測 2000 格只有 3 格為真,省 4 倍
-                if cell.has_style and _is_coloured(cell):
+                is_coloured = cell.has_style and _is_coloured(cell)
+                text = _fmt(value)
+                # 用格子**自己**的值:合併範圍的其餘格是 None,它們的刪除線
+                # 由迴圈後依左上角補上(不然左上角劃掉、複本卻是乾淨的字)
+                own = cell.value
+                if own is not None:
+                    rich = None
+                    if ws_rich is not None and isinstance(own, str):
+                        rich = ws_rich.cell(cell.row, cell.column).value
+                    whole = cell.has_style and bool(cell.font.strike)
+                    if isinstance(rich, list) or whole:
+                        runs = _rich_runs(rich if isinstance(rich, list) else own, cell.font)
+                        markup, n = _strike_markup(runs)
+                        if n:
+                            struck += n
+                            text = marked[(cell.row, cell.column)] = markup
+                        if _has_mixed_colours(runs):
+                            mixed += 1
+                            # 整格是黑字、只有其中一段換色的格子 `_is_coloured`
+                            # 判不出來,但它一樣帶著顏色語意
+                            is_coloured = True
+                if is_coloured:
                     coloured += 1
-                line.append(_fmt(value))
+                if cell.comment is not None:
+                    comments.append((cell.coordinate, cell.row,
+                                     cell.comment.author or "", cell.comment.text or ""))
+                if cell.row not in labels and isinstance(value, str) and value.strip():
+                    labels[cell.row] = value
+                line.append(text)
             rows.append(line)
+        for rng in _merged_ranges(ws) if marked else ():
+            markup = marked.get((rng.min_row, rng.min_col))
+            span = (rng.max_row - rng.min_row + 1) * (rng.max_col - rng.min_col + 1)
+            if markup is None or span > _MAX_MERGE_CELLS:
+                continue   # 上限同 `_merge_map`:那裡沒展開的這裡也不補
+            for r in range(rng.min_row, min(rng.max_row, len(rows)) + 1):
+                line = rows[r - 1]
+                for c in range(rng.min_col, min(rng.max_col, len(line)) + 1):
+                    line[c - 1] = markup
         if n_merged:
             blocks.append(Note(
                 f"本工作表有 {n_merged} 處合併儲存格,已展開成一般儲存格",
                 docmd.KIND_MERGED_CELLS,
             ))
         if coloured:
+            extra = ";部分儲存格內有多段不同字色,請回原檔查看" if mixed else ""
             blocks.append(Note(
-                f"本工作表有 {coloured} 個儲存格以底色或字色標註,Markdown 無法呈現顏色",
+                f"本工作表有 {coloured} 個儲存格以底色或字色標註,Markdown 無法呈現顏色{extra}",
                 docmd.KIND_CELL_COLOR,
             ))
+        if struck:
+            # ⚠️ 說明裡不寫出兩個波浪號本身:那幾個字放進段落裡會被當成刪除線
+            # 記號(或殘留成字面的 `~~`),而這行正是要教人怎麼讀它
+            blocks.append(Note(
+                f"本工作表有 {struck} 處文字加了刪除線(原檔裡被劃掉的字),"
+                "已用 Markdown 刪除線標示——那些字不是有效內容",
+                docmd.KIND_STRIKE,
+            ))
+        if comments:
+            blocks.append(Note(
+                f"本工作表有 {len(comments)} 則儲存格註解,列於本工作表末尾",
+                docmd.KIND_CELL_COMMENT,
+                lossy=False,
+            ))
+        tail = _comment_blocks(ws, comments, labels, threaded or {})
         blocks.extend(_chart_notes(ws))
         if getattr(ws, "_pivots", None):
             blocks.append(Note("此處有樞紐分析表,Markdown 無法呈現", docmd.KIND_PIVOT))
@@ -1560,7 +1844,7 @@ def _sheet_blocks(ws, ws_formula, huge: bool) -> tuple[list[Block], bool]:
         rows.pop()
     if not rows:
         blocks.append(Note("這個工作表是空的", docmd.KIND_BLANK_PAGE, lossy=False))
-        return blocks, False
+        return blocks + tail, False
 
     # 並排版面(為列印排的寬表)要先依區塊還原,否則同一列會把不同區塊的
     # 內容綁成一筆。
@@ -1594,7 +1878,7 @@ def _sheet_blocks(ws, ws_formula, huge: bool) -> tuple[list[Block], bool]:
             lossy=False,
         ))
         blocks.extend(layout)
-        return blocks, True
+        return blocks + tail, True
 
     # 中段的整列空白也剪掉(尾端那個 while 只咬得到最後面)。Excel 的
     # max_row 常被遠處一格沒清掉的舊資料撐開,中間就多出整片空列——留著的話
@@ -1626,7 +1910,7 @@ def _sheet_blocks(ws, ws_formula, huge: bool) -> tuple[list[Block], bool]:
 
     # 寬表要不要改逐筆區塊由 docmd.render 決定(渲染政策只有一個出處)
     blocks.append(Table(rows, has_header=True, caption=caption))
-    return blocks, False
+    return blocks + tail, False
 
 
 def _formula_blocks(ws, ws_formula, rows: list[list[str]]) -> list[Block]:
@@ -1870,13 +2154,26 @@ def convert_xlsx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
             )
         except Exception:
             logger.exception("讀取公式失敗,略過公式檢查:%s", src.name)
+    wb_rich = None
+    if not huge and _has_rich_runs(src):
+        try:
+            # ⚠️ 不可以 read_only:唯讀模式只有共用字串表會照 rich_text 解析,
+            # 工作表裡的內嵌字串(openpyxl 自己存檔就是寫這種)讀回來仍是純
+            # 字串,分段的刪除線照樣消失
+            wb_rich = mod.load_workbook(str(src), data_only=True, rich_text=True)
+        except Exception:
+            logger.exception("讀取分段字型失敗,略過刪除線檢查:%s", src.name)
+    threaded = _threaded_comments(src) if not huge else {}
 
     blocks: list[Block] = []
     for ws in wb.worksheets:
         ws_formula = None
         if wb_formula is not None and ws.title in wb_formula.sheetnames:
             ws_formula = wb_formula[ws.title]
-        sheet_blocks, split = _sheet_blocks(ws, ws_formula, huge)
+        ws_rich = None
+        if wb_rich is not None and ws.title in wb_rich.sheetnames:
+            ws_rich = wb_rich[ws.title]
+        sheet_blocks, split = _sheet_blocks(ws, ws_formula, huge, ws_rich, threaded)
         blocks.extend(sheet_blocks)
         extras: list[Block] = _sheet_images(ws, assets, ocr_enabled)
         # 圖形/文字方塊裡的字 openpyxl 讀不到(見 _sheet_drawing_texts)

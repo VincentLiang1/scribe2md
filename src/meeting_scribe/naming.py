@@ -12,6 +12,7 @@ r"""講者命名與核對的純邏輯 —— **不依賴任何 UI 框架**。
 測試 monkeypatch 七次,連同呼叫它的後者一起搬,那些假貨會**靜默失效**——搬它們
 要同一批把那七處 patch 改指到這裡,那是下一輪的事。
 """
+import bisect
 import logging
 import shutil
 import tempfile
@@ -601,3 +602,90 @@ def _rival_pool(rivals) -> list[str]:
     for spk in sorted(rivals or {}):
         pool.extend(rivals[spk])
     return list(dict.fromkeys(pool))
+
+
+# ---- 混了不同人的群:命名後不登記聲紋(2026-10-16,與手機版同一套)----
+#
+# 命名後 `enroll` 存的是**整群的質心**:群裡混了別人,質心就不是這個人的聲音,
+# 而那個錯誤看不見、又會自我複製(下次自動認名 → 再登記一次)。手機版
+# 2026-10-16 實機那一場:命名的群「比較像別群的段」都 ≤ 0.14、混雜的 0.40
+# 以上;**群內一致性分不開**(講很久的人自然偏低)。使用者選「自動不登記」,
+# 門檻落在兩邊中間,之後看記錄再校(scribe2md-ios `docs/spec/08` §8.10 (7))。
+#
+# ⚠️ **跟 `types.SpeakerQuality` 那條「判不出這一群有幾個人」不衝突**:那條否決
+# 的是拿統計量**下判決、改分群或標可疑**;這裡只決定「這一次要不要把質心存進
+# 聲紋庫」,判錯的代價是少登記一筆(下次留白、使用者自己填),不是錯誤進庫。
+MIXED_LIMIT = 0.3
+
+
+def mixed_share(vecs, labels, centroids, same_as) -> dict[int, float]:
+    """每位講者有幾成的聲紋片段比較像「別人」的質心。
+
+    vecs 與 labels 一一對應(每段的原始聲紋、所屬講者);centroids 是
+    {講者: 原始聲紋質心}(就是要登記的那一份)。沒有質心的講者(未知)不計。
+    `same_as(a, b)` 為真的兩群當同一個人——使用者取了同名,同一人被拆成幾群
+    時彼此本來就像,不能算「混到別人」。⚠️ 與手機版 `SpeakerSummary.mixedShare`
+    逐條對應,改判準要兩邊一起改。"""
+    total: dict[int, int] = {}
+    closer: dict[int, int] = {}
+    keys = list(centroids)
+    if not keys:
+        return {}
+    mat = np.stack([np.asarray(centroids[k], dtype=np.float64) for k in keys])
+    for vec, lab in zip(vecs, labels):
+        if lab not in centroids:
+            continue
+        total[lab] = total.get(lab, 0) + 1
+        sims = mat @ np.asarray(vec, dtype=np.float64)
+        mine = sims[keys.index(lab)]
+        if any(k != lab and not same_as(lab, k) and s > mine
+               for k, s in zip(keys, sims)):
+            closer[lab] = closer.get(lab, 0) + 1
+    return {lab: closer.get(lab, 0) / n for lab, n in total.items()}
+
+
+def segment_labels(feat, blocks) -> tuple[list, list[int]]:
+    """分群檔裡每一段有抽聲紋的區段 → (聲紋, 所屬講者)。
+
+    講者取**逐字稿現在的樣子**(核對資料的區塊,中點落在哪一輪發言就算誰):
+    重設講者、改人數、核對改掛之後,分群當下的標籤已經不是畫面上那一份了,
+    而使用者命名的對象是畫面上那一份。落在任何一輪之外的段(靜默裡的碎段)不計。"""
+    spans = sorted(
+        (float(b["start"]), float(b["end"]), int(b["speaker"])) for b in blocks or []
+    )
+    starts = [s for s, _e, _k in spans]
+    vecs, labels = [], []
+    for k, idx in enumerate(feat.emb_idx):
+        lo, hi = feat.spans[idx]
+        mid = (lo + hi) / 2
+        pos = bisect.bisect_right(starts, mid) - 1
+        if pos < 0 or mid >= spans[pos][1]:
+            continue
+        vecs.append(feat.vecs[k])
+        labels.append(spans[pos][2])
+    return vecs, labels
+
+
+def mixed_shares_for(outputs, audit, centroids, names) -> dict[int, float]:
+    """套用名字時要的混雜比例({講者 0-based: 比例});**算不出來回 {}**。
+
+    算不出來 = 沒有分群檔(線上會議分軌錄音、v0.7.3 之前的逐字稿)、分群檔
+    讀不動、或沒有核對資料。那時照舊登記——擋不擋是「有證據才擋」,沒有
+    證據時退回原本的行為,不是一律不登記。names = {講者 0-based: 名字}。"""
+    blocks = (audit or {}).get("blocks") or []
+    path = _features_for(outputs)
+    if not centroids or not blocks or path is None:
+        if centroids:
+            logger.info("沒有分群檔或核對資料,這次不檢查混雜的群(照舊登記)")
+        return {}
+    try:
+        feat = diarize.load_features(path)
+    except UserFacingError:
+        logger.info("分群檔用不動,這次不檢查混雜的群:%s", path.name)
+        return {}
+    vecs, labels = segment_labels(feat, blocks)
+
+    def same_as(a: int, b: int) -> bool:
+        return bool(names.get(a)) and names.get(a) == names.get(b)
+
+    return mixed_share(vecs, labels, centroids, same_as)

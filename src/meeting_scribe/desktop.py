@@ -7843,6 +7843,8 @@ class App(tk.Tk):
         ⚠️ **在「🔍 核對」裡改掛過的講者不登記聲紋**(使用者 2026-08-13 選定):改掛等於
         他親口說「這一群不只一個人」,不純的群一旦登記,聲紋庫就把別人的聲音學進這個人
         名下——下次認得更錯,而使用者看不出來。逐字稿照樣改名:那是他確認過的事實。
+        ⚠️ **超過 3 成的段比較像別群的講者也不登記**(2026-10-16,同手機版;判準在
+        `naming.mixed_share`,同名的群不算別群):同一個理由,只是證據來自聲紋而不是改掛。
         ⚠️ **套用即收工**(同網頁版):卡片收起、畫面復位。先前套用後卡片留著、按鈕還能
         按——第二次按名字改不到任何行、`enroll` 卻照跑,同一份聲紋重複進庫、白佔那個人
         一個名額。"""
@@ -7886,6 +7888,13 @@ class App(tk.Tk):
         # ⚠️ `result.voiceprints` 是**每位講者的聲紋向量**({講者: 質心}),不是名字
         # ——把它當成預填名用會塞一個 numpy 陣列進下拉選單(第一版就寫錯了)。
         impure = {int(i) for i in self._naming_audit.get("reassigned") or ()}
+        # ⚠️ **混了不同人的群不登記**(使用者 2026-10-16 選「自動不登記」,同手機版):
+        # 超過 `MIXED_LIMIT` 的段比較像別群(取了同名的群不算別群),質心就不是這個人的
+        # 聲音。名字照樣進名單、逐字稿照樣用這個名字;**畫面不另外提示**(同手機版),
+        # 只寫記錄、「聲紋也記起來了」的人數照實少算。算不出來(沒有分群檔)照舊登記
+        mixed = naming_core.mixed_shares_for(
+            result.outputs, self._naming_audit, result.voiceprints or {},
+            {spk1 - 1: name for spk1, name in picked.items()})
         roster_before = roster.current()
         enrolled, held = 0, []
         # ⚠️ **照講者編號排**:同一個名字給了不只一位時,聲紋進庫的先後由編號決定,
@@ -7899,6 +7908,11 @@ class App(tk.Tk):
             if (spk1 - 1) in impure:
                 logger.info("「%s」核對時改掛過段落,這次不登記聲紋", name)
                 held.append(name)
+                continue
+            share = mixed.get(spk1 - 1)
+            if share is not None and share > naming_core.MIXED_LIMIT:
+                logger.info("「%s」(講者 %d)有 %.0f%% 的段比較像別群,這次不登記聲紋",
+                            name, spk1, share * 100)
                 continue
             voiceprints_store.enroll(name, vec)
             enrolled += 1

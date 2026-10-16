@@ -170,6 +170,31 @@ _BLOCK_MIN_SIM = 0.60
 # 各種規模的會議——所以逐字稿檔尾另有一整節診斷把每個標籤的數字攤開
 # (export._speaker_diagnostics),不要指望門檻自己解決全部問題。
 _AUTO_STOP_SIM = 0.60
+# ---- 一人主講:換一個停止門檻(2026-10-16 加,數據見 docs/dev/pipeline.md)----
+# 上面的 0.60 是在「扣掉全場均值之後」的空間裡量的。一個人講了九成的
+# 場合,全場均值**就是他本人**(實測 cos 0.9996),扣完
+# 之後他自己的發言塊彼此相似度中位只剩 −0.014——身分訊號被扣光了,0.60
+# 永遠合不起來,一場 2 小時的錄音因此把主講者拆成 25 群。兩人對談碎成
+# 16 群是同一個病的較輕版本。
+#
+# 判法:先照指定人數粗分 _DOMINANT_PREPASS_K 群,看最大那群的原始質心與
+# 全場均值有多同向。實測:那一場 0.988、兩人對談 0.983;沒有碎的四場
+# 0.958(5 人對照組)/0.940/0.933/0.915/0.847。⚠️ **窗口只有 0.958 ↔ 0.983**,
+# 而判成立的錄音目前只有兩份——要動這個數字先把五份 fixture 跑過。
+#
+# 成立時停止門檻改用 _DOMINANT_STOP_SIM。那一場的合併軌跡:主講者
+# 自己的合併都在 ≥0.158 發生,第一個真的併錯人(111 秒那位併進主講者)
+# 在 0.127;0.13~0.20 的結果完全相同(主講者 2 群、其他人 89~100% 各在
+# 自己那群),取中間偏下的 0.15。⚠️ 主講者還是會分成兩群(連續講授 vs
+# 問答時的短句,段長中位 8 秒 vs 2 秒)——在這個空間裡那兩群要到最後
+# 一刀才會合,任何門檻都併不起來;命同一個名字就是正解。
+# ⚠️ **已知風險**:扣掉主講者之後,**其他人**都帶著同一個「−主講者」成分,
+# 彼此會被墊得比較像(合成資料:四位正交的插話者扣完是 0.40)。真實那場
+# 四位與會者到 0.11~0.14 才互相併,所以 0.15 守得住;很多位提問者的場合,
+# 他們有可能被併在一起。
+_DOMINANT_PREPASS_K = 8
+_DOMINANT_GATE = 0.97
+_DOMINANT_STOP_SIM = 0.15
 # 自動模式碎屑吸收改為「兩層」(取代舊的比例門檻——比例門檻以總語音量計,
 # 會議越長門檻越高,3.9 小時會議實測把 22 位講者塌成 4,見 tests)。
 # (1) 極短碎段:總時長 < _TINY_FRAGMENT_SEC 者判為雜訊/重疊語音,
@@ -341,7 +366,7 @@ VOICEPRINT_PROVIDER = "cpu"
 
 # 切分那一族(sherpa 內部用的切分模型 + 它自己那顆輕量聲紋模型,抽出來的向量
 # 我們全部丟棄)。⚠️ **這一個可以試 CoreML**,但順序不能反、也不准調門檻來
-# 遷就:先鎖 CPU 確認四份真實錄音 fixture 全綠,再單獨開 CoreML;fixture 變紅
+# 遷就:先鎖 CPU 確認五份真實錄音 fixture 全綠,再單獨開 CoreML;fixture 變紅
 # 就回 CPU(`docs/spec/mac/05` §5.2)。
 _SEG_PROVIDER = "cpu"
 
@@ -514,6 +539,19 @@ def _speech_blocks(
     return blocks
 
 
+def _dominant_speaker(
+    vecs: np.ndarray, weights: np.ndarray, blocks: list[list[int]],
+) -> float:
+    """「一人主講」的程度:粗分 _DOMINANT_PREPASS_K 群後,最大那群的原始質心
+    與全場均值的 cos(見 _DOMINANT_GATE 的說明)。
+
+    粗分走的是指定人數那條路(不會再回頭呼叫這支),所以不會遞迴。"""
+    labels, _ = _cluster(vecs, weights, _DOMINANT_PREPASS_K, blocks)
+    top = max(set(labels.tolist()), key=lambda g: float(weights[labels == g].sum()))
+    mean = _wcentroid(vecs, weights)
+    return float(_wcentroid(vecs[labels == top], weights[labels == top]) @ mean)
+
+
 def _cluster(
     vecs: np.ndarray, weights: np.ndarray, num_speakers: int,
     blocks: list[list[int]] | None = None,
@@ -629,8 +667,16 @@ def _cluster(
             if merge_best() == -np.inf:
                 break
     else:
+        # 一人主講時換一個停止門檻(見 _DOMINANT_GATE);粗分要在合併開始
+        # 之前做——它自己也是一趟 _cluster,不能跟這一趟的狀態攪在一起
+        stop = _AUTO_STOP_SIM
+        dominance = _dominant_speaker(vecs, weights, blocks)
+        if dominance >= _DOMINANT_GATE:
+            stop = _DOMINANT_STOP_SIM
+            logger.info("講者分析:一人主講(%.3f ≥ %.2f),停止門檻改用 %.2f",
+                        dominance, _DOMINANT_GATE, stop)
         while active.sum() > 1:
-            if float(row_max.max()) < _AUTO_STOP_SIM:
+            if float(row_max.max()) < stop:
                 break
             merge_best()
         # (1) 極短碎段:無條件併入最近群(雜訊/重疊語音)
