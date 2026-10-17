@@ -226,6 +226,8 @@ def stop_sound(token: object) -> None:
 # Tk 問得到的 family 清單裡沒有它;Menlo 隨每一版 macOS 出貨,而且實測
 # `measure("i") == measure("W")`(真的等寬)
 MONO_FAMILY = "Menlo"
+# 視窗內快捷鍵(`plat.accel`):Tk 在 Aqua 上把 ⌘ 叫 Command
+ACCEL = ("Command", "⌘")
 
 #: 見 `plat.reinstall_hint`。⚠️ 刪 `VERSION` 是讓啟動器重跑安裝的唯一一步(雙擊不會),
 #: 而 `setup.zsh` 不碰 `data/`,聲紋與名單不受影響

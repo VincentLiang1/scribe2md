@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from meeting_scribe import diarize, export, srcfile
+from meeting_scribe import diarize, export, highlights, srcfile
 from meeting_scribe.errors import UserFacingError
 from meeting_scribe.types import UNKNOWN_SPEAKER, SpokenSegment
 
@@ -125,8 +125,10 @@ def parse(md_text: str) -> Transcript:
             break
         m = _SPEAKER_RE.match(line.strip())
         if m is None:
-            # 〔錄音在此暫停…〕不是誰說的話:當成內文會混進命名摘錄
-            if blocks and not export.is_pause_line(line):
+            # 〔錄音在此暫停…〕與重點的備註都不是誰說的話:當成內文會混進命名摘錄
+            # (備註是現場打的字,常常比發言還長——`hints` 挑的正是字最多的那一段)
+            if blocks and not export.is_pause_line(line) \
+                    and not highlights.is_note_line(line):
                 pending.append(line.strip())
             continue
         if blocks:
@@ -242,7 +244,8 @@ def _renumber_quality(quality: list, order: dict[int, int]) -> list:
     ]
 
 
-def recluster_md(md_text: str, turns: list, quality: list) -> str:
+def recluster_md(md_text: str, turns: list, quality: list,
+                 marks: "highlights.Highlights | None" = None) -> str:
     """拿新的分群結果改寫逐字稿的講者標籤,**內文一個字都不動**。
 
     做法是**逐行改寫**而不是重建:`parse` 會把區塊內的多行併成一行
@@ -261,7 +264,11 @@ def recluster_md(md_text: str, turns: list, quality: list) -> str:
 
     檔尾的診斷區塊整塊換成新的:群數、輪次、一致性全變了,留著舊的比
     沒有更糟。⚠️ 那些數字要跟著這裡的重編號一起換算,見 `_renumber_quality`
-    ——不換算的話表格會安靜地掛在別人身上。"""
+    ——不換算的話表格會安靜地掛在別人身上。
+
+    `marks` = 這份逐字稿的重點(md 旁邊的 `.重點.json`):講者換了,「那一輪」的邊界
+    就跟著換,所以〔重點〕與備註要照新的分群重算(`highlights.rewrite_md`)。⚠️ 跟
+    〔身分存疑〕那兩個不同:重點講的是**這場會議**,不是上一次的分群,不能丟。"""
     t = parse(md_text)
     labels = _labels_for_blocks(t, turns)
     # 依「在檔案裡第一次出現」重編號,讀者看到的順序才與編號一致
@@ -304,6 +311,9 @@ def recluster_md(md_text: str, turns: list, quality: list) -> str:
             int(m.group("h")) * 3600 + int(m.group("m")) * 60 + int(m.group("s")),
         ))
     text = "\n".join(out).rstrip("\n")
+    # 沒有重點檔(手機版的 md、或檔被刪了):從 md 自己的標記推回來(見 `from_md`)
+    text = highlights.rewrite_md(
+        text, marks if marks is not None else highlights.from_md(md_text))
     diag = export.speaker_diagnostics(
         _renumber_quality(quality, order), spoken)
     return text + ("\n\n" + "\n".join(diag) if diag else "\n")

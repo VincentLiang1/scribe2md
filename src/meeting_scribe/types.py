@@ -87,6 +87,10 @@ class SpokenSegment:
     # `spoken` 算,掛在這裡它們就一定在同一個地方斷開——另傳一份的話,只要
     # 有一個呼叫端沒拿到,md 上是兩輪、核對認得的是一輪,改掛只改到前半
     pause_before: float = 0.0
+    # 現場按了「重點」的那一輪(`highlights.apply`;理由同上,掛在句子上)
+    highlight: bool = False
+    # 重點的備註(使用者在現場打的):md 裡放在這一輪下面
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -112,6 +116,9 @@ class SpeechBlock:
     crosstalk: bool = False
     # 這一輪**之前**錄音暫停了幾秒(見 SpokenSegment.pause_before;一輪不會跨過暫停)
     pause_before: float = 0.0
+    # 現場按了「重點」(見 SpokenSegment.highlight;一輪不會一半是重點、一半不是)
+    highlight: bool = False
+    notes: tuple[str, ...] = ()
 
     @property
     def seconds(self) -> float:

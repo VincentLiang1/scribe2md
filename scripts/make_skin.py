@@ -79,7 +79,8 @@ OUT = ROOT / "src" / "meeting_scribe" / "assets" / "skin"
 # 4 = 2026-09-15「要做什麼」那排改成分頁的長相:新增 `Sq.segtab`。
 # 5 = 2026-09-15 狀態選擇那三排改成灰槽 ＋ 白膠囊 ＋ 淡影:`Sq.seg` 回來、`Sq.seg_on` 換畫法。
 # 6 = 2026-10-07 錄音中的「‖ 暫停錄音」:新增 `Sq.pause_page`。
-SCHEMA_VERSION = 6
+# 7 = 2026-10-17 重點卡片的備註格坐在灰底上:新增 `Sq.field_well`。
+SCHEMA_VERSION = 7
 
 # 顯示縮放。⚠️ 這幾個值要對上 Windows 顯示設定給得出來的那幾檔。
 # ⚠️ **2026-08-27 從五檔加到八檔**(code review 抓到,使用者選定):膠囊的圖高是**釘死**
@@ -374,6 +375,15 @@ def build_variant(theme: str, scale: float) -> tuple[dict, dict]:
     elems["Sq.field"] = block_elem(
         [["", "field-rest"], ["focus", "field-focus"]], br,
         px(SQ_PAD_FIELD, scale), p["card"])
+    # 同一種輸入格,但**坐在灰底上**:錄音中重點卡片的備註格(那一格整片是 `field`)。
+    # ⚠️ 底板不透明,穿 `Sq.field` 的話四個圓角外側各露出一塊白(使用者 2026-10-17 圈出來的,
+    # Windows 與 Mac 都有)。
+    imgs["well-rest"] = plate(bw, bh, br, p["field"], p["line"], on=p["field"])
+    imgs["well-focus"] = plate(bw, bh, br, p["field"], p["accent"],
+                               lw=max(2, px(2, scale)), on=p["field"])
+    elems["Sq.field_well"] = block_elem(
+        [["", "well-rest"], ["focus", "well-focus"]], br,
+        px(SQ_PAD_FIELD, scale), p["field"])
 
     # ---- 進度條:圓頭的軌道與填充條 ----
     # ⚠️ 高度是**釘死**的(thickness ＝ 圖高),所以九宮格的左右兩塊不會被垂直

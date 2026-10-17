@@ -79,12 +79,25 @@ ENGINE_QWEN = "qwen"
 ENGINE_OV = "openvino"
 
 TODOS_HEADING = "## 待辦(約略時間,請對照逐字稿)"
+# 錄音中按了「重點」的那幾輪(2026-10-17,同手機版 `AISummary.highlightsHeading`):
+# 一輪一句,放在摘要底下;摘要也先看它們
+HIGHLIGHTS_HEADING = "## 現場標記的重點"
+#: 最多整理幾個重點(同手機版):一個一次呼叫,按了幾十下時不讓草稿多跑好幾分鐘
+MAX_HIGHLIGHTS = 12
 NO_TODOS = "- 沒有找到明確的待辦"
 
 _MAP_INSTRUCTIONS = (
     "你是會議記錄助理。使用者會給你一段會議逐字稿(語音辨識的結果,有錯字、標點少,"
     "每行開頭是講者,可能是「未知」或「講者 N」)。\n"
     "用繁體中文(台灣用語)整理這一段的重點與待辦。只寫逐字稿裡真的有的,不要推測。"
+)
+# ⚠️ **備註要一起給**(2026-10-17 使用者:「標示的重點應該也要隨著逐字稿送入」):備註是
+# 現場打的「為什麼重要、數字是多少」,手機版跳過了所有 `>` 開頭的行、備註因此沒送進模型
+_HIGHLIGHT_INSTRUCTIONS = (
+    "你是會議記錄助理。使用者會給你一段會議發言(語音辨識的結果,有錯字、標點少,開頭是講者),"
+    "與會者在現場把它標成重點,可能還附了與會者自己打的備註。\n"
+    "用繁體中文(台灣用語)寫一句話講這段的重點(數字、結論、誰要做什麼),備註說的優先;"
+    "只寫發言與備註裡有的,不要推測;不要加標題、條列或「這段在說」。"
 )
 _MERGE_INSTRUCTIONS = (
     "你是會議記錄助理。使用者會給你幾段會議重點。用繁體中文(台灣用語)合併成最多 6 點、"
@@ -300,8 +313,67 @@ def timed_lines(md: str) -> list[TimedLine]:
             continue
         if export.is_pause_line(line) or line.startswith(loopdetect.MARKER_PREFIX):
             continue
+        # 「> 〔重點〕= …」說明行與「> 備註:…」不是發言:備註另外走 `highlighted_turns`
+        if line.startswith(">"):
+            continue
         out.append(TimedLine(stamp, f"{who}:{line}" if who else line))
     _spread_times(out)
+    return out
+
+
+@dataclass(frozen=True)
+class MarkedTurn:
+    """標了〔重點〕的那一輪:時間、「名字:內容」、與會者打的備註。"""
+    time: str
+    text: str
+    notes: tuple[str, ...] = ()
+
+
+def highlighted_turns(md: str) -> list[MarkedTurn]:
+    r"""逐字稿 md 裡標了〔重點〕的那幾輪(同手機版 `AISummary.highlightedTurns`)。
+
+    同一位講者連續標著的幾行(收尾時被切開的同一輪;中間只隔著「未知」的插話也算)
+    併成一輪,備註跟著那一輪;暫停一定斷開。"""
+    rows: list[list] = []      # [名字, 時間, 標了沒, 內文, 備註, 前面有暫停]
+    in_body, paused = False, False
+    for raw in md.split("\n"):
+        line = raw.strip()
+        if line.startswith("## 會議逐字稿"):
+            in_body = True
+            continue
+        if line.startswith(export.DIAGNOSTIC_HEADING):
+            break
+        if not in_body or not line:
+            continue
+        m = export.SPEAKER_LINE_RE.match(line)
+        if m:
+            on = export.MARK_HIGHLIGHT in (m["marks"] or "").split(export.MARK_SEP)
+            rows.append([m["name"], f"{int(m['h']):02d}:{m['m']}:{m['s']}", on, [], [], paused])
+            paused = False
+        elif export.is_pause_line(line):
+            paused = True
+        elif not rows:
+            continue
+        elif line.startswith(export.NOTE_PREFIX):
+            if c := line[len(export.NOTE_PREFIX):].strip():
+                rows[-1][4].append(c)
+        elif not line.startswith(">") and not line.startswith(loopdetect.MARKER_PREFIX):
+            rows[-1][3].append(line)
+    unknown = export.speaker_label(-1)
+    out: list[MarkedTurn] = []
+    last_on: int | None = None     # 上一個併進 out 的重點行
+    for i, (who, at, on, body, notes, paused) in enumerate(rows):
+        if not on:
+            continue
+        joins = (last_on is not None and rows[last_on][0] == who
+                 and not any(rows[j][5] for j in range(last_on + 1, i + 1))
+                 and all(rows[j][0] == unknown for j in range(last_on + 1, i)))
+        if joins:
+            prev = out.pop()
+            out.append(MarkedTurn(prev.time, prev.text + "".join(body), prev.notes + tuple(notes)))
+        else:
+            out.append(MarkedTurn(at, f"{who}:{''.join(body)}", tuple(notes)))
+        last_on = i
     return out
 
 
@@ -698,7 +770,9 @@ def generate(md: str, progress: ProgressFn | None = None, engine: str | None = N
     _used_engine = engine
     report = progress or (lambda f: None)
     t0 = time.monotonic()
+    global _highlights
     lines = timed_lines(md)
+    _highlights = highlighted_turns(md)
     parts = timed_chunks(lines, CHUNK_CHARS)
     if not parts:
         raise UserFacingError("逐字稿是空的,沒有東西可以整理。")
@@ -770,9 +844,14 @@ def _compose(parts: list[list[TimedLine]], report: ProgressFn, t0: float) -> str
     # 那一段裡核對,各段交上來的本來就照時間;一段放寬成多條時,同一段裡模型給的順序不一定照時間
     todos.sort(key=lambda t: seconds(t[1]))
     notes, level, truncated = _merge(notes)
+    report(0.88)
+    marked = _marked_points(_highlights)
     report(0.9)
     joined = "\n".join(notes)
-    summary = _tidy_summary(_ask(_SUMMARY_INSTRUCTIONS, joined))
+    # 摘要先看現場標的重點(同手機版):那是與會者自己講「這個重要」的地方
+    summary = _tidy_summary(_ask(
+        _SUMMARY_INSTRUCTIONS,
+        (f"【與會者現場標記的重點】\n{marked}\n\n【各時段重點】\n{joined}" if marked else joined)))
     report(0.95)
     topics = _tidy_topics(_ask(_TOPICS_INSTRUCTIONS, joined))
     todo_text = "\n".join(f"- {t}({at})" for t, at in todos) if todos else NO_TODOS
@@ -780,4 +859,28 @@ def _compose(parts: list[list[TimedLine]], report: ProgressFn, t0: float) -> str
                 len(parts), level, "(有截短)" if truncated else "", len(todos), dropped, skipped,
                 time.monotonic() - t0)
     report(1.0)
-    return f"## 摘要\n{summary}\n\n## 主要議題\n{topics}\n\n{TODOS_HEADING}\n{todo_text}\n"
+    marked_text = f"\n\n{HIGHLIGHTS_HEADING}\n{marked}" if marked else ""
+    return (f"## 摘要\n{summary}{marked_text}\n\n## 主要議題\n{topics}"
+            f"\n\n{TODOS_HEADING}\n{todo_text}\n")
+
+
+#: 這一場標了〔重點〕的那幾輪(`generate` 開頭讀好;`_compose` 的兩條路共用)
+_highlights: list[MarkedTurn] = []
+
+
+def _marked_points(turns: list[MarkedTurn]) -> str:
+    """每個重點一句「- …(時間)」。一個問不出來就跳過那一個(同 `_map_chunk`:少一點,不整場失敗)。"""
+    out = []
+    for h in turns[:MAX_HIGHLIGHTS]:
+        prompt = h.text[:CHUNK_CHARS]
+        if h.notes:
+            prompt += "\n與會者的備註:" + ";".join(h.notes)
+        try:
+            msg = _call("llm-ask", _HIGHLIGHT_INSTRUCTIONS, prompt)
+        except (_Guardrail, _Overflow, _CallFailed) as e:
+            logger.info("會議紀錄草稿:跳過一個重點(%s):%s", h.time, e or "超出長度")
+            continue
+        line = " ".join(_tw(msg.get("text", "")).splitlines()).strip()
+        if line:
+            out.append(f"- {_BULLET.sub('', line)}({h.time})")
+    return "\n".join(out)

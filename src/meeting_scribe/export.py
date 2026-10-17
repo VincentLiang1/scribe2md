@@ -11,6 +11,7 @@
 """
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from meeting_scribe import loopdetect
@@ -39,6 +40,15 @@ from meeting_scribe.types import (NAME_SOURCE_AUTO, NAME_SOURCE_CONFIRMED,
 MARK_AUTO_NAME = "機器辨識"      # 名字是聲紋自動填的,使用者沒動過
 MARK_CROSSTALK = "多人交錯"      # 這一輪落在多人快速交錯討論的區間裡
 MARK_UNCERTAIN = "身分存疑"      # 這個標籤的群內一致性明顯低於本場中位數
+# 現場按了「重點」的那一輪(2026-10-17 從手機版搬過來,`highlights.py`)。⚠️ 它與上面三個
+# 不同類:講的是「現場有人覺得重要」,不是歸屬可靠度。⚠️ **下面四個字串逐字照手機版的
+# `Export.swift`**(跨專案契約,`docs/spec/09` §9.3d):同一個知識庫裡兩種寫法,下游的
+# 攝入規則就要各寫一份
+MARK_HIGHLIGHT = "重點"
+HIGHLIGHT_LEGEND = "> 〔重點〕= 開會時有人在現場按了「重點」的發言，整理時請優先處理。"
+# 重點的備註:接在那一輪的內文下面,一則一行。有備註才多一行說明
+NOTE_PREFIX = "> 備註："
+NOTE_LEGEND = "> 「備註：」= 現場標重點時與會者打的補充，不是發言內容。"
 # 多個標記之間的分隔。用全形頓號的變體「・」而不是「、」:後者在中文
 # 句子裡到處都是,標記串起來會看起來像內文的一部分
 MARK_SEP = "・"
@@ -116,19 +126,23 @@ def speech_blocks(spoken: list[SpokenSegment]) -> list[SpeechBlock]:
             # ⚠️ **暫停處一定斷開**:同一個人暫停前後都在講(最常見的情形)時,
             # 不斷開就是一輪跨過暫停,〔暫停〕那一行只能放在整輪後面——位置錯了
             and not seg.pause_before
+            # ⚠️ **重點與非重點一定斷開**(同手機版):一輪裡只有後半是重點時,不斷開
+            # 就是整輪都標成重點
+            and blocks[-1][7] == seg.highlight
         ):
             blocks[-1][2].append(seg.text)
             blocks[-1][3] = seg.end
             # 一輪發言裡**任一句**落在交錯區就算(見 SpeechBlock.crosstalk):
             # 一輪只有一個講者標籤,標記要回答的是「這一輪的歸屬可不可靠」
             blocks[-1][5] = blocks[-1][5] or seg.crosstalk
+            blocks[-1][8] += seg.notes
         else:
             blocks.append([seg.speaker, seg.start, [seg.text], seg.end, is_marker,
-                           seg.crosstalk, seg.pause_before])
+                           seg.crosstalk, seg.pause_before, seg.highlight, seg.notes])
     return [
         SpeechBlock(speaker=sp, start=st, end=en, text="".join(texts), is_marker=m,
-                    crosstalk=ct, pause_before=pb)
-        for sp, st, texts, en, m, ct, pb in blocks
+                    crosstalk=ct, pause_before=pb, highlight=hl, notes=nt)
+        for sp, st, texts, en, m, ct, pb, hl, nt in blocks
     ]
 
 
@@ -156,9 +170,12 @@ def is_pause_line(line: str) -> bool:
 def _group_by_speaker(
     spoken: list[SpokenSegment],
 ) -> list[tuple[int, float, str, bool, bool]]:
-    """同 speech_blocks,但回傳既有的 tuple 形狀(渲染與診斷區塊用)。"""
+    """同 speech_blocks,但回傳既有的 tuple 形狀(診斷區塊用)。
+
+    ⚠️ **輪次照講者算,不因重點切開**(同手機版):按一下「重點」不該讓這位講者的
+    發言輪數多一輪,診斷表的數字是拿來判斷分群的。"""
     return [(b.speaker, b.start, b.text, b.is_marker, b.crosstalk)
-            for b in speech_blocks(spoken)]
+            for b in speech_blocks([replace(s, highlight=False) for s in spoken])]
 
 
 # 講者診斷區塊的標題。**公開常數**:relabel 解析逐字稿時要在這裡收手
@@ -356,6 +373,10 @@ def _unknown_note(spoken: list[SpokenSegment]) -> list[str]:
     ]
 
 
+# 逐字稿本文的標題(`docaudio` 要拿掉它、`highlights.rewrite_md` 要找到它)
+TRANSCRIPT_HEADING = "## 會議逐字稿 — "
+
+
 def to_markdown(
     spoken: list[SpokenSegment],
     title: str,
@@ -379,7 +400,12 @@ def to_markdown(
             if todo else {})
     # 一致性明顯低於本場中位數的那幾位:行內也標一次(見 mark_suffix 那段)
     uncertain = {q.speaker for q in check_first(quality or [])}
-    lines = [f"## 會議逐字稿 — {title}", ""]
+    lines = [f"{TRANSCRIPT_HEADING}{title}", ""]
+    # 兩行說明寫給下游的 AI 看(沒按就不出現,md 與按鈕出現之前逐字相同)
+    if any(g.highlight for g in groups):
+        lines += [HIGHLIGHT_LEGEND, ""]
+    if any(g.notes for g in groups):
+        lines += [NOTE_LEGEND, ""]
     for i, b in enumerate(groups):
         speaker, start, text, crosstalk = b.speaker, b.start, b.text, b.crosstalk
         if b.pause_before:
@@ -394,8 +420,11 @@ def to_markdown(
             marks.append(MARK_UNCERTAIN)
         if crosstalk:
             marks.append(MARK_CROSSTALK)
+        if b.highlight:
+            marks.append(MARK_HIGHLIGHT)
         lines.append(speaker_line(speaker_label(speaker), start, marks))
         lines.append(done.get(i, text))
+        lines += [NOTE_PREFIX + n for n in b.notes]
         lines.append("")
     lines += _speaker_diagnostics(quality or [], spoken)
     return "\n".join(lines)

@@ -53,6 +53,7 @@ def reveal(path) -> Outcome:
 
 #: 等寬字型。Courier 是 X11 時代就有的泛用名,哪裡都找得到
 MONO_FAMILY = "Courier"
+ACCEL = ("Control", "Ctrl+")       # 視窗內快捷鍵(`plat.accel`)
 
 #: 見 `plat.reinstall_hint` / `plat.heic_workaround`(這邊只有開發者會看到)
 REINSTALL_HINT = "請在工具資料夾執行 uv sync 把環境裝齊"

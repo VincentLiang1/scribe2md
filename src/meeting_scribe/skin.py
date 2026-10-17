@@ -22,7 +22,7 @@ from winkit.skin import Button
 # ⚠️ **沒宣告的話共用包就整個不比對**(`getattr(spec, "SKIN_SCHEMA", None)`),而「舊資產
 # 配新程式」是可達的、失敗是完全無聲的——底下 `SKIN_FRAMES` / `SKIN_SWAPS` 每加一個
 # `Sq.*` 都要跳號,否則舊資產照樣載得起來、那幾顆的底板整個不畫。
-SKIN_SCHEMA = 6
+SKIN_SCHEMA = 7
 
 # 主要動作鈕的兩張皮(「開始轉檔」「開始錄音」「套用名字並下載」與「停止」)。⚠️ 樣式名**必須以 `.Accent.TButton` 結尾**才繼承得到那組
 # 圖片元件——ttk 是照後綴一層層往上找的
@@ -68,6 +68,10 @@ SKIP_PAGE_STYLE = "SkipPage.TButton"
 # (`Sq.pause_page`,畫法照 `CTA_PAGE_STYLE`);字色與滑過翻白在 `desktop.App` 設定樣式
 # 那段。不是強調色、不進 `ACCENT_STYLES`(靜止時字是藍的不是白的)
 PAUSE_PAGE_STYLE = "PausePage.TButton"
+
+# 坐在**灰底**(`field`)上的輸入格:錄音中重點卡片的備註格(2026-10-17 使用者圈出四個
+# 圓角的白色殘影,Windows 與 Mac 都有)。底板不透明,理由同 `RUN_PAGE_STYLE` 那段。
+WELL_ENTRY_STYLE = "Well.TEntry"
 
 # 視窗第一句(程式用途那句副標)。⚠️ 樣式名**必須以 `.Muted.TLabel` 結尾**才繼承
 # 得到說明文字的前景色,理由同下面 `Hint.Muted.TLabel` 那段。做法照姊妹專案
@@ -147,6 +151,9 @@ SKIN_SWAPS = (
     # 使用說明的搜尋框(2026-09-03):同一張 `Sq.field`——它與講者人數、命名下拉是同一種
     # 「填一件事」的輸入格,方角的話會是整個視窗唯一一個沒圓角的框。
     ("TEntry", None, {"Entry.field": "Sq.field"}),
+    # 坐在灰底上的那一種(重點卡片的備註格):圓角外側畫的是 `field`,見 `WELL_ENTRY_STYLE`。
+    # ⚠️ 從 `TEntry` 抄——抄的是**換皮之前**的 layout(載入器先全部抓下來才寫回)
+    (WELL_ENTRY_STYLE, "TEntry", {"Entry.field": "Sq.field_well"}),
     ("Horizontal.TProgressbar", None,
      {"Horizontal.Progressbar.trough": "Sq.trough",
       "Horizontal.Progressbar.pbar": "Sq.pbar"}),

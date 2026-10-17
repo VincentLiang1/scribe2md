@@ -24,7 +24,7 @@ from meeting_scribe import models
 logger = logging.getLogger(__name__)
 
 # 惰性建構(_get_cc 首次轉換才付 import+辭典載入):轉換只發生在轉檔
-# 輸出與即時預覽,從不在啟動路徑上,啟動不必付這筆
+# 輸出,從不在啟動路徑上,啟動不必付這筆
 _cc = None
 
 

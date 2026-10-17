@@ -9,7 +9,7 @@ _CUT_DEFER_MAX_SEC 後強制切(使用者指定 2026-07-23);
 停止錄音後只剩最後一段轉錄+講者分析+輸出。
 
 執行緒模型:單一排程執行緒輪詢所有軌——轉錄引擎(模型快取)不可併用,
-兩軌依序轉;段落在鎖內累積,UI 週期性 snapshot() 做即時預覽。引擎失敗
+兩軌依序轉;段落在鎖內累積(狀態列只問 transcribed_until())。引擎失敗
 「不推進 done」(下一輪或收尾重試),絕不安靜跳過一段音訊。錄音中的
 轉錄不掛 gr.Progress(背景執行緒無 gradio context),收尾才回報進度。
 
@@ -47,7 +47,7 @@ from pathlib import Path
 import numpy as np
 
 from meeting_scribe import (
-    audio, cancel, diarize, diarproc, merge, pipeline, plat, power, punctuate,
+    audio, cancel, diarize, diarproc, highlights, merge, pipeline, plat, power, punctuate,
     transcribe, wavspan,
 )
 from meeting_scribe.types import UNKNOWN_SPEAKER, SpeakerTurn, SpokenSegment, TranscriptSegment
@@ -73,7 +73,7 @@ _RATE = wavspan.RATE
 # (兩顆都只是門檻,沒有人依賴它們的具體數值)——但定案之後那是**新的一次
 # 裁定**,不是看到分群的症狀就可以自己改回去。
 _CHUNK_SEC = 150.0
-# 第一段提早轉(每軌 done=0 時適用):即時預覽的第一批文字是使用者確認
+# 第一段提早轉(每軌 done=0 時適用):狀態列的「背景轉錄:已完成至」開始走,是使用者確認
 # 「收音正常」的訊號,等滿一整個標準段才出現太久(使用者實際問了
 # 「多久會出來」);1 分鐘 + 該段轉錄時間,兩三分鐘內就看得到字。
 # 原 120,使用者 2026-08-11 指定縮短為 60:1 分鐘只攤得開 2 個 30 秒窗、
@@ -728,8 +728,9 @@ class LiveTranscriber:
             return min((tr.done for tr in self._tracks.values()), default=0.0)
 
     def snapshot(self) -> list[TranscriptSegment]:
-        """目前累積的段落(全軌合併、按開始時間排序):即時預覽用。
-        未做講者/回音去重(那要等收尾),預覽只求「看得到內容在長」。"""
+        """目前累積的段落(全軌合併、按開始時間排序;未做講者/回音去重)。
+
+        ⚠️ 畫面不再用它(錄音中的即時逐字稿 2026-10-17 拿掉);留著給測試確認背景真的在轉。"""
         with self._lock:
             merged = [s for tr in self._tracks.values() for s in tr.segments]
         return sorted(merged, key=lambda s: (s.start, s.end))
@@ -1043,6 +1044,7 @@ def run_live_finish(
     num_speakers: int = 0,
     on_stage: Callable[[str, float], None] | None = None,
     pauses: list[tuple[float, float]] | None = None,
+    marks: "highlights.Highlights | None" = None,
 ) -> pipeline.PipelineResult:
     """停止錄音後的收尾:殘段轉錄 + 各軌講者分析(有 GPU 時兩者平行,
     純 CPU 依序)→ 合併/回音去重 → 共用 finalize(繁化/跳針標記/線索/
@@ -1169,6 +1171,9 @@ def run_live_finish(
 
         spoken, turns_all, voiceprints, sources, quality = combine_tracks(results)
         spoken = mark_pauses(spoken, pauses or [])
+        # 錄音中按的「重點」(`highlights.py`):時間軸跟暫停一樣是「錄到第幾秒」
+        if marks:
+            spoken = highlights.apply(marks, spoken)
 
         # 成品音檔先落地再寫逐字稿:雙軌合成失敗要在輸出前浮出/降級,
         # 不能等使用者收工才發現沒有音檔
@@ -1197,6 +1202,14 @@ def run_live_finish(
             speaker_sources=sources, quality=quality,
         )
         outputs = list(result.outputs)
+        # 重點的時間存在 md 旁邊:重新分群、重設講者時要照它重算〔重點〕(見
+        # `highlights.sidecar_path`)。⚠️ 寫不進去不擋收尾——逐字稿已經標好了,
+        # 少的只是「之後重算」
+        if marks:
+            try:
+                highlights.save(highlights.sidecar_path(outputs[0]), marks)
+            except OSError:
+                logger.warning("重點檔寫不進去(逐字稿上的標記不受影響)", exc_info=True)
         if audio_out is not None:
             outputs.append(audio_out)
         else:

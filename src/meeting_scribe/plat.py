@@ -223,6 +223,15 @@ def mono_family() -> str:
     return _impl().MONO_FAMILY
 
 
+def accel(key: str) -> tuple[str, str]:
+    r"""視窗內快捷鍵:(Tk 的事件序列, 畫面上怎麼寫)。`key` 是小寫字母。
+
+    (2026-10-17 錄音中的「重點」。)⚠️ **Mac 是 ⌘、Windows 是 Ctrl**:Mac 上綁 Control
+    鍵也按得到,但沒有人會這樣按——寫在按鈕旁邊的是 ⌘B,按下去卻要 ^B,等於沒有。"""
+    mod, label = _impl().ACCEL
+    return f"<{mod}-{key}>", f"{label}{key.upper()}"
+
+
 # --- 給使用者的指路文案 ---------------------------------------------------
 # ⚠️ **只收「處方本身就不一樣」的句子**(2026-10-02 使用者要求依平台顯示):Mac 上沒有
 # `安裝.bat`、也沒有小畫家,照著 Windows 那句做就是找不到東西。只在 Windows 才會出現

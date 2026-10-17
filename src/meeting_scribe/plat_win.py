@@ -144,6 +144,7 @@ def stop_sound(token: object) -> None:
 
 #: 等寬字型。Consolas 從 Vista 起隨 Windows 出貨
 MONO_FAMILY = "Consolas"
+ACCEL = ("Control", "Ctrl+")       # 視窗內快捷鍵(`plat.accel`)
 
 #: 見 `plat.reinstall_hint` / `plat.heic_workaround`
 REINSTALL_HINT = "請重新執行「安裝.bat」把環境裝齊"
