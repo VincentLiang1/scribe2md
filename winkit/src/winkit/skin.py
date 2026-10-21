@@ -76,6 +76,18 @@ def skin_cache_env() -> str:
 UI_FONT = "Microsoft JhengHei UI"
 UI_FONT_FALLBACK = "Microsoft JhengHei"   # 舊版 Windows 沒有 UI 版
 
+
+def prefer_ui_font(primary: str, fallback: str) -> None:
+    """下游指定介面字型(**在 `apply()` 之前**呼叫),例如簡體中文介面改用「Microsoft YaHei UI」。
+
+    (2026-10-21 為了 meeting-scribe-native 的多國語言加的:簡中介面用正黑體顯示,簡體字會是
+    台灣的字形。)⚠️ **只換「優先找哪兩個名字」**:挑字型的仍是 `ui_font_family`,這台機器沒有
+    那兩個(例如 Mac 上沒有微軟雅黑)就照舊退回 Tk 的系統預設——所以下游不必自己判斷平台。
+    ⚠️ **沒呼叫就是原本的正黑體**:另外兩個下游不受影響。⚠️ 改的是本模組的兩個全域,
+    一個行程只服務一支 app,所以不另外做「還原」;測試要自己用 monkeypatch 復位。"""
+    global UI_FONT, UI_FONT_FALLBACK
+    UI_FONT, UI_FONT_FALLBACK = primary, fallback
+
 # `apply()` 直接 `configure` 說明文字前景色的那幾個樣式,**其餘全靠後綴繼承**。
 # ⚠️ **這是給下游 import 的**(2026-09-06 加):下游要列舉「哪些樣式吃 muted 前景」時
 # 判準是**後綴**,而後綴要比對的那份根名單是 **winkit 的實作事實**、不是下游的身分
@@ -336,6 +348,11 @@ class SquircleSkin:
             if slot is None:
                 return
             slot["owner"] = w
+            # 同尺寸的兩顆鈕共用同一格(`_slot_for` 第一個迴圈):每一個穿過它的都要記著,
+            # 不能只記最後一個(見 `_spare`)
+            wearers = slot.setdefault("wearers", [])
+            if not any(x is w for x in wearers):
+                wearers.append(w)
             w._sharp_base, w._sharp_size = style, size
             w.configure(style=slot["style"])
             # ⚠️ **換完樣式一定要再要求畫一次**(2026-09-29,meeting-scribe 的使用者:
@@ -379,14 +396,27 @@ class SquircleSkin:
 
     @staticmethod
     def _spare(slot: dict, owner=None) -> bool:
-        """這一格現在沒人穿嗎?(上一個穿它的已經不在、或已經換成別的皮)"""
+        """這一格現在沒人穿嗎?——除了 `owner` 自己,**每一個**穿過它的都已經不在、或已經
+        換成別的皮。
+
+        ⚠️ **不能只看最後一個穿它的**(2026-10-21,meeting-scribe-native 英文介面實拍):兩顆
+        同樣式、同尺寸的鈕共用一格(錄音頁與文件頁的「● Start」都是 180×40),最後一個穿上的
+        是文件頁那顆;它之後縮成 169 寬時,這裡只看「最後那個就是我自己」就判成空著,把這一格
+        重畫成 169——而錄音頁那顆還穿著它,180 寬的鈕畫上 169 的圖,右端多出一截尾巴。
+        繁中的兩顆一直同寬,所以碰不到。"""
+        wearers = list(slot.get("wearers") or [])
         last = slot.get("owner")
-        if last is None or last is owner:
-            return True
-        try:
-            return not last.winfo_exists() or str(last.cget("style")) != slot["style"]
-        except Exception:
-            return True
+        if last is not None and not any(x is last for x in wearers):
+            wearers.append(last)
+        for other in wearers:
+            if other is owner:
+                continue
+            try:
+                if other.winfo_exists() and str(other.cget("style")) == slot["style"]:
+                    return False
+            except Exception:
+                continue
+        return True
 
     def _fill_slot(self, slot: dict, style: str, w: int, h: int) -> bool:
         """把這一格的每一張圖換成 `w`×`h` 的那一版(`image configure`,**不發事件**)。"""

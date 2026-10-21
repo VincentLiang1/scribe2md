@@ -122,6 +122,7 @@ class TransProcess:
     def transcribe(
         self, wav: Path | str, model_key: str = "fast",
         progress: Callable[[float], None] | None = None,
+        language: str = "zh_TW",
     ) -> tuple[list[TranscriptSegment], str]:
         r"""回傳 (轉錄結果, 實際裝置);簽章與 transcribe.transcribe 一致。
 
@@ -136,6 +137,9 @@ class TransProcess:
                 "cmd": "transcribe", "wav": str(Path(wav).resolve()),
                 "model": model_key, "progress": progress is not None,
                 "cpu_only": transcribe.cpu_only(),
+                # ⚠️ **會議語言同樣逐則帶**(同上面那條「只用 CPU」的理由):一場是英文、下一場是
+                # 繁中,子行程是同一支;漏帶的症狀是「選了英文,轉出來是中文」而父行程每個值都對
+                "language": language,
             })
         finally:
             self.on_progress = None

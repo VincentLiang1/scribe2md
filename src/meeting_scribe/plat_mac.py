@@ -6,6 +6,7 @@ import os
 import re
 
 from meeting_scribe.plat import Outcome
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -166,12 +167,12 @@ def _run_open(args: list[str], what: str) -> Outcome:
     try:
         subprocess.Popen(["open", *args])  # noqa: S603,S607 - 固定命令,無 shell
     except OSError as e:
-        return Outcome("failed", f"開不了{what}:{e}")
+        return Outcome("failed", t("開不了{what}:{e}", what=what, e=e))
     return Outcome("ok")
 
 
 def open_folder(path) -> Outcome:
-    return _run_open([str(path)], "資料夾")
+    return _run_open([str(path)], t("資料夾"))
 
 
 def reveal(path) -> Outcome:
@@ -204,7 +205,7 @@ def play_sound(path) -> tuple[Outcome, object]:
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             **spawn_kwargs(low_priority=False))
     except Exception as e:  # noqa: BLE001 - 試聽是輔助功能,絕不往上炸
-        return Outcome("failed", f"這一段放不出來(afplay 起不來:{type(e).__name__})"), None
+        return Outcome("failed", t("這一段放不出來(afplay 起不來:{name__})", name__=type(e).__name__)), None
     return Outcome("ok"), proc
 
 
@@ -231,10 +232,17 @@ ACCEL = ("Command", "⌘")
 
 #: 見 `plat.reinstall_hint`。⚠️ 刪 `VERSION` 是讓啟動器重跑安裝的唯一一步(雙擊不會),
 #: 而 `setup.zsh` 不碰 `data/`,聲紋與名單不受影響
-REINSTALL_HINT = ("請到工具資料夾刪掉「VERSION」這個檔,再雙擊一次 App,它會重新建置執行環境"
-                  "(工具資料夾的位置見「❓ 使用說明」的「📂 工具資料夾在哪」)")
+# ⚠️ **這一層的譯文一律寫成函式,模組層不准呼叫 `t()`**(2026-10-21 踩到):`t()` 第一次
+# 決定語言時要問 `plat.preferred_languages()`,而那正是這個模組——模組層的 `t()` 就會
+# 在本模組還沒載完時回頭找它,真的 App 一開就 `AttributeError`(測試把語言釘死,測不到)。
+def reinstall_hint() -> str:
+    return (t("請到工具資料夾刪掉「VERSION」這個檔,再雙擊一次 App,它會重新建置執行環境"
+              "(工具資料夾的位置見「❓ 使用說明」的「📂 工具資料夾在哪」)"))
+
+
 #: 見 `plat.heic_workaround`
-HEIC_WORKAROUND = "或用「預覽程式」打開,從「檔案 › 輸出…」存成 JPEG 再轉"
+def heic_workaround() -> str:
+    return t("或用「預覽程式」打開,從「檔案 › 輸出…」存成 JPEG 再轉")
 
 
 # kinfo_proc 裡 `kp_proc.p_starttime` 的位移。⚠️ **這個 0 是實測出來的、不是推的**
@@ -434,12 +442,12 @@ def system_audio_capability() -> Outcome:
 
     if not coreaudio.available():
         return Outcome("unsupported",
-                       "這台 macOS 沒有錄製系統聲音需要的功能(需要 macOS 14.2 以上)")
+                       t("這台 macOS 沒有錄製系統聲音需要的功能(需要 macOS 14.2 以上)"))
     if not coreaudio.has_permission():
         return Outcome(
             "failed",
-            "還沒有「螢幕與系統音訊錄製」的權限:請到「系統設定 › 隱私權與安全性 › "
-            "螢幕與系統音訊錄製」把終端機(或本程式)打開,**然後重新啟動程式**")
+            t("還沒有「螢幕與系統音訊錄製」的權限:請到「系統設定 › 隱私權與安全性 › "
+            "螢幕與系統音訊錄製」把終端機(或本程式)打開,**然後重新啟動程式**"))
     return Outcome("ok")
 
 
@@ -461,22 +469,22 @@ def apple_speech_helper() -> tuple[Outcome, object]:
         exe = app / "Contents" / "MacOS" / APPLE_ASR_NAME
         if exe.is_file():
             return Outcome("ok"), exe
-        return Outcome("unsupported", "這一版的 App 沒有附 Apple 語音辨識元件"), None
+        return Outcome("unsupported", t("這一版的 App 沒有附 Apple 語音辨識元件")), None
     src = paths.repo_root() / "packaging" / "mac" / "apple_asr.swift"
     if not src.is_file():
-        return Outcome("unsupported", "這一份沒有附 Apple 語音辨識元件"), None
+        return Outcome("unsupported", t("這一份沒有附 Apple 語音辨識元件")), None
     exe = paths.appdata_root() / "helpers" / APPLE_ASR_NAME
     if exe.is_file() and exe.stat().st_mtime >= src.stat().st_mtime:
         return Outcome("ok"), exe
     swiftc = shutil.which("swiftc")
     if swiftc is None:
-        return Outcome("failed", "編譯 Apple 語音辨識元件需要 Xcode 命令列工具(swiftc)"), None
+        return Outcome("failed", t("編譯 Apple 語音辨識元件需要 Xcode 命令列工具(swiftc)")), None
     exe.parent.mkdir(parents=True, exist_ok=True)
     # ⚠️ 部署目標與 App 的 LSMinimumSystemVersion 一致(見原始碼檔頭)
     done = subprocess.run([swiftc, *APPLE_ASR_SWIFTC_FLAGS, "-o", str(exe), str(src)],
                           capture_output=True, text=True)
     if done.returncode != 0 or not exe.is_file():
-        return Outcome("failed", f"Apple 語音辨識元件編譯失敗:{done.stderr.strip()[:200]}"), None
+        return Outcome("failed", t("Apple 語音辨識元件編譯失敗:{v}", v=done.stderr.strip()[:200])), None
     return Outcome("ok"), exe
 
 
@@ -501,19 +509,20 @@ def open_system_audio():
 # bundle 裡也不准有(`update.verify_mac_zip` 擋)。
 
 #: 不是從 App 開的(開發時 `uv run`)。⚠️ 這是 `unsupported`:那條路本來就不該自動換版
-_NOT_FROM_APP = "這一份不是從 App 開的(開發用的執行方式),不能在程式裡直接換版"
+def _not_from_app() -> str:
+    return t("這一份不是從 App 開的(開發用的執行方式),不能在程式裡直接換版")
+
+
 #: App 沒有正式簽章(自己打的 ad-hoc 包):新版的簽章無從比對
-_UNSIGNED = "這一份 App 沒有正式簽章,沒辦法確認新版是同一個發行者,不能在程式裡直接換版"
+def _unsigned() -> str:
+    return t("這一份 App 沒有正式簽章,沒辦法確認新版是同一個發行者,不能在程式裡直接換版")
+
+
 #: ⚠️ App Translocation:從「下載項目」直接打開、還沒搬進「應用程式」的 App,macOS 會把它
 #: 放在一個**唯讀**的隨機位置執行。換那個位置等於什麼都沒換(下次開的還是原本那一個)
-_TRANSLOCATED = ("這個 App 是直接從下載的位置打開的,macOS 讓它在唯讀的暫存位置執行。"
-                 "請先把它拖進「應用程式」資料夾、從那裡重新打開,就能自動更新")
-
-_MAC_RESTART = ("更新時會先關閉本程式、換上新版;重新開啟時會先跳出一個終端機視窗,"
-                "跑約一分鐘建置新版的執行環境,跑完會自動開回本程式(那個視窗之後可以直接關掉)。"
-                "你的聲紋、名單與用詞替換表都會保留。")
-_MAC_MANUAL = ("要手動更新:到下載頁下載 scribe2md-mac.zip,解壓縮出來的 App 取代「應用程式」"
-               "裡原本那一個,再雙擊它即可,你的聲紋與名單不會被蓋掉。")
+def _translocated() -> str:
+    return (t("這個 App 是直接從下載的位置打開的,macOS 讓它在唯讀的暫存位置執行。"
+              "請先把它拖進「應用程式」資料夾、從那裡重新打開,就能自動更新"))
 
 
 def update_asset() -> str | None:
@@ -523,11 +532,14 @@ def update_asset() -> str | None:
 
 
 def update_restart_note() -> str | None:
-    return _MAC_RESTART
+    return (t("更新時會先關閉本程式、換上新版;重新開啟時會先跳出一個終端機視窗,"
+              "跑約一分鐘建置新版的執行環境,跑完會自動開回本程式(那個視窗之後可以直接關掉)。"
+              "你的聲紋、名單與用詞替換表都會保留。"))
 
 
 def update_manual_note() -> str | None:
-    return _MAC_MANUAL
+    return (t("要手動更新:到下載頁下載 scribe2md-mac.zip,解壓縮出來的 App 取代「應用程式」"
+              "裡原本那一個,再雙擊它即可,你的聲紋與名單不會被蓋掉。"))
 
 
 def _running_bundle(exe: str | None = None):
@@ -567,18 +579,17 @@ def self_update_capability() -> Outcome:
 
     app = _running_bundle()
     if app is None:
-        return Outcome("unsupported", _NOT_FROM_APP)
+        return Outcome("unsupported", _not_from_app())
     # ⚠️ 比對路徑元件、不比對字串:`str()` 的分隔符跟著執行平台走,測試在 Windows 上跑時
     # 是反斜線,寫成 `"/AppTranslocation/" in str(app)` 就永遠比不到
     if "AppTranslocation" in app.parts:
-        return Outcome("failed", _TRANSLOCATED)
+        return Outcome("failed", _translocated())
     if _team_id(app) is None:
-        return Outcome("unsupported", _UNSIGNED)
+        return Outcome("unsupported", _unsigned())
     parent = app.parent
     # ⚠️ 兩個都要能寫:改名是改 parent 的目錄項,而把 bundle 搬到別的資料夾還要改它自己的 `..`
     if not (os.access(parent, os.W_OK) and os.access(app, os.W_OK)):
-        return Outcome("failed", f"「{parent}」沒有寫入權限(這台電腦的帳號可能不是管理員),"
-                                 "沒辦法換掉原本的 App")
+        return Outcome("failed", t("「{parent}」沒有寫入權限(這台電腦的帳號可能不是管理員),沒辦法換掉原本的 App", parent=parent))
     work = update.work_dir()
     probe = work if work.exists() else work.parent
     try:
@@ -587,8 +598,7 @@ def self_update_capability() -> Outcome:
         same_disk = False
     if not same_disk:
         # 跨磁碟的 `mv` 是複製再刪除,不是一步完成——換到一半就是半個 App
-        return Outcome("failed", f"這個 App 放在另一顆磁碟上({parent}),"
-                                 "請把它搬進這台 Mac 的「應用程式」資料夾再更新")
+        return Outcome("failed", t("這個 App 放在另一顆磁碟上({parent}),請把它搬進這台 Mac 的「應用程式」資料夾再更新", parent=parent))
     return Outcome("ok")
 
 
@@ -614,19 +624,19 @@ def stage_update(zip_path, version: str, into):
     r = subprocess.run(["ditto", "-x", "-k", str(zip_path), str(into)],  # noqa: S603,S607
                        capture_output=True, text=True)
     if r.returncode != 0:
-        raise ValueError(f"解壓縮失敗({r.stderr.strip() or r.returncode})")
+        raise ValueError(t("解壓縮失敗({v})", v=r.stderr.strip() or r.returncode))
     app = into / update.MAC_APP
     if not app.is_dir():
-        raise ValueError(f"解壓縮之後找不到 {update.MAC_APP}")
+        raise ValueError(t("解壓縮之後找不到 {MAC_APP}", MAC_APP=update.MAC_APP))
     r = subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)],  # noqa: S603,S607
                        capture_output=True, text=True)
     if r.returncode != 0:
-        raise ValueError(f"新版的簽章驗不過({r.stderr.strip() or r.returncode})")
+        raise ValueError(t("新版的簽章驗不過({v})", v=r.stderr.strip() or r.returncode))
     mine = _running_bundle()
     want = _team_id(mine) if mine is not None else None
     got = _team_id(app)
     if want is None or got != want:
-        raise ValueError(f"新版的發行者({got or '沒有簽章'})與目前這一份({want or '不明'})不同")
+        raise ValueError(t("新版的發行者({v})與目前這一份({v2})不同", v=got or t("沒有簽章"), v2=want or t("不明")))
     return app
 
 
@@ -713,7 +723,7 @@ def apply_update(staged, target, version: str) -> Outcome:
 
     app = _running_bundle()
     if app is None:
-        return Outcome("unsupported", _NOT_FROM_APP)
+        return Outcome("unsupported", _not_from_app())
     staged = Path(staged)
     work = staged.parent.parent
     helper = work / "update_helper_mac.zsh"
@@ -724,7 +734,7 @@ def apply_update(staged, target, version: str) -> Outcome:
         helper.write_text(_HELPER_ZSH, encoding="utf-8")
         helper.chmod(0o755)
     except OSError as e:
-        return Outcome("failed", f"換版小程式寫不進工作目錄({e})")
+        return Outcome("failed", t("換版小程式寫不進工作目錄({e})", e=e))
     log = logs / f"update_{datetime.datetime.now():%Y-%m-%d_%H%M%S}.log"
     pids = [str(os.getpid())]
     if os.getppid() > 1:
@@ -736,7 +746,7 @@ def apply_update(staged, target, version: str) -> Outcome:
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
     except OSError as e:
-        return Outcome("failed", f"換版小程式起不來({e})")
+        return Outcome("failed", t("換版小程式起不來({e})", e=e))
     return Outcome("ok")
 
 
@@ -781,6 +791,41 @@ class _MallocStatistics(ctypes.Structure):
 
 def _libsystem():
     return ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+
+
+def preferred_languages() -> list[str]:
+    """`CFLocaleCopyPreferredLanguages`(就是「系統設定 › 一般 › 語言與地區」那份清單)。
+
+    ⚠️ **走 CoreFoundation 的 C API,不 fork `defaults read -g AppleLanguages`**:開窗
+    路徑上的東西,fork 一支程式要幾十毫秒。⚠️ **不看 `LANG`**:從 App 雙擊開的行程
+    多半沒有這個環境變數(那是終端機給的),看它等於從 ssh 開與從 Dock 開是兩種語言。"""
+    try:
+        cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+        cf.CFLocaleCopyPreferredLanguages.restype = ctypes.c_void_p
+        cf.CFArrayGetCount.restype = ctypes.c_long
+        cf.CFArrayGetCount.argtypes = [ctypes.c_void_p]
+        cf.CFArrayGetValueAtIndex.restype = ctypes.c_void_p
+        cf.CFArrayGetValueAtIndex.argtypes = [ctypes.c_void_p, ctypes.c_long]
+        cf.CFStringGetCString.restype = ctypes.c_bool
+        cf.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p,
+                                          ctypes.c_long, ctypes.c_uint32]
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        arr = cf.CFLocaleCopyPreferredLanguages()
+        if not arr:
+            return []
+        try:
+            out = []
+            buf = ctypes.create_string_buffer(64)
+            for i in range(cf.CFArrayGetCount(arr)):
+                s = cf.CFArrayGetValueAtIndex(arr, i)
+                if s and cf.CFStringGetCString(s, buf, len(buf), 0x08000100):  # UTF-8
+                    out.append(buf.value.decode("utf-8"))
+            return out
+        finally:
+            cf.CFRelease(arr)
+    except Exception:  # noqa: BLE001 - 問不到就讓呼叫端退回英文
+        logger.debug("讀取語言偏好失敗", exc_info=True)
+        return []
 
 
 def total_ram_mb() -> int | None:
@@ -962,11 +1007,16 @@ def system_cpu_ticks() -> tuple[float, float] | None:
 #: `AVAuthorizationStatus`。⚠️ **0(尚未詢問)也算沒授權**:那時候繼續錄,
 #: TCC 要嘛跳提示(使用者可能沒看到)、要嘛靜默拒絕——兩種都不該讓他往下走
 _AV_NOT_DETERMINED, _AV_RESTRICTED, _AV_DENIED, _AV_AUTHORIZED = 0, 1, 2, 3
-_AV_WHY = {
-    _AV_NOT_DETERMINED: "這台電腦還沒有把麥克風權限給這個工具",
-    _AV_RESTRICTED: "這台電腦的管理原則不允許使用麥克風",
-    _AV_DENIED: "麥克風權限被拒絕了",
-}
+
+
+def _av_why(status: int) -> str | None:
+    return {
+        _AV_NOT_DETERMINED: t("這台電腦還沒有把麥克風權限給這個工具"),
+        _AV_RESTRICTED: t("這台電腦的管理原則不允許使用麥克風"),
+        _AV_DENIED: t("麥克風權限被拒絕了"),
+    }.get(status)
+
+
 #: 系統設定的深層連結。⚠️ **那一頁要往下捲才看得到**,所以非得直接開它不可
 _MIC_PANE = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
 
@@ -998,11 +1048,11 @@ def microphone_permission() -> Outcome:
                           b"authorizationStatusForMediaType:")), media)
     except Exception:  # noqa: BLE001 - 問不到就讓呼叫端維持原本的行為
         logger.debug("查詢麥克風授權狀態失敗", exc_info=True)
-        return Outcome("unsupported", "這台機器問不到麥克風授權狀態")
+        return Outcome("unsupported", t("這台機器問不到麥克風授權狀態"))
 
     if status == _AV_AUTHORIZED:
         return Outcome("ok")
-    return Outcome("failed", _AV_WHY.get(status, f"麥克風授權狀態異常({status})"))
+    return Outcome("failed", _av_why(status) or t("麥克風授權狀態異常({status})", status=status))
 
 
 def open_microphone_settings() -> Outcome:
@@ -1017,5 +1067,5 @@ def open_microphone_settings() -> Outcome:
     try:
         subprocess.Popen(["open", _MIC_PANE])
     except Exception as e:  # noqa: BLE001
-        return Outcome("failed", f"打不開系統設定:{type(e).__name__}")
+        return Outcome("failed", t("打不開系統設定:{name__}", name__=type(e).__name__))
     return Outcome("ok")

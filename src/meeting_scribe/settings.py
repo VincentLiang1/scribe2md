@@ -42,6 +42,10 @@ KEY_MINUTES_ENGINE = "minutes_engine"
 # 電腦**,所以落地:開窗時照它先放那一格,偵測完再更正——不記的話每次開窗都是三格 → 四格
 # 跳一次(2026-10-14 使用者回報「會卡一下」)
 KEY_MINUTES_AVAILABLE = "minutes_available"
+# 介面語言(`i18n.LANGS` 之一;沒有這個鍵 = 跟著系統)。描述的是**這台電腦的人看得懂哪一種**,
+# 所以落地(使用者 2026-10-21 選:頁首 🌐 選單、重開生效)。⚠️ 不是「會議語言」——那是每一份
+# 工作各自選、不記住的,見 `docs/dev/i18n.md`。
+KEY_UI_LANGUAGE = "ui_language"
 
 
 def store_file() -> Path:

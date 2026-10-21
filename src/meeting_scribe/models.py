@@ -22,6 +22,7 @@ from pathlib import Path
 
 from meeting_scribe import paths
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ def redownload_hint() -> str:
     一句「請刪除某個找不到的資料夾」——照著做的人會先困惑一輪,然後放棄。
     ⚠️ **不要在這裡 `mkdir`**:這是在講一個「請你去刪掉」的位置,順手把它
     建出來只會讓那句話更奇怪。"""
-    return f"請刪除 {paths.appdata_root() / 'models'} 資料夾後重試(會重新下載)"
+    return t("請刪除 {v} 資料夾後重試(會重新下載)", v=paths.appdata_root() / 'models')
 
 
 def data_dir() -> Path:
@@ -155,9 +156,9 @@ def seed_missing() -> list[str]:
 # 「根憑證沒補到 + 群組原則關掉自動更新」的機器失去 certifi 這條活路,無條件
 # 套用等於拿一種壞法換另一種。換完再失敗就還原,不留下比原本更糟的狀態。
 _CERT_HINT = (
-    "這台電腦不信任下載網站的安全憑證(公司網路做連線檢查時最常見)。"
+    t("這台電腦不信任下載網站的安全憑證(公司網路做連線檢查時最常見)。"
     "請把這句話轉給資訊人員:需要把公司的根憑證匯入 Windows 的"
-    "「受信任的根憑證授權單位」。"
+    "「受信任的根憑證授權單位」。")
 )
 
 # None=還沒試過、True=已改用系統憑證、False=試過但沒用(不再重試)
@@ -249,8 +250,8 @@ def download_failed(what: str, target: str, e: Exception) -> UserFacingError:
     瀏覽器開得了同一個網址,照著訊息去檢查網路只會白花一小時——而真正
     要做的事(請 IT 匯入根憑證)完全不在那個方向上。"""
     if _is_cert_error(e):
-        return UserFacingError(f"{what}下載失敗:{_CERT_HINT}({target})")
-    return UserFacingError(f"{what}下載失敗,請確認網路連線後重試:{target}")
+        return UserFacingError(t("{what}下載失敗:{CERT_HINT}({target})", what=what, CERT_HINT=_CERT_HINT, target=target))
+    return UserFacingError(t("{what}下載失敗,請確認網路連線後重試:{target}", what=what, target=target))
 
 
 # 進度的第二個出口。⚠️ **原生視窗沒有黑視窗**(`啟動.vbs` 用 pythonw 起,主控台
@@ -325,8 +326,7 @@ def hub_tqdm(what: str):
                     and now - state["last_at"] < _PROGRESS_MIN_SEC):
                 return
             state["last_pct"], state["last_at"] = pct, now
-            line = (f"下載{what}:{pct}%"
-                    f"({min(done, total) / 1048576:.0f}/{total / 1048576:.0f} MB)")
+            line = (t("下載{what}:{pct}%({v:.0f}/{v2:.0f} MB)", what=what, pct=pct, v=min(done, total) / 1048576, v2=total / 1048576))
             # 記錄檔也留一份:使用者回報「卡住」時,這是判斷「還在下載」的唯一依據
             logger.info("%s", line)
             report_progress(line, pct / 100)
@@ -335,7 +335,7 @@ def hub_tqdm(what: str):
 
 
 def download(
-    url: str, dest: Path, min_bytes: int = _MIN_MODEL_BYTES, what: str = "模型",
+    url: str, dest: Path, min_bytes: int = _MIN_MODEL_BYTES, what: str = t("模型"),
 ) -> Path:
     """下載單一檔案(已存在且過大小門檻直接沿用);.part 暫名+原子改名,
     中斷只殘留 .part、不會產生假快取;進度印到黑視窗。
@@ -364,8 +364,7 @@ def download(
         if pct < last_pct + _PROGRESS_PCT_STEP and now - last_at < _PROGRESS_MIN_SEC:
             return
         last_pct, last_at = pct, now
-        line = (f"下載{what} {dest.name}:{pct}%"
-                f"({min(done, total) / 1048576:.0f}/{total / 1048576:.0f} MB)")
+        line = (t("下載{what} {name}:{pct}%({v:.0f}/{v2:.0f} MB)", what=what, name=dest.name, pct=pct, v=min(done, total) / 1048576, v2=total / 1048576))
         try:
             logger.info("%s", line)
             # ⚠️ **有掛鉤就不 print**:子行程(diarworker/transworker)掛了掛鉤,
@@ -387,7 +386,7 @@ def download(
     try:
         with_tls_rescue(_fetch, what)
         if tmp.stat().st_size < min_bytes:
-            raise UserFacingError(f"下載的檔案過小,可能下載失敗,請重試:{url}")
+            raise UserFacingError(t("下載的檔案過小,可能下載失敗,請重試:{url}", url=url))
     except UserFacingError:
         tmp.unlink(missing_ok=True)
         raise
@@ -440,13 +439,13 @@ def _extract_onnx_member(archive_url: str, member_suffix: str, target: Path) -> 
             )
             if member is None:
                 raise UserFacingError(
-                    f"下載的壓縮檔內容不符預期(缺少 {member_suffix}),請重試:{archive_url}"
+                    t("下載的壓縮檔內容不符預期(缺少 {member_suffix}),請重試:{archive_url}", member_suffix=member_suffix, archive_url=archive_url)
                 )
             member.name = part.name
             tar.extract(member, target.parent, filter="data")
         if part.stat().st_size < _MIN_MODEL_BYTES:
             raise UserFacingError(
-                f"解壓後的模型檔案過小,可能下載失敗,請重試:{archive_url}"
+                t("解壓後的模型檔案過小,可能下載失敗,請重試:{archive_url}", archive_url=archive_url)
             )
         part.replace(target)  # 原子改名:中斷只會殘留 .part,不會產生假快取
     finally:
@@ -534,12 +533,12 @@ def minutes_llm_dir(size: str) -> Path:
 
         try:
             with_tls_rescue(lambda: snapshot_download(
-                repo, local_dir=target, tqdm_class=hub_tqdm(f"AI 模型 {repo.split('/')[-1]}")),
-                "AI 模型")
+                repo, local_dir=target, tqdm_class=hub_tqdm(t("AI 模型 {v}", v=repo.split('/')[-1]))),
+                t("AI 模型"))
         except Exception as e:
-            raise download_failed("AI 模型", repo, e) from e
+            raise download_failed(t("AI 模型"), repo, e) from e
         if not _llm_cache_complete(target):
-            raise UserFacingError(f"AI 模型下載內容不完整,請重試:{repo}")
+            raise UserFacingError(t("AI 模型下載內容不完整,請重試:{repo}", repo=repo))
     _llm_dirs[size] = target
     return target
 
@@ -613,20 +612,20 @@ def mlx_llm_dir() -> Path:
         return target
     from huggingface_hub import snapshot_download
 
-    name = f"AI 模型 {MLX_LLM_REPO.split('/')[-1]}"
+    name = t("AI 模型 {v}", v=MLX_LLM_REPO.split('/')[-1])
     try:
         with_tls_rescue(lambda: snapshot_download(
             MLX_LLM_REPO, revision=MLX_LLM_REVISION, allow_patterns=list(MLX_LLM_FILES),
-            local_dir=target, tqdm_class=hub_tqdm(name)), "AI 模型")
+            local_dir=target, tqdm_class=hub_tqdm(name)), t("AI 模型"))
     except Exception as e:
-        raise download_failed("AI 模型", MLX_LLM_REPO, e) from e
-    report_progress("核對下載的 AI 模型檔案中…", 1.0)
+        raise download_failed(t("AI 模型"), MLX_LLM_REPO, e) from e
+    report_progress(t("核對下載的 AI 模型檔案中…"), 1.0)
     for fname, (size, digest) in MLX_LLM_FILES.items():
         path = target / fname
         if not path.is_file() or path.stat().st_size != size or _sha256(path) != digest:
             path.unlink(missing_ok=True)
             logger.warning("Qwen 模型檔核對不符,已刪除:%s", fname)
-            raise UserFacingError("下載的 AI 模型檔案不完整,請再按一次重新下載。")
+            raise UserFacingError(t("下載的 AI 模型檔案不完整,請再按一次重新下載。"))
     return target
 
 
@@ -649,12 +648,12 @@ def ov_whisper_dir(model_key: str) -> Path:
         try:
             # 原生支援中斷續傳;with_tls_rescue 兜公司網路的 TLS 攔截
             with_tls_rescue(lambda: snapshot_download(
-                repo, local_dir=target, tqdm_class=hub_tqdm(f"模型 {repo.split('/')[-1]}")),
-                "模型")
+                repo, local_dir=target, tqdm_class=hub_tqdm(t("模型 {v}", v=repo.split('/')[-1]))),
+                t("模型"))
         except Exception as e:
-            raise download_failed("模型", repo, e) from e
+            raise download_failed(t("模型"), repo, e) from e
         if not _ov_cache_complete(target):
             # 防呆:下載「成功」但必要檔案組不齊(上游 repo 結構改變等)
-            raise UserFacingError(f"模型下載內容不完整,請重試:{repo}")
+            raise UserFacingError(t("模型下載內容不完整,請重試:{repo}", repo=repo))
     _ov_dirs[model_key] = target
     return target

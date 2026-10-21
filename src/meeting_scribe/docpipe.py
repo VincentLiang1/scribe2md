@@ -33,6 +33,7 @@ from meeting_scribe import (
 )
 from meeting_scribe.docmd import AssetsDir, Block, DocMeta, Records, Table
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -361,9 +362,9 @@ def dry_run_lines(plan: list[tuple[Path, Path | None, str]]) -> list[str]:
     lines: list[str] = []
     for src, dest, note in plan:
         if dest is None:
-            lines.append(f"- 「{src.name}」→ 跳過({note})")
+            lines.append(t("- 「{name}」→ 跳過({note})", name=src.name, note=note))
         else:
-            lines.append(f"- 「{src.name}」→ 「{dest.name}」")
+            lines.append(t("- 「{name}」→ 「{dest}」", name=src.name, dest=dest.name))
     return lines
 
 
@@ -400,7 +401,7 @@ def convert_file(
 ) -> FileResult:
     """單一檔案 → 寫出 md。**不吞例外**:容錯由 convert_batch 決定。
 
-    options 是「使用者選的執行選項」(目前只有音訊的 model_key/
+    options 是「使用者選的執行選項」(目前只有音訊的 model_key/language/
     num_speakers),只會交給宣告 wants_options 的路由。"""
     # 副檔名被改過的舊格式:靠內容判斷、改走 LibreOffice 升級那條路。
     # 這一步在路由**之前**做——不然使用者只會看到「檔案可能已損壞」
@@ -484,10 +485,16 @@ def convert_file(
             or any(
                 isinstance(b, docmd.Raw) and b.traditionalised for b in converted
             )
-        )},
+        ), **_transcript_language(converted)},
     )
     docmd.write_md(docmd.render(converted, meta), dest)
     return FileResult(src=src, out=dest)
+
+
+def _transcript_language(blocks) -> dict:
+    """音訊逐字稿的會議語言(有就回 {"language": …},不是逐字稿回空 dict,frontmatter 不多一欄)。"""
+    lang = next((b.language for b in blocks if isinstance(b, docmd.Raw) and b.language), "")
+    return {"language": lang} if lang else {}
 
 
 def convert_batch(

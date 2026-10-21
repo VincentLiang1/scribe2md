@@ -25,6 +25,7 @@ from pathlib import Path
 
 from meeting_scribe import docmd, srcfile
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +267,7 @@ def _drop_referenced_images(
 
 def validate_batch(
     text, recursive: bool = True, types: list[str] | None = None,
-    *, what: str = "文件", hint: str | None = None,
+    *, what: str = t("文件"), hint: str | None = None,
 ) -> tuple[list[Path], list[tuple[Path, str]]]:
     """路徑文字 → (可轉換的檔案清單, 略過的 (路徑, 原因))。
 
@@ -285,8 +286,7 @@ def validate_batch(
     raw = clean_paths(text)
     if not raw:
         raise UserFacingError(
-            f"請先按「選擇檔案…」或「選擇資料夾…」挑選要轉換的{what},"
-            "或直接貼上路徑(一行一個)"
+            t("請先按「選擇檔案…」或「選擇資料夾…」挑選要轉換的{what},或直接貼上路徑(一行一個)", what=what)
         )
     files: list[Path] = []
     skipped: list[tuple[Path, str]] = []
@@ -299,16 +299,16 @@ def validate_batch(
         if is_dir:
             found = expand_folder(p, recursive, types)
             if not found:
-                skipped.append((p, "這個資料夾裡沒有可以轉換的檔案"))
+                skipped.append((p, t("這個資料夾裡沒有可以轉換的檔案")))
             files.extend(found)
         elif is_file:
             ext = p.suffix.lower()
             if ext in types:
                 files.append(p)
             else:
-                skipped.append((p, f"不支援的格式「{ext or '(無副檔名)'}」"))
+                skipped.append((p, t("不支援的格式「{v}」", v=ext or t("(無副檔名)"))))
         else:
-            skipped.append((p, "找不到這個檔案或資料夾"))
+            skipped.append((p, t("找不到這個檔案或資料夾")))
 
     # 去重但保序:使用者同時選了資料夾與其中某個檔案時不該轉兩次
     seen: set[str] = set()
@@ -320,15 +320,13 @@ def validate_batch(
             unique.append(p)
 
     if not unique:
-        reasons = "、".join(dict.fromkeys(r for _, r in skipped)) or "沒有可以轉換的檔案"
+        reasons = t("、").join(dict.fromkeys(r for _, r in skipped)) or t("沒有可以轉換的檔案")
         raise UserFacingError(
-            f"沒有可以轉換的檔案:{reasons}。"
-            f"支援的格式:{hint or supported_hint()}"
+            t("沒有可以轉換的檔案:{reasons}。支援的格式:{v}", reasons=reasons, v=hint or supported_hint())
         )
     if len(unique) > MAX_BATCH_FILES:
         raise UserFacingError(
-            f"一次選了 {len(unique)} 個檔案,超過上限 {MAX_BATCH_FILES} 個。"
-            "請分批處理,或改選範圍小一點的資料夾(也可以取消「包含子資料夾」)"
+            t("一次選了 {v} 個檔案,超過上限 {MAX_BATCH_FILES} 個。請分批處理,或改選範圍小一點的資料夾(也可以取消「包含子資料夾」)", v=len(unique), MAX_BATCH_FILES=MAX_BATCH_FILES)
         )
     return unique, skipped
 
@@ -343,18 +341,18 @@ def summarize(files: list[Path], skipped: list[tuple[Path, str]]) -> str:
         for p in files:
             ext = p.suffix.lower().lstrip(".")
             counts[ext] = counts.get(ext, 0) + 1
-        detail = "、".join(
+        detail = t("、").join(
             f"{ext} {n}" for ext, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
         )
-        parts.append(f"已選 **{len(files)} 個檔案**({detail})")
+        parts.append(t("已選 **{v} 個檔案**({detail})", v=len(files), detail=detail))
     if skipped:
-        parts.append(f"另有 {len(skipped)} 個項目會略過")
-    return ";".join(parts) + "。"
+        parts.append(t("另有 {v} 個項目會略過", v=len(skipped)))
+    return t(";").join(parts) + t("。")
 
 
 def skipped_lines(skipped: list[tuple[Path, str]]) -> list[str]:
     """略過清單 → 給批次報告逐行列出(摘要只給數量,報告要點名到檔案)。"""
-    return [f"- 略過「{p.name}」:{reason}" for p, reason in skipped]
+    return [t("- 略過「{name}」:{reason}", name=p.name, reason=reason) for p, reason in skipped]
 
 
 # ---- 原生對話框(共用 srcfile 的 withdraw+topmost+防重複開)----
@@ -370,10 +368,10 @@ def pick_files(parent=None) -> str:
     少了它會掉到螢幕最下緣(見 `srcfile.native_dialog`)。
     """
     picked = srcfile.native_dialog(lambda fd, root: fd.askopenfilenames(
-        parent=root, title="選擇要轉成 Markdown 的文件(可多選)",
+        parent=root, title=t("選擇要轉成 Markdown 的文件(可多選)"),
         filetypes=[
-            ("可轉換的文件", " ".join("*" + ext for ext in GUI_TYPES)),
-            ("所有檔案", "*.*"),
+            (t("可轉換的文件"), " ".join("*" + ext for ext in GUI_TYPES)),
+            (t("所有檔案"), "*.*"),
         ],
     ), parent)
     if not picked:
@@ -385,6 +383,6 @@ def pick_files(parent=None) -> str:
 def pick_folder(parent=None) -> str:
     """「選擇資料夾…」:整個資料夾的文件一次轉完。取消回空字串(同上)。"""
     picked = srcfile.native_dialog(lambda fd, root: fd.askdirectory(
-        parent=root, title="選擇要轉換的資料夾",
+        parent=root, title=t("選擇要轉換的資料夾"),
     ), parent)
     return str(Path(picked)) if picked else ""

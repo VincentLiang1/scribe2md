@@ -27,6 +27,8 @@ from meeting_scribe import audit as audit_mod
 from meeting_scribe import voiceprints as voiceprints_store
 from meeting_scribe.errors import UserFacingError
 from meeting_scribe.types import MAX_SPEAKERS, UNKNOWN_SPEAKER, SpeechBlock
+from meeting_scribe.i18n import t
+from meeting_scribe import vocab
 
 logger = logging.getLogger(__name__)
 
@@ -54,13 +56,15 @@ def _rename_speakers(
     「講者 1 誤配到講者 10」的前綴問題(那正是舊實作要靠尾隨 `**` 迴避的)。
     (曾依副檔名分流 txt/srt 錨定,隨輸出格式固定 md 移除,2026-07-26。)"""
     labels = labels or {}
+    # 沒給標籤時的預設寫法照**這份 md 的**會議語言(英文逐字稿是「Speaker N」「Unknown」)
+    v = vocab.detect(text)
     by_label = {
-        labels.get(n, f"講者 {n}"): name for n, name in name_map.items()
+        labels.get(n, f"{v.speaker_prefix}{n}"): name for n, name in name_map.items()
     }
     if unknown_name:
-        by_label[labels.get(UNKNOWN_SPEAKER, "未知")] = unknown_name
+        by_label[labels.get(UNKNOWN_SPEAKER, v.unknown)] = unknown_name
     # 編號 → 那一位在檔案裡**目前**的標籤(rename 認的是標籤不是編號)
-    auto_labels = {labels.get(n, f"講者 {n}") for n in (auto_named or ())}
+    auto_labels = {labels.get(n, f"{v.speaker_prefix}{n}") for n in (auto_named or ())}
     return relabel.rename(text, by_label, auto_labels)
 
 
@@ -167,7 +171,7 @@ def _relabel_cohesion(wav, blocks, progress) -> list[float]:
         samples = audio.read_wav16k(wav)
         vecs = diarize._extract_embeddings(
             samples, spans,
-            progress=lambda f: progress(0.75 + 0.18 * f, desc="計算每段的相似度"),
+            progress=lambda f: progress(0.75 + 0.18 * f, desc=t("計算每段的相似度")),
         )
     except Exception:
         logger.exception("重設講者:相似度算不出來(不影響聽與改掛)")
@@ -196,7 +200,7 @@ def _from_features(feat, transcript, named, blocks):
     spans_by_name = transcript.spans()
     vp: dict[int, np.ndarray] = {}
     for name, spans in spans_by_name.items():
-        if name == "未知":  # 多人零碎語音的混合,絕不登記聲紋
+        if vocab.is_unknown(name):  # 多人零碎語音的混合,絕不登記聲紋
             continue
         vecs = diarize.block_vectors(feat, spans)
         good = vecs[np.linalg.norm(vecs, axis=1) > 0]
@@ -273,7 +277,7 @@ def _audit_payload_from_transcript(transcript, named, media) -> dict:
     for i, b in enumerate(order):
         nxt = order[i + 1].start if i + 1 < len(order) else b.start + relabel._TAIL_SEC
         end = min(nxt, b.start + relabel._CLIP_MAX_SEC)
-        spk = UNKNOWN_SPEAKER if b.name == "未知" else (
+        spk = UNKNOWN_SPEAKER if vocab.is_unknown(b.name) else (
             named.index(b.name) if b.name in named else None
         )
         if spk is None:
@@ -350,7 +354,7 @@ def _labels_in(text: str) -> dict[int, str]:
     labels: dict[int, str] = {}
     n = 0
     for label in order:
-        if label == "未知":
+        if vocab.is_unknown(label):
             labels[UNKNOWN_SPEAKER] = label
         else:
             n += 1
@@ -438,28 +442,28 @@ def _analyse_for_relabel(md_path, media, transcript, named, progress,
     cohesion: list[float] = []
     if feat is not None:
         # 有分群檔:聲紋與相似度都算得出來,而且是毫秒級(見 _from_features)
-        progress(0.5, desc="讀分群檔")
+        progress(0.5, desc=t("讀分群檔"))
         vp, cohesion = _from_features(feat, transcript, named, blocks)
         cancel.check()
     else:
         with tempfile.TemporaryDirectory(prefix=pipeline.TMP_PREFIX) as tmp:
-            progress(0.05, desc=f"{media.name}:準備音訊")
+            progress(0.05, desc=t("{name}:準備音訊", name=media.name))
             wav = audio.to_wav16k(media, Path(tmp))
             cancel.check()
-            progress(0.15, desc=f"{media.name}:抽取聲紋")
+            progress(0.15, desc=t("{name}:抽取聲紋", name=media.name))
             vp = diarize.voiceprints_for_spans(
                 wav,
-                {named.index(n): s for n, s in spans.items() if n != "未知"},
-                progress=lambda f: progress(0.15 + 0.60 * f, desc="抽取聲紋"),
+                {named.index(n): s for n, s in spans.items() if not vocab.is_unknown(n)},
+                progress=lambda f: progress(0.15 + 0.60 * f, desc=t("抽取聲紋")),
             )
             cancel.check()
             if blocks:
-                progress(0.75, desc="計算每段的相似度")
+                progress(0.75, desc=t("計算每段的相似度"))
                 cohesion = _relabel_cohesion(wav, blocks, progress)
-    progress(0.95, desc="剪試聽片段")
+    progress(0.95, desc=t("剪試聽片段"))
     # 線索的鍵在呼叫端已改成哨兵/序號,這裡要的是同一組;直接照 named 重建
     clip_hints = {
-        (UNKNOWN_SPEAKER if transcript.order[i] == "未知"
+        (UNKNOWN_SPEAKER if vocab.is_unknown(transcript.order[i])
          else named.index(transcript.order[i])): h
         for i, h in hints.items()
     }
@@ -544,16 +548,16 @@ def _hint_text(hint, rivals=None, nearest=None) -> str | None:
         count, quote = hint[0], hint[1]  # 尾端另有該句起訖秒(剪試聽用),這裡用不到
         if len(quote) > _HINT_QUOTE_CHARS:
             quote = quote[:_HINT_QUOTE_CHARS] + "…"
-        parts.append(f"共 {count} 段發言・「{quote}」")
+        parts.append(t("共 {count} 段發言・「{quote}」", count=count, quote=quote))
     if rivals:
         # ⚠️ **只講「像誰」,不再附「建議按 X 聽過再選」**(2026-08-18 精簡):
         # 那半句是**規則**不是這一位的資訊,每一位重複一次——實測它讓每一列
         # 多 33px,十位講者就是 330px。而「🔍 核對」「▶️ 試聽」本來就在同一列
         # 的右邊,按鈕自己就是指路;那句話改成整個面板頂部講一次
-        parts.append(f"聲音同時像:{'、'.join(rivals)}")
+        parts.append(t("聲音同時像:{v}", v=t("、").join(rivals)))
     elif nearest:
         # 「(參考)」不能省:這幾位是「都不夠像」裡面相對最像的,可能一個都不是
-        parts.append(f"最接近(參考):{'、'.join(nearest)}")
+        parts.append(t("最接近(參考):{v}", v=t("、").join(nearest)))
     return "\n".join(parts) or None
 
 

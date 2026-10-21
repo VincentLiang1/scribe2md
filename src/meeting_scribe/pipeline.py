@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from meeting_scribe.i18n import t
 from meeting_scribe import (
     audio,
     cancel,
@@ -30,12 +31,14 @@ from meeting_scribe import (
     diarize,
     export,
     loopdetect,
+    meetlang,
     merge,
     plat,
     power,
     punctuate,
     runstate,
     transcribe,
+    vocab,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,20 +70,13 @@ def mmss(t: float) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
-# 跳針標記的開頭(hints 挑摘錄時據此排除:標記不是「發言」,且其文字比
-# 一般口語句長,曾在 60 秒上限內反而霸佔摘錄——使用者回報);
-# 常數本體在 loopdetect(export 也要用,放這裡會循環 import)
-_DEGENERATE_PREFIX = loopdetect.MARKER_PREFIX
 
-
-def _degenerate_note(seg) -> str:
-    """跳針段的繁中標記,取代垃圾文字(誠實交代+指路原音)。"""
+def _degenerate_note(seg, language: str = meetlang.DEFAULT) -> str:
+    """跳針段的標記,取代垃圾文字(誠實交代+指路原音);照會議語言寫(`vocab`)。"""
+    v = vocab.of(language)
     phrase = loopdetect.repeated_phrase(seg.text)
-    quoted = f"重複輸出「{phrase}」" if phrase else "輸出重複雜訊"
-    return (
-        f"{_DEGENERATE_PREFIX}:模型在 {mmss(seg.start)}~{mmss(seg.end)} {quoted},"
-        "內容不可信、已略去;需要這段內容請對照原始錄音)"
-    )
+    quoted = v.degenerate_phrase.format(phrase=phrase) if phrase else v.degenerate_noise
+    return v.degenerate.format(start=mmss(seg.start), end=mmss(seg.end), quoted=quoted)
 
 
 def cleanup_stale_temp() -> None:
@@ -184,7 +180,9 @@ def _speaker_hints(spoken) -> dict[int, tuple[int, str, float, float]]:
     best_marked: dict[int, tuple[str, float, float]] = {}
     for s in spoken:
         counts[s.speaker] = counts.get(s.speaker, 0) + 1
-        if s.text.startswith(_DEGENERATE_PREFIX):
+        # 跳針標記不是「發言」,而且文字比一般口語句長,曾在 60 秒上限內反而霸佔摘錄
+        # (使用者回報)。⚠️ 三種會議語言的標記都要認(`vocab.is_marker`)
+        if vocab.is_marker(s.text):
             best_marked.setdefault(s.speaker, (s.text, s.start, s.end))
             continue
         if len(s.text) > len(best_any.get(s.speaker, ("", 0.0, 0.0))[0]):
@@ -203,7 +201,7 @@ def _speaker_hints(spoken) -> dict[int, tuple[int, str, float, float]]:
     return hints
 
 
-def _run_transcribe(wav: Path, model_key: str, progress):
+def _run_transcribe(wav: Path, model_key: str, progress, language: str = meetlang.DEFAULT):
     """轉錄:優先走子行程,起不來就退回主行程。
 
     **為什麼要子行程**(使用者 2026-08-07 選定):轉檔要降到 below-normal
@@ -222,20 +220,23 @@ def _run_transcribe(wav: Path, model_key: str, progress):
     if model_key == transcribe.APPLE:
         # Apple 那條本來就是另一支行程(Swift 小程式),而且不吃 CPU——子行程要防的
         # 「介面跟著被降」在它身上不存在,多繞一層只是多起一個 Python
-        result = transcribe.transcribe(wav, model_key=model_key, progress=progress)
+        result = transcribe.transcribe(wav, model_key=model_key, progress=progress,
+                                       language=language)
     else:
-        result = _transcribe_in_worker(wav, model_key, progress)
-    logger.info("轉錄模型:%s(%s),實際裝置:%s",
-                model_key, transcribe.MODEL_CHOICES[model_key], result[1])
+        result = _transcribe_in_worker(wav, model_key, progress, language)
+    logger.info("轉錄模型:%s(%s),實際裝置:%s,會議語言:%s",
+                model_key, transcribe.MODEL_CHOICES[model_key], result[1], language)
     return result
 
 
-def _transcribe_in_worker(wav: Path, model_key: str, progress):
+def _transcribe_in_worker(wav: Path, model_key: str, progress,
+                          language: str = meetlang.DEFAULT):
     """faster-whisper 那兩顆走子行程;起不來就退回主行程(理由見 `_run_transcribe`)。"""
     from meeting_scribe import transproc
 
     try:
-        return transproc.get().transcribe(wav, model_key=model_key, progress=progress)
+        return transproc.get().transcribe(wav, model_key=model_key, progress=progress,
+                                          language=language)
     except cancel.Cancelled:
         raise  # 停止鈕:原樣往上拋,不可被下面的兜底吞掉當成「子行程壞了」
     except Exception:
@@ -244,7 +245,8 @@ def _transcribe_in_worker(wav: Path, model_key: str, progress):
             exc_info=True,
         )
         transproc.shutdown()
-        return transcribe.transcribe(wav, model_key=model_key, progress=progress)
+        return transcribe.transcribe(wav, model_key=model_key, progress=progress,
+                                     language=language)
 
 
 def _run_diarize(wav: Path, num_speakers: int, progress, features_out=None):
@@ -287,6 +289,7 @@ def _transcribe_and_diarize(
     num_speakers: int,
     report: Callable[[str, float], None],
     features_out: Path | None = None,
+    language: str = meetlang.DEFAULT,
 ):
     """執行轉錄與講者分析,合成單一進度回報。
 
@@ -309,7 +312,7 @@ def _transcribe_and_diarize(
                     _TRANSCRIBE_WEIGHT * fracs["transcribe"]
                     + _DIARIZE_WEIGHT * fracs["diarize"]
                 )
-                report("轉錄與講者分析", combined)
+                report(t("轉錄與講者分析"), combined)
             # 落地成伺服器端狀態(鎖外:runstate 自己有鎖,而且心跳 log 會
             # 寫檔——不該把兩條引擎的回報卡在這裡等 I/O)。**兩段分開記**:
             # 畫面要能講出「轉錄 100%、講者分析 40%」,合成一個數字之後就
@@ -320,7 +323,7 @@ def _transcribe_and_diarize(
 
     if not transcribe.runs_off_cpu(model_key):
         segments, device = _run_transcribe(
-            wav, model_key, sub_progress("transcribe"))
+            wav, model_key, sub_progress("transcribe"), language)
         turns, voiceprints, quality = _run_diarize(
             wav, num_speakers, sub_progress("diarize"), features_out)
         return segments, device, turns, voiceprints, quality
@@ -332,7 +335,7 @@ def _transcribe_and_diarize(
     with ThreadPoolExecutor(max_workers=2) as ex:
         fut_t = ex.submit(
             contextvars.copy_context().run, _run_transcribe, wav,
-            model_key, sub_progress("transcribe"),
+            model_key, sub_progress("transcribe"), language,
         )
         fut_d = ex.submit(
             contextvars.copy_context().run, _run_diarize, wav,
@@ -362,9 +365,13 @@ class RenderedTranscript:
     # frontmatter 留標記(固定英文 token),RAG 端才篩得出「這份稿子有幾個
     # 講者標籤要人工確認」
     check_speakers: list = field(default_factory=list)
+    # 會議語言(`meetlang`)。批次路徑要把它寫進 frontmatter(`language:`,同 iOS);
+    # 沒有這欄的舊逐字稿一律當繁中
+    language: str = meetlang.DEFAULT
 
 
-def render_transcript(spoken, stem: str, quality=None) -> RenderedTranscript:
+def render_transcript(spoken, stem: str, quality=None,
+                      language: str = meetlang.DEFAULT) -> RenderedTranscript:
     """已掛講者的段落 → 繁化 → 跳針標記 → 標點 → md 文字(**不落檔**)。
 
     finalize(單檔/收音)與 docaudio(批次、走 doc2md 那條路)共用的核心。
@@ -374,11 +381,19 @@ def render_transcript(spoken, stem: str, quality=None) -> RenderedTranscript:
 
     quality(types.SpeakerQuality 清單)有給就在 md 檔尾附講者診斷區塊。
     **兩條路都要給**:批次那份更需要——沒有人會逐份翻,而「四個人被併成
-    一個名字」在成品裡看起來只是「少了一個人」。"""
-    converted = [
-        replace(s, text=convert.to_taiwan_traditional(s.text))
-        for s in spoken
-    ]
+    一個名字」在成品裡看起來只是「少了一個人」。
+
+    ⚠️ **繁化與標點看會議語言**(`meetlang`):繁化只對繁體中文(簡中會議輸出簡體、英文沒有字
+    可轉),英文不跑中文標點模型(引擎自己就有標點與大小寫,跑了會換成中文標點)。"""
+    if meetlang.traditionalize(language):
+        converted = [
+            replace(s, text=convert.to_taiwan_traditional(s.text))
+            for s in spoken
+        ]
+    elif meetlang.simplify(language):
+        converted = [replace(s, text=convert.to_simplified(s.text)) for s in spoken]
+    else:
+        converted = list(spoken)
     traditionalised = any(a.text != b.text for a, b in zip(spoken, converted))
     spoken = converted
     # 訓練殘留(模型把 YouTube 結尾語、字幕組署名吐進逐字稿)先挖掉。
@@ -405,19 +420,22 @@ def render_transcript(spoken, stem: str, quality=None) -> RenderedTranscript:
     # 才發現;標記含時間範圍與重複短語,方便對照原音)
     degenerate = [s for s in spoken if loopdetect.is_degenerate(s.text)]
     spoken = [
-        replace(s, text=_degenerate_note(s))
+        replace(s, text=_degenerate_note(s, language))
         if loopdetect.is_degenerate(s.text) else s
         for s in spoken
     ]
     # 標點整份只跑一次:md 檔與預覽是同一份 to_markdown 輸出,渲染一次
     # 兩處共用——分開各叫一次的話,標點模型對整份逐字稿等於跑兩遍
     md_text = export.to_markdown(
-        spoken, stem, punctuate=punctuate.add_punctuation_many, quality=quality,
+        spoken, stem,
+        punctuate=punctuate.add_punctuation_many if meetlang.punctuate(language) else None,
+        quality=quality, language=language,
     )
     return RenderedTranscript(
         md_text=md_text, spoken=spoken, degenerate=degenerate,
         traditionalised=traditionalised,
         check_speakers=[q.speaker for q in export.check_first(quality or [])],
+        language=language,
     )
 
 
@@ -427,14 +445,15 @@ def run_pipeline(
     model_key: str = "fast",
     num_speakers: int = 0,
     on_stage: StageFn | None = None,
+    language: str = meetlang.DEFAULT,
 ) -> PipelineResult:
     """檔案轉檔入口:把單一來源檔從頭跑到輸出檔(流程見模組 docstring)。
 
     輸出檔名取來源檔名(曾有 out_stem 參數供批次中同名來源加序號,
     UI 改一次一檔後移除,2026-07-26)。
-    輸出固定 md、語言固定中文、講者分析一律執行——三項都已無參數可調
-    (使用者 2026-07-26 逐項指定固定化;各自的權威記載在 export 模組
-    docstring / transcribe.LANGUAGE / CLAUDE.md)。"""
+    輸出固定 md、講者分析一律執行——兩項都已無參數可調(使用者 2026-07-26 逐項指定
+    固定化;權威記載在 export 模組 docstring / CLAUDE.md)。語言 2026-10-21 起是參數
+    (`language`,會議語言,見 `meetlang`)。"""
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
             start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
@@ -452,7 +471,7 @@ def run_pipeline(
         with tempfile.TemporaryDirectory(prefix=TMP_PREFIX) as tmp:
             # 持開存活鎖直到本檔處理結束(見 TMP_LOCK 註解)
             with plat.hold_temp_lock(Path(tmp) / TMP_LOCK):
-                report("轉檔")
+                report(t("轉檔"))
                 # 標點模型在此先下載載入:模型問題要在最初幾秒浮出,不能等
                 # 30 分鐘轉錄完才在輸出階段炸掉、整場白跑
                 punctuate.ensure_ready()
@@ -462,20 +481,21 @@ def run_pipeline(
                 # 把結果寫出比丟棄划算
                 cancel.check()
 
-                report("轉錄與講者分析")
+                report(t("轉錄與講者分析"))
                 # 分群特徵檔**跟著 md 走**(這條路是 output/)。relabel 是從
                 # md 出發找同層同名的東西,放到別處等於白存
                 segments, device, turns, voiceprints, quality = (
                     _transcribe_and_diarize(
                         wav, model_key, num_speakers, report,
                         features_out=diarize.features_path(out_dir / src.name),
+                        language=language,
                     )
                 )
 
         spoken = merge.assign_speakers(segments, turns)
         return finalize(
             spoken, turns, voiceprints, out_dir, src.stem,
-            device=device, on_stage=on_stage, quality=quality,
+            device=device, on_stage=on_stage, quality=quality, language=language,
         )
 
 
@@ -491,6 +511,7 @@ def transcribe_to_markdown(
     num_speakers: int = 0,
     on_stage: StageFn | None = None,
     features_out: "Path | None | object" = FEATURES_BESIDE_SRC,
+    language: str = meetlang.DEFAULT,
 ) -> RenderedTranscript:
     """批次入口:單一來源檔 → 逐字稿 md 內容(**不落檔、不做命名線索**)。
 
@@ -522,12 +543,12 @@ def transcribe_to_markdown(
     with power.keep_awake():
         with tempfile.TemporaryDirectory(prefix=TMP_PREFIX) as tmp:
             with plat.hold_temp_lock(Path(tmp) / TMP_LOCK):
-                report("轉檔")
+                report(t("轉檔"))
                 punctuate.ensure_ready()
                 wav = audio.to_wav16k(src, Path(tmp))
                 cancel.check()
 
-                report("轉錄與講者分析")
+                report(t("轉錄與講者分析"))
                 # 批次的 md 落在原檔旁邊,特徵檔跟著它。⚠️ **這條路更需要**:
                 # 這個分頁沒有「講者人數」可填、一律自動偵測,而使用者不會
                 # 逐份回頭看——分壞了,事後改人數是唯一的救
@@ -537,11 +558,12 @@ def transcribe_to_markdown(
                         diarize.features_path(src)
                         if features_out is FEATURES_BESIDE_SRC else features_out
                     ),
+                    language=language,
                 )
 
-        report("輸出")
+        report(t("輸出"))
         spoken = merge.assign_speakers(segments, turns)
-        rendered = render_transcript(spoken, src.stem, quality)
+        rendered = render_transcript(spoken, src.stem, quality, language)
     # 同 finalize:跳針是整條管線唯一會真的弄丟內容的地方,批次更沒有人
     # 會逐份翻 md,記錄檔那一行是唯一會被看見的痕跡(md 內另有標記)
     if rendered.degenerate:
@@ -584,6 +606,7 @@ def finalize(
     on_stage: StageFn | None = None,
     speaker_sources: dict | None = None,
     quality: list | None = None,
+    language: str = meetlang.DEFAULT,
 ) -> PipelineResult:
     """已掛講者的段落 → 繁化 → 跳針標記 → 認人線索 → 輸出檔/預覽。
 
@@ -597,10 +620,10 @@ def finalize(
             start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
             on_stage(stage, min(start + width * inner_frac, 1.0))
 
-    report("輸出")
+    report(t("輸出"))
     t0 = time.monotonic()
     t_md = time.monotonic()
-    rendered = render_transcript(spoken, stem, quality)
+    rendered = render_transcript(spoken, stem, quality, language)
     spoken, degenerate, md_text = (
         rendered.spoken, rendered.degenerate, rendered.md_text,
     )
@@ -615,7 +638,7 @@ def finalize(
     # 命名欄位的認人線索(含該句起訖秒,供 app 剪同一句的試聽片段)
     hints = _speaker_hints(spoken)
     outputs = [export.write_md(
-        md_text, out_dir, stem, export.transcript_frontmatter(spoken, quality))]
+        md_text, out_dir, stem, export.transcript_frontmatter(spoken, quality, language))]
     # 標點模型要跑整份逐字稿,而在此之前使用者已經等了整段收尾。沒有這行
     # 的話「到底是還在跑還是卡住了」在記錄檔裡完全看不出來。(量級:依序跑
     # 的年代 89 分鐘會議 4.5 秒、166 分鐘 13.6 秒;2026-09-17 改成區塊間平行,
@@ -637,7 +660,7 @@ def finalize(
         )
 
     if on_stage:
-        on_stage("完成", 1.0)
+        on_stage(t("完成"), 1.0)
     # 講者數 = 出現過的非未知講者標籤數(重排後為 0..K-1 連號)
     n_speakers = len({t.speaker for t in turns if t.speaker >= 0})
     return PipelineResult(

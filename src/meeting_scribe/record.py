@@ -70,6 +70,7 @@ import numpy as np
 
 from meeting_scribe import plat, power
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -743,8 +744,8 @@ def _wait_for_device(name: str):
                 return mic
         if time.monotonic() >= deadline:
             raise UserFacingError(
-                "無法錄製電腦聲音:系統聲音的錄音裝置建好了卻找不到它,"
-                "請重試一次;若持續發生請重新啟動程式")
+                t("無法錄製電腦聲音:系統聲音的錄音裝置建好了卻找不到它,"
+                "請重試一次;若持續發生請重新啟動程式"))
         time.sleep(0.05)
 
 
@@ -762,14 +763,13 @@ def open_system_audio():
         # ⚠️ **三態要講不同的話**(spec/mac/02 §2.2):`failed` 是使用者三十秒
         # 能自己解的(去開權限),`unsupported` 是這台機器做不到
         raise UserFacingError(
-            (f"無法錄製電腦聲音:{cap.reason}" if cap.state == "failed"
-             else f"這台電腦無法錄製電腦聲音:{cap.reason}"
-                  "。可以改用「現場會議」情境只錄麥克風。"))
+            (t("無法錄製電腦聲音:{reason}", reason=cap.reason) if cap.state == "failed"
+             else t("這台電腦無法錄製電腦聲音:{reason}。可以改用「現場會議」情境只錄麥克風。", reason=cap.reason)))
     try:
         source = plat.open_system_audio()
     except OSError as e:
         logger.debug("建立系統聲音來源失敗", exc_info=True)
-        raise UserFacingError(f"無法錄製電腦聲音:{e}") from e
+        raise UserFacingError(t("無法錄製電腦聲音:{e}", e=e)) from e
     if source is None:
         return find_loopback_mic(), None        # Windows:既有的 loopback 那條
     try:
@@ -781,8 +781,8 @@ def open_system_audio():
             raise
         logger.debug("列舉音訊裝置失敗", exc_info=True)
         raise UserFacingError(
-            "無法錄製電腦聲音:查詢音訊裝置時出錯,請重試一次"
-            "(詳細錯誤已寫進記錄檔)") from e
+            t("無法錄製電腦聲音:查詢音訊裝置時出錯,請重試一次"
+            "(詳細錯誤已寫進記錄檔)")) from e
     return mic, source
 
 
@@ -804,14 +804,14 @@ def find_loopback_mic():
         # 黑視窗不得有裸英文 traceback(spec §8),要診斷的人拿的是記錄檔
         logger.debug("列舉播放裝置失敗", exc_info=True)
         raise UserFacingError(
-            "無法查詢 Windows 音訊裝置:請重試一次;若持續發生請重新啟動程式"
-            "(詳細錯誤已寫進記錄檔,「❓ 使用說明」右上角的「記錄檔…」開得到)"
+            t("無法查詢 Windows 音訊裝置:請重試一次;若持續發生請重新啟動程式"
+            "(詳細錯誤已寫進記錄檔,「❓ 使用說明」右上角的「記錄檔…」開得到)")
         ) from e
     loopbacks = [m for m in mics if m.isloopback]
     if not loopbacks:
         raise UserFacingError(
-            "找不到可錄製電腦聲音的裝置:請確認 Windows 有可用的播放裝置"
-            "(喇叭/耳機),或改用「現場會議」情境只錄麥克風"
+            t("找不到可錄製電腦聲音的裝置:請確認 Windows 有可用的播放裝置"
+            "(喇叭/耳機),或改用「現場會議」情境只錄麥克風")
         )
     try:
         default_name = sc.default_speaker().name
@@ -865,9 +865,9 @@ def _default_mic():
         # 程式壞了。要診斷的資訊只有 HRESULT 那一個數字,`%r` 連型別一起留住。
         logger.debug("查詢預設麥克風失敗:%r", cause)
         raise UserFacingError(
-            "找不到麥克風:請確認 Windows 已連接並啟用錄音裝置,"
+            t("找不到麥克風:請確認 Windows 已連接並啟用錄音裝置,"
             "或改用「只錄電腦聲音」情境;裝置正常卻仍失敗,"
-            "請重新啟動程式並附上記錄檔(「❓ 使用說明」右上角的「記錄檔…」)"
+            "請重新啟動程式並附上記錄檔(「❓ 使用說明」右上角的「記錄檔…」)")
         ) from cause
     return mic
 
@@ -1418,10 +1418,9 @@ class Recorder:
                 tr.abort()
             self._tracks = []
             self._close_sysaudio()      # ⚠️ 開流失敗也要把聚合裝置收掉
-            src = "麥克風" if kind == "mic" else "電腦聲音"
+            src = t("麥克風") if kind == "mic" else t("電腦聲音")
             raise UserFacingError(
-                f"無法開始錄音({src}):裝置可能被其他程式獨占或已停用,"
-                "請檢查 Windows 音效設定後重試"
+                t("無法開始錄音({src}):裝置可能被其他程式獨占或已停用,請檢查 Windows 音效設定後重試", src=src)
             ) from e
         self._start_mono = time.monotonic()
 

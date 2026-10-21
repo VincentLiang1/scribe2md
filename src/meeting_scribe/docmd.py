@@ -187,6 +187,10 @@ class Raw:
     謊報 false。"""
     text: str
     traditionalised: bool = False
+    # 音訊逐字稿的會議語言(`meetlang`;空字串 = 不是逐字稿)。⚠️ **要進 frontmatter**:批次這條路
+    # 會砍掉正文的「## 會議逐字稿 — 檔名」,讀回時(重設講者、會議紀錄草稿)只剩 frontmatter 的
+    # `language:` 說得出這份是英文還是簡中(`vocab.detect`)
+    language: str = ""
 
 
 Block = Heading | Para | Table | Records | Image | Note | Raw

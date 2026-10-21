@@ -11,10 +11,10 @@ faster-whisper(內建 Silero VAD、condition_on_previous_text=False 防
 (local-first,見 _model_dir)。每個解碼視窗都注入 data/hotwords.txt
 領域詞(見 hotwords 模組 docstring)。
 
-**轉錄語言固定中文**(LANGUAGE):曾有「語音語言」中/英選擇貫穿兩條
-引擎路徑,使用者 2026-07-26 指定移除(代價:英文音檔會被強制往中文解碼
-成品質不穩的「翻譯」;要恢復多語就是把 LANGUAGE 改回參數,兩條路徑都
-從這個常數取值,不必再考古各自寫死的字面值)。
+**轉錄語言是參數**(`language`,`meetlang` 的三種之一,預設繁體中文):2026-07-26 曾固定成中文、
+2026-10-21 使用者重開(多國語言,見 `docs/dev/i18n.md`)。⚠️ **三條引擎都從 `meetlang` 換算**
+(Whisper 碼 `meetlang.whisper_code`、Apple locale `meetlang.apple_locale`),不各自寫死字面值
+——那正是當初抽成單一常數要擋的事,現在擋的方式換成「同一支換算函式」。
 """
 import functools
 import logging
@@ -22,13 +22,10 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from meeting_scribe import cancel, hotwords, models
+from meeting_scribe import cancel, hotwords, meetlang, models
 from meeting_scribe.errors import missing_dll, native_engine_error
+from meeting_scribe.i18n import t
 from meeting_scribe.types import TranscriptSegment
-
-# 轉錄語言(產品決定,非引擎細節):faster-whisper 直接吃,OV 路徑包成
-# `<|zh|>` 特殊 token——兩條路徑必須一致,故只有這一個出處
-LANGUAGE = "zh"
 
 logger = logging.getLogger(__name__)
 
@@ -305,16 +302,16 @@ def _model_dir(name: str) -> str:
     except Exception:
         # ⚠️ 不用 print:原生視窗沒有主控台,而在 transworker 子行程裡 stdout 是
         #    NDJSON 專用通道。先送一行 0%,總大小要等下載開始後 hub 才知道
-        first = f"首次使用,下載轉錄模型 {name}(約 1.5~3GB)"
+        first = t("首次使用,下載轉錄模型 {name}(約 1.5~3GB)", name=name)
         logger.info("%s", first)
         models.report_progress(first, 0.0)
-        bar = models.hub_tqdm(f"轉錄模型 {name}")
+        bar = models.hub_tqdm(t("轉錄模型 {name}", name=name))
         try:
             # with_tls_rescue:公司網路做 TLS 攔截時改用系統憑證再試一次
             path = models.with_tls_rescue(
-                lambda: snapshot_download(repo, tqdm_class=bar, **kwargs), "模型")
+                lambda: snapshot_download(repo, tqdm_class=bar, **kwargs), t("模型"))
         except Exception as e:
-            raise models.download_failed("模型", name, e) from e
+            raise models.download_failed(t("模型"), name, e) from e
     _model_dirs[name] = path
     return path
 
@@ -338,19 +335,28 @@ def _load(model_dir: str, device: str) -> "WhisperModel":
     return _MODEL_CACHE[key]
 
 
+def hotwords_for(language: str) -> str | None:
+    """這一場要注入的領域詞(兩條 Whisper 路徑共用,parity 靠同一支函式)。
+
+    ⚠️ **英文會議一律不注**(`meetlang.inject_hotwords`):詞表是中文的,塞進英文解碼等於叫模型
+    往中文寫。"""
+    return hotwords.as_string() if meetlang.inject_hotwords(language) else None
+
+
 def _run(
     model: "WhisperModel", wav_path: str | Path, progress: ProgressFn | None,
+    language: str = meetlang.DEFAULT,
 ) -> list[TranscriptSegment]:
     """faster-whisper 實際解碼:逐窗產出帶時間戳的句子(空句略過)。"""
     segments, info = model.transcribe(
         str(wav_path),
-        language=LANGUAGE,
+        language=meetlang.whisper_code(language),
         vad_filter=True,
         condition_on_previous_text=False,
         # 領域詞表逐窗注入,修正專有名詞同音誤譯;用 hotwords 而非
         # initial_prompt——condition_on_previous_text=False 下,
         # initial_prompt 只影響第一個 30 秒視窗(見 hotwords 模組 docstring)
-        hotwords=hotwords.as_string() or None,
+        hotwords=hotwords_for(language) or None,
     )
     # transcribe() 返回時音檔解碼與全檔 VAD 已完成(惰性的只有逐窗解碼):
     # 回報前置完成,長檔開頭進度條才不會長時間紋絲不動
@@ -369,19 +375,21 @@ def _run(
 
 def _transcribe_intel(
     wav_path: str | Path, model_dir: str, progress: ProgressFn | None,
+    language: str = meetlang.DEFAULT,
 ) -> list[TranscriptSegment]:
     """Intel GPU 路徑的注入點(看似可內聯,實際有兩個理由):openvino 的
     惰性 import 隔離在此(不進啟動路徑);測試也 monkeypatch 這個名字來
     假裝有 Intel GPU。"""
     from meeting_scribe.transcribe_ov import transcribe_ov
 
-    return transcribe_ov(wav_path, model_dir, progress=progress, device="GPU")
+    return transcribe_ov(wav_path, model_dir, progress=progress, device="GPU", language=language)
 
 
 def transcribe(
     wav_path: str | Path,
     model_key: str = "fast",
     progress: ProgressFn | None = None,
+    language: str = meetlang.DEFAULT,
 ) -> tuple[list[TranscriptSegment], str]:
     """回傳 (轉錄結果, 實際裝置)。三路自動選擇:CUDA → Intel GPU → CPU。
 
@@ -396,12 +404,12 @@ def transcribe(
 
     `apple` 另走一條(見 `_transcribe_apple`),回的裝置是 `"apple"`。"""
     if model_key == APPLE:
-        return _transcribe_apple(wav_path, progress)
+        return _transcribe_apple(wav_path, progress, language)
     name = MODEL_CHOICES[model_key]
     if _use_cuda():
         model_dir = _model_dir(name)
         try:
-            return _run(_load(model_dir, "cuda"), wav_path, progress), "cuda"
+            return _run(_load(model_dir, "cuda"), wav_path, progress, language), "cuda"
         except Exception:
             # 失敗的實例不得留在快取被下一檔重用(狀態可能已壞)
             _MODEL_CACHE.pop((model_dir, "cuda"), None)
@@ -409,15 +417,15 @@ def transcribe(
     if _use_intel():
         ov_dir = str(models.ov_whisper_dir(model_key))
         try:
-            return _transcribe_intel(wav_path, ov_dir, progress), "intel-gpu"
+            return _transcribe_intel(wav_path, ov_dir, progress, language), "intel-gpu"
         except Exception:
             logger.warning("Intel GPU(OpenVINO)執行失敗,降級 CPU", exc_info=True)
     model_dir = _model_dir(name)
-    return _run(_load(model_dir, "cpu"), wav_path, progress), "cpu"
+    return _run(_load(model_dir, "cpu"), wav_path, progress, language), "cpu"
 
 
 def _transcribe_apple(
-    wav_path: str | Path, progress: ProgressFn | None,
+    wav_path: str | Path, progress: ProgressFn | None, language: str = meetlang.DEFAULT,
 ) -> tuple[list[TranscriptSegment], str]:
     """Apple 那條:開工前就用不了(`UserFacingError`)照實擋下;跑到一半壞掉才
     改用「快速」轉完——跟上面 GPU 失敗降級 CPU 同一個理由(使用者要的是逐字稿
@@ -427,12 +435,12 @@ def _transcribe_apple(
     from meeting_scribe.errors import UserFacingError
 
     try:
-        return transcribe_apple.transcribe(wav_path, progress), APPLE
+        return transcribe_apple.transcribe(wav_path, progress, language), APPLE
     except UserFacingError:
         raise
     except Exception:
         logger.warning("Apple 轉錄失敗,改用「快速」(faster-whisper)轉完", exc_info=True)
-        return transcribe(wav_path, "fast", progress)
+        return transcribe(wav_path, "fast", progress, language)
 
 
 def runs_off_cpu(model_key: str) -> bool:

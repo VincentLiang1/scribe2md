@@ -93,6 +93,20 @@ def _apply_rules(text: str) -> str:
     return text
 
 
+_t2s = None
+
+
+def to_simplified(text: str) -> str:
+    """簡體中文會議的成品統一成簡體(`meetlang.simplify`)。⚠️ 不套 `replace.txt`:那份是「大陸用詞 →
+    台灣用詞」,用在簡中會議上方向正好相反。"""
+    global _t2s
+    if _t2s is None:
+        from opencc import OpenCC  # 惰性:同 _get_cc
+
+        _t2s = OpenCC("t2s")
+    return _t2s.convert(text)
+
+
 def to_taiwan_traditional(text: str) -> str:
     return _apply_rules(_get_cc().convert(text))
 

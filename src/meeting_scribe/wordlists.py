@@ -1,5 +1,8 @@
-r"""兩份**可以直接編輯的詞表檔**:領域詞表(`hotwords.txt`)與用詞替換表
-(`replace.txt`)的讀、存、體檢。
+r"""**可以在畫面上編輯的詞表檔**的讀、存、體檢:現在只剩用詞替換表(`replace.txt`)。
+
+⚠️ **領域詞表(`hotwords.txt`)2026-10-21 從畫面上拿掉了**(使用者:「只要隱藏介面,真的要改
+我自己去改」):它照常注入繁中會議,改成只用記事本維護;體檢與存檔那三支一起刪了(沒有畫面
+就沒有人呼叫),超出預算的警告只剩 `hotwords.as_string` 寫進記錄檔的那一行。
 
 2026-08-29 從 `data_tabs.py` 抽出來(原生介面遷移的階段 4 第一刀)。⚠️ **這個模組
 不准 import 任何 UI 模組**——判準與 `naming.py` 那條一樣:不是「講的是不是同一件
@@ -13,13 +16,10 @@ r"""兩份**可以直接編輯的詞表檔**:領域詞表(`hotwords.txt`)與用�
 都沒變**),原生視窗改用警告色。⚠️ **不要「順手」把 Markdown 留在這一層**:留著的
 話,winkit 版就得反過來剝星號,而剝到一半的星號沒有人看得出來。
 
-⚠️ **兩份檔案的規矩不同,措辭也不同**,別互相照抄:
-  領域詞表**有長度預算**(超出的尾端會被引擎靜默忽略,所以順序即優先序),
-    影響的是**轉錄**——文案要寫「下一個轉錄的檔案生效」。
-  用詞替換表**沒有預算**,要點名的是「缺新詞」的壞行,而它**兩條路徑都吃**
-    (逐字稿與文件轉 md),所以文案是「轉換」不是「轉錄」。
+⚠️ 用詞替換表**沒有預算**,要點名的是「缺新詞」的壞行,而它**兩條路徑都吃**
+(逐字稿與文件轉 md),所以文案是「轉換」不是「轉錄」。
 
-⚠️ **一律純文字原樣存取,不可以拆成表格**:兩份檔的**註解**(收詞原則、預算說明)
+⚠️ **一律純文字原樣存取,不可以拆成表格**:檔案的**註解**(收詞原則)
 與**行序**都有意義,而表格 round-trip 會把兩者一起弄丟。
 """
 from __future__ import annotations
@@ -27,7 +27,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from meeting_scribe import convert, hotwords
+from meeting_scribe import convert
+from meeting_scribe.i18n import t
 
 
 @dataclass(frozen=True)
@@ -35,8 +36,8 @@ class Status:
     """一份詞表現在的狀況。
 
     `summary` 一律要顯示;`warning` 只有出問題時才有東西,而它值得被**強調**
-    ——兩種警告(詞表超出預算、替換規則缺新詞)的共同點是**使用者不會自己發現**:
-    引擎靜默忽略超出的詞,而缺新詞的行只在黑視窗留一句 warning。"""
+    ——替換規則缺新詞的那幾行**使用者不會自己發現**:它們只在記錄檔留一句 warning、
+    整行被略過。"""
 
     summary: str
     warning: str = ""
@@ -65,36 +66,6 @@ def write(path: Path, text: str) -> None:
     path.write_text(text if isinstance(text, str) else "", encoding="utf-8")
 
 
-# ---- 領域詞表(hotwords.txt)----------------------------------------------- #
-def hotwords_file() -> Path:
-    return hotwords.store_file()
-
-
-def hotwords_status() -> Status:
-    """詞表統計與**預算預警**。
-
-    ⚠️ 超出預算的尾端詞會被引擎**靜默截斷**,所以這件事要在存檔當下就講明白
-    ——不能等使用者轉完一個小時的檔才發現那幾個詞根本沒生效。"""
-    words = hotwords.load()
-    if not words:
-        return Status("目前詞表為空(功能等同關閉)。")
-    joined = "、".join(words)
-    summary = (f"目前 {len(words)} 個詞,合計約 {len(joined)} 字"
-               f"(建議 ≤{hotwords.WARN_CHARS} 字)。")
-    over = len(joined) - hotwords.WARN_CHARS
-    if over <= 0:
-        return Status(summary)
-    return Status(summary,
-                  f"已超出約 {over} 字:尾端的詞會被引擎靜默忽略、等於沒加"
-                  "——請把重要的詞往前放、刪掉不常用的。")
-
-
-def save_hotwords(text: str) -> Status:
-    write(hotwords_file(), text)
-    st = hotwords_status()
-    return Status("已儲存,下一個轉錄的檔案生效。" + st.summary, st.warning)
-
-
 # ---- 用詞替換表(replace.txt)---------------------------------------------- #
 def replace_file() -> Path:
     return convert.replace_file()
@@ -107,18 +78,18 @@ def replace_status() -> Status:
     是被整行略過的。解析共用 `convert.parse_rules`,格式變更不會兩邊走鐘。"""
     f = replace_file()
     if not f.exists():
-        return Status("目前無替換表(功能等同關閉)。")
+        return Status(t("目前無替換表(功能等同關閉)。"))
     rules, bad = convert.parse_rules(f.read_text(encoding="utf-8-sig"))
-    summary = f"目前 {len(rules)} 條替換規則。"
+    summary = t("目前 {v} 條替換規則。", v=len(rules))
     if not bad:
         return Status(summary)
     return Status(summary,
-                  "以下行缺「新詞」(格式:原詞 新詞),會被略過:"
-                  + "、".join(f"「{b}」" for b in bad))
+                  t("以下行缺「新詞」(格式:原詞 新詞),會被略過:{lines}",
+                    lines=t("、").join(t("「{o}」", o=b) for b in bad)))
 
 
 def save_replace(text: str) -> Status:
     # ⚠️ 措辭是「轉換」不是「轉錄」:這張表**文件轉檔也吃**(見模組 docstring)
     write(replace_file(), text)
     st = replace_status()
-    return Status("已儲存,下一個轉換的檔案生效。" + st.summary, st.warning)
+    return Status(t("已儲存,下一個轉換的檔案生效。") + st.summary, st.warning)

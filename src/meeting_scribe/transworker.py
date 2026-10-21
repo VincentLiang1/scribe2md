@@ -122,6 +122,8 @@ def main(argv: list[str] | None = None) -> int:
             segments, device = transcribe.transcribe(
                 msg["wav"], model_key=msg.get("model", "fast"),
                 progress=on_progress,
+                # 舊父行程沒帶就是繁中(那是 2026-10-21 以前唯一的語言)
+                language=msg.get("language") or "zh_TW",
             )
             _reply({
                 "ok": True, "device": device,

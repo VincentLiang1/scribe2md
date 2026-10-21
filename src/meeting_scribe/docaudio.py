@@ -30,7 +30,7 @@
 import logging
 from pathlib import Path
 
-from meeting_scribe import docmd, pipeline, punctuate, transcribe
+from meeting_scribe import docmd, i18n, meetlang, pipeline, punctuate, transcribe, vocab
 from meeting_scribe.docmd import Block, Note, Raw
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,7 @@ def convert_audio(
     *,
     model_key: str = "fast",
     num_speakers: int = 0,
+    language: str = "",
     keep_features: bool = True,
     on_inner=None,
 ) -> list[Block]:
@@ -90,10 +91,15 @@ def convert_audio(
     有意義),再轉一次是白費工。frontmatter 的 traditionalised 由 docpipe
     依「內容有沒有被改寫」判斷,所以這裡要另外把事實補回去(見 docpipe)。
     """
+    # 會議語言:「聲音→MD」頁的多檔批次由下拉選單帶進 options;「文字、圖像→MD」頁沒有這個
+    # 選項,跟著**介面語言**(使用者 2026-10-21 選:英文介面轉的就是英文會議)。⚠️ 命令列
+    # (`doc2md`)也走後者:那邊的介面語言同樣是設定或系統語言
+    language = meetlang.parse(language) if language else meetlang.from_ui(i18n.current())
     rendered = pipeline.transcribe_to_markdown(
         src,
         model_key=model_key,
         num_speakers=num_speakers,
+        language=language,
         # 集中輸出(--out-dir)時不留分群檔:它跟不到 md 旁邊,而 relabel 是
         # 從 md 找同層同名的(使用者 2026-08-19 指定,理由見 pipeline)
         features_out=(
@@ -111,6 +117,7 @@ def convert_audio(
     blocks: list[Block] = [Raw(
         _drop_leading_heading(rendered.md_text),
         traditionalised=rendered.traditionalised,
+        language=rendered.language,
     )]
     if rendered.degenerate:
         lost = sum(s.end - s.start for s in rendered.degenerate)
@@ -120,7 +127,8 @@ def convert_audio(
             kind=KIND_TRANSCRIPT_GAP,
         ))
     if rendered.check_speakers:
-        names = "、".join(f"講者 {s + 1}" for s in rendered.check_speakers)
+        v = vocab.of(rendered.language)
+        names = "、".join(v.speaker_label(s) for s in rendered.check_speakers)
         blocks.append(Note(
             f"有 {len(rendered.check_speakers)} 個講者標籤({names})的"
             "群內一致性明顯低於本場其他人,那些段落的「誰說的」建議對照原音"

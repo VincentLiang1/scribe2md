@@ -51,6 +51,7 @@ from meeting_scribe import (
     transcribe, wavspan,
 )
 from meeting_scribe.types import UNKNOWN_SPEAKER, SpeakerTurn, SpokenSegment, TranscriptSegment
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +212,7 @@ class _Track:
 #: 低耗電模式擋下錄音中的講者分析時,**畫面上**要講的那一句。
 #: ⚠️ **要講得出「關掉就有」**:這是使用者自己關得掉的東西,只說「沒有啟用」
 #: 等於讓他失去一個三十秒能拿回來的功能(同麥克風權限那條的教訓)。
-LOW_POWER_NOTE = "低耗電模式開著,講者分析會留到停止之後(關掉就能邊錄邊做)"
+LOW_POWER_NOTE = t("低耗電模式開著,講者分析會留到停止之後(關掉就能邊錄邊做)")
 
 
 def low_power_blocks_diarize() -> bool:
@@ -578,8 +579,12 @@ class LiveTranscriber:
     add_track()* → start() → (錄音中自動轉)
     → stop_and_flush(final_lengths, progress) → 各軌完整段落。"""
 
-    def __init__(self, model_key: str = "fast", *, honor_choice: bool = False):
+    def __init__(self, model_key: str = "fast", *, honor_choice: bool = False,
+                 language: str = "zh_TW"):
         self.model_key = model_key
+        # 會議語言(`meetlang`):錄音中每一段的轉錄與收尾的渲染都用它。⚠️ **開錄就定死**,
+        # 錄音中不能換(同 iOS:邊錄邊轉已經用那個語言開始了)
+        self.language = language
         # 使用者自己把護欄讓開了(見 `recording_plan`)。⚠️ **要留著帶給 start()**:
         # 那裡會重建 `diar`,只在這裡傳一次等於錄音真正開始時又退回預設
         self.honor_choice = honor_choice
@@ -703,7 +708,7 @@ class LiveTranscriber:
             w.writeframes(pcm.tobytes())
         try:
             segments, device = transcribe.transcribe(
-                span_wav, model_key=self.model_key, progress=None,
+                span_wav, model_key=self.model_key, progress=None, language=self.language,
             )
         finally:
             span_wav.unlink(missing_ok=True)
@@ -1061,7 +1066,7 @@ def run_live_finish(
             on_stage(stage, min(start + width * frac, 1.0))
 
     with power.keep_awake():
-        report("轉錄收尾")
+        report(t("轉錄收尾"))
         # **收尾階段的記錄**(2026-08-04 補):在此之前,從「按下停止」到
         # 成品落地之間記錄檔是一片空白——2026-08-04 那場 64 分鐘的錄音,
         # 停止之後 40 幾分鐘沒有任何一行,無從判斷是還在算、還是卡住了。
@@ -1134,7 +1139,7 @@ def run_live_finish(
                         fracs[key] = max(fracs[key], min(f, 1.0))
                         if on_stage:
                             combined = 0.30 * fracs["flush"] + 0.65 * fracs["diar"]
-                            on_stage("轉錄與講者分析收尾", combined)
+                            on_stage(t("轉錄與講者分析收尾"), combined)
                 return cb
 
             with ThreadPoolExecutor(max_workers=2) as ex:
@@ -1151,10 +1156,10 @@ def run_live_finish(
             # 純 CPU:依序(同 pipeline 的排程理由——兩引擎同搶一顆 CPU
             # 只會過度訂閱,依序也壓低 8GB 基準機的峰值記憶體)
             segments = live.stop_and_flush(
-                final_lengths, progress=lambda f: report("轉錄收尾", f),
+                final_lengths, progress=lambda f: report(t("轉錄收尾"), f),
             )
-            report("講者分析")
-            diarized = diarize_all(lambda f: report("講者分析", f))
+            report(t("講者分析"))
+            diarized = diarize_all(lambda f: report(t("講者分析"), f))
         results = [
             TrackResult(t.kind, t.path, segments[t.kind], turns, vps, quality)
             for t, turns, vps, quality in diarized
@@ -1187,9 +1192,10 @@ def run_live_finish(
                 logger.warning("雙聲道合成失敗,改交付分軌檔", exc_info=True)
                 audio_out = None
                 extra = []
-                for t in tracks:
-                    dest = track_dest(out_dir, stem, t.kind)
-                    shutil.copy2(t.path, dest)
+                # ⚠️ 迴圈變數不可以叫 t:這個函式裡有 `t("…")`,一綁定就整個函式都是區域變數
+                for trk in tracks:
+                    dest = track_dest(out_dir, stem, trk.kind)
+                    shutil.copy2(trk.path, dest)
                     extra.append(dest)
         else:
             shutil.copy2(tracks[0].path, audio_out)
@@ -1199,7 +1205,7 @@ def run_live_finish(
         result = pipeline.finalize(
             spoken, turns_all, voiceprints, out_dir, stem,
             device="", on_stage=on_stage,
-            speaker_sources=sources, quality=quality,
+            speaker_sources=sources, quality=quality, language=live.language,
         )
         outputs = list(result.outputs)
         # 重點的時間存在 md 旁邊:重新分群、重設講者時要照它重算〔重點〕(見

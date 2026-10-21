@@ -36,6 +36,7 @@ from pathlib import Path
 
 from meeting_scribe import cancel, models, paths, plat
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,8 @@ _MAC_APP_REL = Path("Contents") / "MacOS" / "soffice"
 _MAC_APP_DIRS = ("/Applications", "~/Applications")
 # 沒裝時那句話裡要給的辦法(`docs/spec/mac/06`)
 _MAC_INSTALL_HINT = (
-    "請自行安裝 LibreOffice(免費):終端機輸入 "
-    "brew install --cask libreoffice,或到 https://zh-tw.libreoffice.org/ 下載"
+    t("請自行安裝 LibreOffice(免費):終端機輸入 "
+    "brew install --cask libreoffice,或到 https://zh-tw.libreoffice.org/ 下載")
 )
 
 # soffice 不能併發:同一份使用者 profile 被兩個行程開啟會直接失敗。
@@ -207,9 +208,9 @@ def _extract_msi(msi: Path, target: Path) -> None:
     if proc.returncode != 0:
         logger.error("msiexec 解壓失敗(%s):%s", proc.returncode, proc.stderr)
         raise UserFacingError(
-            "LibreOffice 安裝檔解壓失敗。請改用手動方式:"
+            t("LibreOffice 安裝檔解壓失敗。請改用手動方式:"
             "到 https://zh-tw.libreoffice.org/ 下載安裝(免費),裝好後再轉一次;"
-            "或用 Word/Excel/PowerPoint 開啟後另存為新格式(.docx/.xlsx/.pptx)。"
+            "或用 Word/Excel/PowerPoint 開啟後另存為新格式(.docx/.xlsx/.pptx)。")
         )
 
 
@@ -232,7 +233,7 @@ def _stable_versions() -> list[str]:
             return resp.read(1 << 20).decode("utf-8", "replace")
 
     try:
-        html = models.with_tls_rescue(_read, "LibreOffice 版本清單")
+        html = models.with_tls_rescue(_read, t("LibreOffice 版本清單"))
     except Exception:
         logger.warning("讀不到 LibreOffice 版本清單,改用內建版本", exc_info=True)
         return [_LO_FALLBACK_VERSION]
@@ -250,7 +251,7 @@ def _url_exists(url: str) -> bool:
             return 200 <= resp.status < 300
 
     try:
-        return models.with_tls_rescue(_head, "LibreOffice 安裝檔")
+        return models.with_tls_rescue(_head, t("LibreOffice 安裝檔"))
     except Exception:
         logger.debug("LibreOffice 安裝檔不存在:%s", url, exc_info=True)
         return False
@@ -272,10 +273,10 @@ def _resolve_msi_url() -> str:
         if _url_exists(url):
             return url
     raise UserFacingError(
-        "找不到可下載的 LibreOffice 安裝檔(官方網站的版本可能剛好在更新)。"
+        t("找不到可下載的 LibreOffice 安裝檔(官方網站的版本可能剛好在更新)。"
         "請改用手動方式:到 https://zh-tw.libreoffice.org/ 下載安裝(免費),"
         "裝好後再轉一次;或用 Word/Excel/PowerPoint 開啟後另存為新格式"
-        "(.docx/.xlsx/.pptx)。"
+        "(.docx/.xlsx/.pptx)。")
     )
 
 
@@ -284,12 +285,12 @@ def _download_and_install() -> Path:
     url = _resolve_msi_url()
     msi = root / url.rsplit("/", 1)[-1]
     print(  # noqa: T201 - 黑視窗的進度回饋,同 models.download
-        "首次轉換舊版 Office 檔(副檔名沒有 x 的 doc/xls/ppt 等舊格式)需要下載 "
+        t("首次轉換舊版 Office 檔(副檔名沒有 x 的 doc/xls/ppt 等舊格式)需要下載 "
         "LibreOffice(約 370MB,只需一次);docx/xlsx/pptx 這類新格式不必下載。"
-        "進度如下:", flush=True,
+        "進度如下:"), flush=True,
     )
     root.mkdir(parents=True, exist_ok=True)
-    models.download(url, msi, min_bytes=_MIN_MSI_BYTES, what="LibreOffice 安裝檔")
+    models.download(url, msi, min_bytes=_MIN_MSI_BYTES, what=t("LibreOffice 安裝檔"))
     try:
         _extract_msi(msi, root)
     finally:
@@ -304,9 +305,9 @@ def _download_and_install() -> Path:
     if not found.is_file():
         shutil.rmtree(root, ignore_errors=True)
         raise UserFacingError(
-            "LibreOffice 解壓後找不到主程式,安裝可能不完整。"
+            t("LibreOffice 解壓後找不到主程式,安裝可能不完整。"
             "請改用手動方式:到 https://zh-tw.libreoffice.org/ 下載安裝,"
-            "或用 Office 另存為新格式(.docx/.xlsx/.pptx)再轉。"
+            "或用 Office 另存為新格式(.docx/.xlsx/.pptx)再轉。")
         )
     return found
 
@@ -330,23 +331,21 @@ def ensure_ready(*, allow_install: bool = True) -> Path:
                 _resolved = found
                 return found
         if not allow_install:
-            raise UserFacingError("本機沒有安裝 LibreOffice")
+            raise UserFacingError(t("本機沒有安裝 LibreOffice"))
         if sys.platform != "win32":
             # ⚠️ **不要再說「只支援 Windows」**(2026-09-24 改):那句話是錯的
             # ——裝了 LibreOffice 的 Mac 上面那一段就用得到了,這裡只是**不會
             # 自動下載**(dmg 要掛載、要同意授權,而文件轉檔在 Mac 上是二級
             # 承諾)。把「不會自動裝」講成「不支援」,使用者連裝都不會去裝。
             raise UserFacingError(
-                f"要轉舊版 Office 格式(.doc/.xls/.ppt)需要 LibreOffice,"
-                f"而這個系統上不會自動安裝它。{_MAC_INSTALL_HINT};"
-                "或用 Office 另存為新格式(.docx/.xlsx/.pptx)再轉。"
+                t("要轉舊版 Office 格式(.doc/.xls/.ppt)需要 LibreOffice,而這個系統上不會自動安裝它。{MAC_INSTALL_HINT};或用 Office 另存為新格式(.docx/.xlsx/.pptx)再轉。", MAC_INSTALL_HINT=_MAC_INSTALL_HINT)
             )
         installed = _console_launcher(_download_and_install())
         if not _smoke_test(installed):
             raise UserFacingError(
-                "LibreOffice 安裝完成但無法執行。請改用手動方式:"
+                t("LibreOffice 安裝完成但無法執行。請改用手動方式:"
                 "到 https://zh-tw.libreoffice.org/ 下載安裝,"
-                "或用 Office 另存為新格式(.docx/.xlsx/.pptx)再轉。"
+                "或用 Office 另存為新格式(.docx/.xlsx/.pptx)再轉。")
             )
         _resolved = installed
         return installed
@@ -383,8 +382,7 @@ def _run_convert(cmd: list[str], expect: Path, src_name: str) -> Path:
             if time.monotonic() > deadline:
                 proc.kill()
                 raise UserFacingError(
-                    f"轉換「{src_name}」超過 {_CONVERT_TIMEOUT:.0f} 秒沒有完成,已中止。"
-                    "檔案可能有問題,或 LibreOffice 正被其他程式佔用。"
+                    t("轉換「{src_name}」超過 {CONVERT_TIMEOUT:.0f} 秒沒有完成,已中止。檔案可能有問題,或 LibreOffice 正被其他程式佔用。", src_name=src_name, CONVERT_TIMEOUT=_CONVERT_TIMEOUT)
                 )
             time.sleep(_POLL_SEC)
     except cancel.Cancelled:
@@ -394,8 +392,7 @@ def _run_convert(cmd: list[str], expect: Path, src_name: str) -> Path:
     if proc.returncode != 0 or not expect.is_file():
         logger.error("LibreOffice 轉換失敗(%s):%s", proc.returncode, err)
         raise UserFacingError(
-            f"無法轉換舊版格式的「{src_name}」:檔案可能已損壞或有密碼保護。"
-            "可以先用 Office 開啟後另存為新格式(.docx/.xlsx/.pptx)再試。"
+            t("無法轉換舊版格式的「{src_name}」:檔案可能已損壞或有密碼保護。可以先用 Office 開啟後另存為新格式(.docx/.xlsx/.pptx)再試。", src_name=src_name)
         )
     return expect
 
@@ -415,7 +412,7 @@ def upgrade(
     # 裡有 77 個是這種
     ext = (source_ext or src.suffix).lower()
     if ext not in _FILTERS:
-        raise UserFacingError(f"不支援的舊格式「{ext}」:{src.name}")
+        raise UserFacingError(t("不支援的舊格式「{ext}」:{name}", ext=ext, name=src.name))
     target_ext, filter_name = _FILTERS[ext]
     soffice = ensure_ready(allow_install=allow_install)
     work.mkdir(parents=True, exist_ok=True)

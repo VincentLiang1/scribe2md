@@ -9,6 +9,7 @@ import ctypes
 import logging
 
 from meeting_scribe.plat import Outcome
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,7 @@ def allow_foreground() -> Outcome:
             return Outcome("ok")
     except Exception as e:
         return Outcome("failed", f"放行前景權失敗:{type(e).__name__}: {e}")
-    return Outcome("failed", "本程序沒有前景權,檔案總管可能只會在工作列閃爍")
+    return Outcome("failed", t("本程序沒有前景權,檔案總管可能只會在工作列閃爍"))
 
 
 def open_folder(path) -> Outcome:
@@ -94,7 +95,7 @@ def open_folder(path) -> Outcome:
     try:
         os.startfile(str(path))  # noqa: S606 - 路徑來自本程式自己的輸出
     except OSError as e:
-        return Outcome("failed", f"開不了資料夾:{e}")
+        return Outcome("failed", t("開不了資料夾:{e}", e=e))
     return Outcome("ok")
 
 
@@ -111,7 +112,7 @@ def reveal(path) -> Outcome:
     try:
         subprocess.Popen(args)  # noqa: S603 - 固定命令,無 shell
     except OSError as e:
-        return Outcome("failed", f"開不了檔案總管:{e}")
+        return Outcome("failed", t("開不了檔案總管:{e}", e=e))
     return Outcome("ok")
 
 
@@ -128,7 +129,7 @@ def play_sound(path) -> tuple[Outcome, object]:
         winsound.PlaySound(str(path), winsound.SND_FILENAME
                            | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
     except Exception as e:  # noqa: BLE001 - 試聽是輔助功能,絕不往上炸
-        return Outcome("failed", f"這一段放不出來({type(e).__name__})"), None
+        return Outcome("failed", t("這一段放不出來({name__})", name__=type(e).__name__)), None
     return Outcome("ok"), None
 
 
@@ -147,8 +148,15 @@ MONO_FAMILY = "Consolas"
 ACCEL = ("Control", "Ctrl+")       # 視窗內快捷鍵(`plat.accel`)
 
 #: 見 `plat.reinstall_hint` / `plat.heic_workaround`
-REINSTALL_HINT = "請重新執行「安裝.bat」把環境裝齊"
-HEIC_WORKAROUND = "或用「小畫家」另存為 JPG 再轉"
+# ⚠️ **這一層的譯文一律寫成函式,模組層不准呼叫 `t()`**(2026-10-21 踩到):`t()` 第一次
+# 決定語言時要問 `plat.preferred_languages()`,而那正是這個模組——模組層的 `t()` 就會
+# 在本模組還沒載完時回頭找它,真的 App 一開就 `AttributeError`(測試把語言釘死,測不到)。
+def reinstall_hint() -> str:
+    return t("請重新執行「安裝.bat」把環境裝齊")
+
+
+def heic_workaround() -> str:
+    return t("或用「小畫家」另存為 JPG 再轉")
 
 
 def seconds_since_process_start() -> float | None:
@@ -455,7 +463,7 @@ def system_audio_capability() -> Outcome:
 
 def apple_speech_helper() -> tuple[Outcome, object]:
     """Apple 的語音辨識只在 macOS 上有;這邊的「模型」選項本來就不會出現它。"""
-    return Outcome("unsupported", "Apple 的語音辨識只在 Mac 上有"), None
+    return Outcome("unsupported", t("Apple 的語音辨識只在 Mac 上有")), None
 
 
 def open_system_audio():
@@ -519,12 +527,12 @@ def apply_update(staged, target, version: str) -> Outcome:
     if not exe.exists():
         exe = base
     if not exe.exists():
-        return Outcome("failed", f"找不到可以執行換版小程式的 Python({base})")
+        return Outcome("failed", t("找不到可以執行換版小程式的 Python({base})", base=base))
     helper = staged.parent / "update_helper.py"
     try:
         shutil.copy2(update.helper_source(), helper)
     except OSError as e:
-        return Outcome("failed", f"換版小程式複製不過去({e})")
+        return Outcome("failed", t("換版小程式複製不過去({e})", e=e))
     argv = [str(exe), "-I", str(helper), "--staged", str(staged),
             "--target", str(target), "--pid", str(os.getpid()), "--version", version]
     flags = CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
@@ -536,7 +544,7 @@ def apply_update(staged, target, version: str) -> Outcome:
             return Outcome("ok")
         except OSError as e:
             err = e
-    return Outcome("failed", f"換版小程式起不來({err})")
+    return Outcome("failed", t("換版小程式起不來({err})", err=err))
 
 
 # COM 的 apartment 模型。MTA:誰都可以從任何執行緒呼叫,不必有訊息迴圈
@@ -605,6 +613,31 @@ def round_window_corners(child_id: int, width: int, height: int,
     rgn = gdi32.CreateRoundRectRgn(0, 0, width + 1, height + 1, radius, radius)
     user32.SetWindowRgn.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
     user32.SetWindowRgn(ctypes.c_void_p(hwnd), rgn, 1)
+
+
+def preferred_languages() -> list[str]:
+    """`GetUserPreferredUILanguages`(「設定 › 時間與語言」的 Windows 顯示語言與其後的偏好)。
+
+    ⚠️ **不用 `locale.getlocale()`**:那是「地區格式」,台灣地區配英文介面的人拿到的會是
+    `zh_TW`。⚠️ 回的是 `MUI_LANGUAGE_NAME`(`zh-TW`、`en-US`),以兩個 NUL 結尾的多字串。"""
+    import ctypes
+    from ctypes import wintypes
+
+    try:
+        fn = ctypes.windll.kernel32.GetUserPreferredUILanguages
+        fn.argtypes = [wintypes.DWORD, ctypes.POINTER(wintypes.ULONG),
+                       ctypes.c_wchar_p, ctypes.POINTER(wintypes.ULONG)]
+        fn.restype = wintypes.BOOL
+        num, size = wintypes.ULONG(0), wintypes.ULONG(0)
+        if not fn(0x8, ctypes.byref(num), None, ctypes.byref(size)) or not size.value:
+            return []
+        buf = ctypes.create_unicode_buffer(size.value)
+        if not fn(0x8, ctypes.byref(num), buf, ctypes.byref(size)):
+            return []
+        return [s for s in buf[:size.value].split("\0") if s]
+    except Exception:  # noqa: BLE001 - 問不到就讓呼叫端退回英文
+        logger.debug("讀取語言偏好失敗", exc_info=True)
+        return []
 
 
 def total_ram_mb() -> int | None:
@@ -709,9 +742,9 @@ def microphone_permission() -> Outcome:
     """⚠️ **Windows 也有逐 App 的麥克風隱私設定,但這裡刻意回 `unsupported`**:
     問不到就不要猜。回 `unsupported` 讓呼叫端維持原本的行為(留「仍要錄」),
     那正是 2026-09-25 之前在這個平台上驗過的形狀——**行為完全不動**。"""
-    return Outcome("unsupported", "Windows 這邊問不到逐 App 的麥克風授權狀態")
+    return Outcome("unsupported", t("Windows 這邊問不到逐 App 的麥克風授權狀態"))
 
 
 def open_microphone_settings() -> Outcome:
     """沒有對應的深層連結(而且上面那支問不到狀態,開了也沒有前後文)。"""
-    return Outcome("unsupported", "Windows 這邊沒有要開的麥克風權限頁")
+    return Outcome("unsupported", t("Windows 這邊沒有要開的麥克風權限頁"))

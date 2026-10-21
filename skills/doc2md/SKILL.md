@@ -33,7 +33,7 @@ uv run --directory "{{MEETING_SCRIBE_DIR}}" doc2md "<檔案或資料夾>"
 - `--no-ocr` — 不做文字辨識。掃描頁與圖片只留標記,但快非常多。
 - `--force-ocr` — PDF 不管原本的文字層,每一頁都改用文字辨識。**只在轉出來的 md 整頁是亂碼**(例如中文書變成「AWAIT) FA1745 BAF」這種大寫字母)、而檔頭沒有寫「既有文字層判定為亂碼」時用——工具平常會自己認出這種頁。很慢(每頁 1~3 秒),不能與 `--no-ocr` 同時用。
 - `--dry-run` — 只列出會轉哪些、會跳過哪些,不寫檔(也會列出這次會清掉哪些過期快取)。大批次先跑這個。
-- `--speakers N` / `--model {fast,accurate}` — 只作用在錄音錄影(見下)。
+- `--speakers N` / `--model {fast,accurate}` / `--language {zh_TW,zh_CN,en}` — 只作用在錄音錄影(見下)。`--language` 是會議語言(英文會議給 `en`、簡體中文給 `zh_CN`),不給就跟工具的介面語言。
 
 ## 錄音與影片(m4a / mp3 / wav / mp4 / mov / avi)
 

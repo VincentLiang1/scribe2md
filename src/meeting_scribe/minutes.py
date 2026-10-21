@@ -18,7 +18,10 @@ Apple Intelligence 打開時)或 Qwen3.5-4B(MLX 跑在 GPU,16 GB 以上的 Apple
 1. 窗只有 4096 token、中文一字約 1.5 token → 逐字稿切段(`CHUNK_CHARS`)寫重點再合併;
 2. 它不照字數要求縮短 → 用「最多幾點、每點一句」限制,合併仍不收斂就截短(會掉內容,記一筆);
 3. 待辦每條要附逐字稿原句,**程式對回逐字稿、對不上就丟**(`locate`)——擋編造的唯一一道;
-4. 回覆會混進簡體字(Mac 實測「什么问题」)→ 出來的文字一律再繁化一次(手機版沒做,這裡補上)。
+4. 回覆會混進簡體字(Mac 實測「什么问题」)→ 出來的文字一律再轉成這一場的字形(繁中會議繁化、
+   簡中會議簡化;手機版沒做,這裡補上)。
+
+提示詞與草稿檔的字跟著**逐字稿的會議語言**(`draftvocab`,同 iOS `DraftVocab`)。
 """
 
 from __future__ import annotations
@@ -33,9 +36,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from meeting_scribe import (cancel, convert, errors, export, loopdetect, models, paths, plat,
+from meeting_scribe import (cancel, convert, errors, export, models, paths, plat,
                             power, settings, srcfile)
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
+from meeting_scribe import draftvocab, vocab
 from meeting_scribe.plat import Outcome
 
 logger = logging.getLogger(__name__)
@@ -78,44 +83,21 @@ ENGINE_APPLE = "apple"
 ENGINE_QWEN = "qwen"
 ENGINE_OV = "openvino"
 
-TODOS_HEADING = "## 待辦(約略時間,請對照逐字稿)"
-# 錄音中按了「重點」的那幾輪(2026-10-17,同手機版 `AISummary.highlightsHeading`):
-# 一輪一句,放在摘要底下;摘要也先看它們
-HIGHLIGHTS_HEADING = "## 現場標記的重點"
+# 提示詞與草稿檔的字跟著**逐字稿的會議語言**(`draftvocab`;`generate` 開頭挑好放進 `_draft`)。
+# 下面這幾個名字是繁中那份的別名,舊的呼叫端與測試照用
+_ZH = draftvocab.ZH_TW
+TODOS_HEADING = _ZH.todos_heading
+HIGHLIGHTS_HEADING = _ZH.highlights_heading
 #: 最多整理幾個重點(同手機版):一個一次呼叫,按了幾十下時不讓草稿多跑好幾分鐘
 MAX_HIGHLIGHTS = 12
-NO_TODOS = "- 沒有找到明確的待辦"
-
-_MAP_INSTRUCTIONS = (
-    "你是會議記錄助理。使用者會給你一段會議逐字稿(語音辨識的結果,有錯字、標點少,"
-    "每行開頭是講者,可能是「未知」或「講者 N」)。\n"
-    "用繁體中文(台灣用語)整理這一段的重點與待辦。只寫逐字稿裡真的有的,不要推測。"
-)
-# ⚠️ **備註要一起給**(2026-10-17 使用者:「標示的重點應該也要隨著逐字稿送入」):備註是
-# 現場打的「為什麼重要、數字是多少」,手機版跳過了所有 `>` 開頭的行、備註因此沒送進模型
-_HIGHLIGHT_INSTRUCTIONS = (
-    "你是會議記錄助理。使用者會給你一段會議發言(語音辨識的結果,有錯字、標點少,開頭是講者),"
-    "與會者在現場把它標成重點,可能還附了與會者自己打的備註。\n"
-    "用繁體中文(台灣用語)寫一句話講這段的重點(數字、結論、誰要做什麼),備註說的優先;"
-    "只寫發言與備註裡有的,不要推測;不要加標題、條列或「這段在說」。"
-)
-_MERGE_INSTRUCTIONS = (
-    "你是會議記錄助理。使用者會給你幾段會議重點。用繁體中文(台灣用語)合併成最多 6 點、"
-    "每點一句,合併重複的,只寫重點裡有的。"
-)
-# 摘要與議題分開問、標題由程式加:一次要兩段時它不照格式(實測標題整個不見),
-# 給它寫開頭又會捏造日期、主持人
-_SUMMARY_INSTRUCTIONS = (
-    "你是會議記錄助理。使用者會給你一場會議各時段的重點。用繁體中文(台灣用語)寫 3 句以內的摘要,"
-    "講整場最重要的目標、數字與方向。\n"
-    "只寫重點裡有的,不要推測;不要寫日期、地點、主持人、出席者;不要每句都寫「某某人認為」;"
-    "不要加標題或條列。"
-)
-_TOPICS_INSTRUCTIONS = (
-    "你是會議記錄助理。使用者會給你一場會議各時段的重點。用繁體中文(台灣用語)條列這場會議的"
-    "主要議題,最多 8 點,每點一句,每點用「- 」開頭。\n"
-    "只寫重點裡有的,不要推測;不要寫決議或待辦;不要加標題。"
-)
+NO_TODOS = _ZH.no_todos
+_MAP_INSTRUCTIONS = _ZH.map_instructions
+_HIGHLIGHT_INSTRUCTIONS = _ZH.highlight_instructions
+_MERGE_INSTRUCTIONS = _ZH.merge_instructions
+_SUMMARY_INSTRUCTIONS = _ZH.summary_instructions
+_TOPICS_INSTRUCTIONS = _ZH.topics_instructions
+#: 這一場用哪一份(`generate` 開頭依逐字稿挑;`render` / `draft_notice` 也看它)
+_draft: draftvocab.DraftVocab = _ZH
 
 
 # --- 能不能用 -------------------------------------------------------------------
@@ -165,7 +147,7 @@ def capability() -> Outcome:
     (使用者解得了)就回它,否則 `unsupported`——那一格不出現。"""
     outs = list(engines().values())
     if not outs:
-        return Outcome("unsupported", "這台電腦沒有可以用的地端語言模型")
+        return Outcome("unsupported", t("這台電腦沒有可以用的地端語言模型"))
     if any(o.ok for o in outs):
         return Outcome("ok")
     return next((o for o in outs if o.state == "failed"), outs[0])
@@ -241,12 +223,12 @@ def _qwen_capability() -> Outcome:
     import platform
 
     if platform.machine() != "arm64":
-        return Outcome("unsupported", "Qwen 4B 需要 Apple 晶片的 Mac")
+        return Outcome("unsupported", t("Qwen 4B 需要 Apple 晶片的 Mac"))
     ram = plat.total_ram_mb() or 0
     if ram < MLX_MIN_RAM_MB:
-        return Outcome("unsupported", "Qwen 4B 需要 16 GB 以上的記憶體")
+        return Outcome("unsupported", t("Qwen 4B 需要 16 GB 以上的記憶體"))
     if importlib.util.find_spec("mlx_lm") is None:
-        return Outcome("failed", f"Qwen 4B 需要的元件沒有安裝完整:{plat.reinstall_hint()}")
+        return Outcome("failed", t("Qwen 4B 需要的元件沒有安裝完整:{v}", v=plat.reinstall_hint()))
     return Outcome("ok")
 
 
@@ -261,20 +243,20 @@ def _probe() -> Outcome:
         reply = json.loads(done.stdout.strip().splitlines()[-1])
     except Exception as e:  # 起不來、逾時、吐的不是 JSON(舊版 App 的小程式沒有這個子命令)
         logger.warning("Apple 語言模型元件叫不起來:%s", e)
-        return Outcome("failed", "Apple 語言模型元件叫不起來,請更新到最新版或重新啟動程式再試")
+        return Outcome("failed", t("Apple 語言模型元件叫不起來,請更新到最新版或重新啟動程式再試"))
     state = reply.get("state")
     if state == "ok":
         return Outcome("ok")
     if state == "not_enabled":
-        return Outcome("failed", "在這台 Mac 的「系統設定 → Apple Intelligence 與 Siri」打開 "
-                                 "Apple Intelligence,就能產生會議紀錄草稿")
+        return Outcome("failed", t("在這台 Mac 的「系統設定 → Apple Intelligence 與 Siri」打開 "
+                                 "Apple Intelligence,就能產生會議紀錄草稿"))
     if state == "not_ready":
-        return Outcome("failed", "Apple Intelligence 的模型還在下載,好了就能產生會議紀錄草稿")
+        return Outcome("failed", t("Apple Intelligence 的模型還在下載,好了就能產生會議紀錄草稿"))
     return Outcome("unsupported", {
-        "unsupported_os": "會議紀錄草稿需要 macOS 26 以上",
-        "not_eligible": "這台 Mac 不支援 Apple Intelligence",
-        "unsupported_locale": "這台 Mac 的 Apple Intelligence 不支援繁體中文",
-    }.get(state, "這台 Mac 沒有 Apple 的裝置端語言模型"))
+        "unsupported_os": t("會議紀錄草稿需要 macOS 26 以上"),
+        "not_eligible": t("這台 Mac 不支援 Apple Intelligence"),
+        "unsupported_locale": t("這台 Mac 的 Apple Intelligence 不支援繁體中文"),
+    }.get(state, t("這台 Mac 沒有 Apple 的裝置端語言模型")))
 
 
 # --- 逐字稿 → 一行一句 ------------------------------------------------------------
@@ -290,6 +272,10 @@ class TimedLine:
     end: float | None = None
 
 
+def _is_transcript_heading(line: str) -> bool:
+    return any(line.startswith(v.transcript_heading.rstrip(" —")) for v in vocab.ALL)
+
+
 def timed_lines(md: str) -> list[TimedLine]:
     """逐字稿 md 的正文(`## 會議逐字稿` 到 `## 講者辨識診斷`)→「名字:這一輪說的話」。
 
@@ -299,10 +285,11 @@ def timed_lines(md: str) -> list[TimedLine]:
     in_body, who, stamp = False, "", ""
     for raw in md.split("\n"):
         line = raw.strip()  # 連 \r 一起去掉:Windows 產生的 md 是 CRLF
-        if line.startswith("## 會議逐字稿"):
+        # ⚠️ 三種會議語言的標題都認(手機版與這邊都可能產出英文、簡中逐字稿)
+        if _is_transcript_heading(line):
             in_body = True
             continue
-        if line.startswith(export.DIAGNOSTIC_HEADING):
+        if export.starts_diagnostics(line):
             break
         if not in_body or not line:
             continue
@@ -311,7 +298,7 @@ def timed_lines(md: str) -> list[TimedLine]:
             who = m["name"]
             stamp = f"{int(m['h']):02d}:{m['m']}:{m['s']}"
             continue
-        if export.is_pause_line(line) or line.startswith(loopdetect.MARKER_PREFIX):
+        if export.is_pause_line(line) or vocab.is_marker(line):
             continue
         # 「> 〔重點〕= …」說明行與「> 備註:…」不是發言:備註另外走 `highlighted_turns`
         if line.startswith(">"):
@@ -338,28 +325,28 @@ def highlighted_turns(md: str) -> list[MarkedTurn]:
     in_body, paused = False, False
     for raw in md.split("\n"):
         line = raw.strip()
-        if line.startswith("## 會議逐字稿"):
+        # ⚠️ 三種會議語言的標題都認(手機版與這邊都可能產出英文、簡中逐字稿)
+        if _is_transcript_heading(line):
             in_body = True
             continue
-        if line.startswith(export.DIAGNOSTIC_HEADING):
+        if export.starts_diagnostics(line):
             break
         if not in_body or not line:
             continue
         m = export.SPEAKER_LINE_RE.match(line)
         if m:
-            on = export.MARK_HIGHLIGHT in (m["marks"] or "").split(export.MARK_SEP)
+            on = any(vocab.is_highlight_mark(x) for x in (m["marks"] or "").split(export.MARK_SEP))
             rows.append([m["name"], f"{int(m['h']):02d}:{m['m']}:{m['s']}", on, [], [], paused])
             paused = False
         elif export.is_pause_line(line):
             paused = True
         elif not rows:
             continue
-        elif line.startswith(export.NOTE_PREFIX):
-            if c := line[len(export.NOTE_PREFIX):].strip():
+        elif vocab.is_note_line(line):
+            if c := vocab.note_text(line).strip():
                 rows[-1][4].append(c)
-        elif not line.startswith(">") and not line.startswith(loopdetect.MARKER_PREFIX):
+        elif not line.startswith(">") and not vocab.is_marker(line):
             rows[-1][3].append(line)
-    unknown = export.speaker_label(-1)
     out: list[MarkedTurn] = []
     last_on: int | None = None     # 上一個併進 out 的重點行
     for i, (who, at, on, body, notes, paused) in enumerate(rows):
@@ -367,7 +354,7 @@ def highlighted_turns(md: str) -> list[MarkedTurn]:
             continue
         joins = (last_on is not None and rows[last_on][0] == who
                  and not any(rows[j][5] for j in range(last_on + 1, i + 1))
-                 and all(rows[j][0] == unknown for j in range(last_on + 1, i)))
+                 and all(vocab.is_unknown(rows[j][0]) for j in range(last_on + 1, i)))
         if joins:
             prev = out.pop()
             out.append(MarkedTurn(prev.time, prev.text + "".join(body), prev.notes + tuple(notes)))
@@ -433,10 +420,13 @@ LOCATE_RATIO = 0.75
 LOCATE_MIN_BIGRAMS, LOCATE_MAX_BIGRAMS = 5, 80
 
 
-def locate(quote: str, lines: list[TimedLine]) -> str | None:
-    """模型交的原句對回逐字稿,回推估的時間(那一輪的開始 + 原句在這一輪裡的位置);對不上回 None。"""
+def locate(quote: str, lines: list[TimedLine], scale: int = 1) -> str | None:
+    """模型交的原句對回逐字稿,回推估的時間(那一輪的開始 + 原句在這一輪裡的位置);對不上回 None。
+
+    `scale` 是會議語言的字數倍數(`draftvocab.char_scale`):⚠️ 上限 80 組是照中文定的,英文
+    提示詞要的是 5 到 30 個字(一百多個字母),不放大的話每一條英文待辦都因為「太長」被丟掉。"""
     qb = _bigrams(squash(quote))
-    if not LOCATE_MIN_BIGRAMS <= len(qb) <= LOCATE_MAX_BIGRAMS:
+    if not LOCATE_MIN_BIGRAMS <= len(qb) <= LOCATE_MAX_BIGRAMS * scale:
         return None
 
     def score(text: str) -> float:
@@ -460,10 +450,11 @@ def locate(quote: str, lines: list[TimedLine]) -> str | None:
     return None
 
 
-def looks_like_task(task: str) -> bool:
-    """待辦要像一件事:不是把逐字稿原話(「名字:……」)搬過來、不太短也不太長。"""
+def looks_like_task(task: str, chars: tuple[int, int] = (4, 60)) -> bool:
+    """待辦要像一件事:不是把逐字稿原話(「名字:……」)搬過來、不太短也不太長。
+    `chars` 是合理長度(英文一件事的字母數是中文字數的幾倍,見 `draftvocab.task_chars`)。"""
     t = task.strip()
-    return 4 <= len(t) <= 60 and ":" not in t and "：" not in t   # 半形與全形冒號
+    return chars[0] <= len(t) <= chars[1] and ":" not in t and "：" not in t   # 半形與全形冒號
 
 
 def timed_chunks(lines: list[TimedLine], limit: int) -> list[list[TimedLine]]:
@@ -494,14 +485,14 @@ def validate(text: str) -> Path:
     """路徑把關:必須是存在的單一 `.md` 檔(同 `relabel.validate`,話換成這個功能的)。"""
     cleaned = srcfile.clean_path(text)
     if not cleaned:
-        raise UserFacingError("請先按「選擇逐字稿…」挑一份 md,或貼上它的路徑")
+        raise UserFacingError(t("請先按「選擇逐字稿…」挑一份 md,或貼上它的路徑"))
     p = Path(cleaned)
     if p.is_dir():
-        raise UserFacingError(f"這是資料夾,請選擇單一逐字稿檔:{cleaned}")
+        raise UserFacingError(t("這是資料夾,請選擇單一逐字稿檔:{cleaned}", cleaned=cleaned))
     if not p.is_file():
-        raise UserFacingError(f"找不到檔案,請確認路徑是否正確:{cleaned}")
+        raise UserFacingError(t("找不到檔案,請確認路徑是否正確:{cleaned}", cleaned=cleaned))
     if p.suffix.lower() != ".md":
-        raise UserFacingError(f"會議紀錄草稿只吃逐字稿 md 檔,這是「{p.suffix or '(無副檔名)'}」")
+        raise UserFacingError(t("會議紀錄草稿只吃逐字稿 md 檔,這是「{v}」", v=p.suffix or t("(無副檔名)")))
     return p
 
 
@@ -516,22 +507,21 @@ def drafts_dir() -> Path:
 #: 草稿檔的第一行。⚠️ **檔案之後會在 Finder 裡被單獨打開**,那時畫面上的警語都不在了,
 #: 能提醒「這是 AI 寫的」只剩這一行
 #: ⚠️ 「品質比不上雲端 AI」是使用者 2026-10-11 要求明講的(地端小模型能力有限)
-DRAFT_NOTICE = ("> ⚠ AI 草稿:由這台 Mac 上的 Apple Intelligence 整理,能力有限、品質比不上"
-                "雲端 AI,可能漏掉或寫錯;正式紀錄請對照逐字稿另行整理。")
+DRAFT_NOTICE = _ZH.notice_apple
 #: Qwen 那兩條的警語(模型是這台電腦上跑的小模型,不是 Apple Intelligence)
-DRAFT_NOTICE_OV = ("> ⚠ AI 草稿:由這台電腦上的地端小模型整理,能力有限、品質比不上雲端 AI,"
-                   "可能漏掉或寫錯;正式紀錄請對照逐字稿另行整理。")
+DRAFT_NOTICE_OV = _ZH.notice_local
 
 
 def draft_notice() -> str:
     """草稿檔第一行:照**這一場實際用的**模型挑(Mac 每場可以換);還沒跑過就照平台。"""
     engine = _used_engine or (ENGINE_OV if _backend() == "openvino" else ENGINE_APPLE)
-    return DRAFT_NOTICE if engine == ENGINE_APPLE else DRAFT_NOTICE_OV
+    return _draft.notice_apple if engine == ENGINE_APPLE else _draft.notice_local
 
 
 def render(md_path: Path, body: str) -> str:
     """草稿檔的全文:警語 + 來源 + `generate` 的三段。"""
-    return f"{draft_notice()}\n> 來源:{md_path.name}\n\n# {md_path.stem} 會議紀錄草稿\n\n{body}"
+    return (f"{draft_notice()}\n{_draft.source_label}{md_path.name}\n\n"
+            f"# {md_path.stem} {_draft.title_suffix}\n\n{body}")
 
 
 def save(md_path: Path, text: str) -> Path:
@@ -552,15 +542,15 @@ def wait_hint(recording_sec: float, engine: str | None = None) -> str | None:
         size, device = _ov_plan()
         rate = OV_SECONDS_PER_RECORDED_MINUTE[(size, device)]
         if not models.llm_cached(size):
-            first_time = f";第一次要先下載 AI 模型,約 {models.LLM_DOWNLOAD_GB[size]} GB"
+            first_time = t(";第一次要先下載 AI 模型,約 {v} GB", v=models.LLM_DOWNLOAD_GB[size])
     elif engine == ENGINE_QWEN:
         rate = MLX_SECONDS_PER_RECORDED_MINUTE
         if not models.mlx_llm_cached():
-            first_time = f";第一次要先下載 AI 模型,約 {models.MLX_LLM_DOWNLOAD_GB} GB"
+            first_time = t(";第一次要先下載 AI 模型,約 {MLX_LLM_DOWNLOAD_GB} GB", MLX_LLM_DOWNLOAD_GB=models.MLX_LLM_DOWNLOAD_GB)
     if recording_sec < WAIT_HINT_MIN_SEC:
         return first_time.lstrip(";") or None
     minutes = max(1, round(recording_sec / 60 * rate / 60))
-    return f"這場 {int(recording_sec // 60)} 分鐘,估計約要 {minutes} 分鐘{first_time}"
+    return t("這場 {v} 分鐘,估計約要 {minutes} 分鐘{first_time}", v=int(recording_sec // 60), minutes=minutes, first_time=first_time)
 
 
 def _ov_plan() -> tuple[str, str]:
@@ -607,12 +597,13 @@ def _call_ov(kind: str, instructions: str, prompt: str) -> dict:
     from meeting_scribe import minutes_ov
 
     try:
-        msg = _session.ask(kind, instructions, prompt, OV_CALL_TIMEOUT_SEC)
+        msg = _session.ask(kind, instructions, prompt, OV_CALL_TIMEOUT_SEC,
+                           language=_draft.language)
     except minutes_ov.CallTimeout as e:
         raise _CallFailed(str(e)) from None
     except minutes_ov.WorkerGone as e:
         logger.warning("會議紀錄草稿:AI 模型子行程中斷:%s", e)
-        raise UserFacingError("地端 AI 模型中途停止了,請再試一次。") from None
+        raise UserFacingError(t("地端 AI 模型中途停止了,請再試一次。")) from None
     if not msg.get("ok"):
         raise _CallFailed(f"{msg.get('error')}:{str(msg.get('detail', ''))[:80]}")
     return msg
@@ -622,7 +613,9 @@ def _call_apple(kind: str, instructions: str, prompt: str) -> dict:
     """Mac:叫一次小程式。每問一次起一個行程:實測整支跑完 0.26 秒,
     跟呼叫本身一樣短,換到的是超時直接收掉行程、不必管常駐的那支卡在哪裡。"""
     _, exe = plat.apple_speech_helper()
-    proc = subprocess.Popen([*_helper_argv(exe), kind], stdin=subprocess.PIPE,
+    # 會議語言跟著帶:英文要用英文說明的那組 @Guide(中文說明配英文指示,模型照樣回中文;
+    # iOS 2026-10-18 實測)
+    proc = subprocess.Popen([*_helper_argv(exe), kind, _draft.language], stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                             encoding="utf-8", **plat.spawn_kwargs(low_priority=False))
     payload: str | None = json.dumps({"instructions": instructions, "prompt": prompt},
@@ -637,7 +630,7 @@ def _call_apple(kind: str, instructions: str, prompt: str) -> dict:
             except subprocess.TimeoutExpired:
                 payload = None  # 第一次已經送進去了,重試時不能再送
                 if time.monotonic() > deadline:
-                    raise _CallFailed(f"{CALL_TIMEOUT_SEC:.0f} 秒沒有回覆")
+                    raise _CallFailed(t("{CALL_TIMEOUT_SEC:.0f} 秒沒有回覆", CALL_TIMEOUT_SEC=CALL_TIMEOUT_SEC))
     except BaseException:
         proc.kill()  # 停止鈕(Cancelled 是 BaseException)與超時都要收掉小程式
         proc.wait()
@@ -645,7 +638,7 @@ def _call_apple(kind: str, instructions: str, prompt: str) -> dict:
     try:
         msg = json.loads(out.strip().splitlines()[-1])
     except (ValueError, IndexError):
-        raise _CallFailed(f"回覆解不開(結束碼 {proc.returncode}):{err.strip()[:200]}") from None
+        raise _CallFailed(t("回覆解不開(結束碼 {returncode}):{v}", returncode=proc.returncode, v=err.strip()[:200])) from None
     error = msg.get("error")
     if error == "guardrail":
         raise _Guardrail()
@@ -658,6 +651,12 @@ def _call_apple(kind: str, instructions: str, prompt: str) -> dict:
 
 
 def _tw(s: str) -> str:
+    """模型的回覆 → 這一場的字形。⚠️ **照會議語言,不是一律繁化**:簡中會議的草稿被繁化就是
+    一份繁簡夾雜的東西;英文不動(OpenCC 對英文無害,但白付載入辭典的成本)。"""
+    if _draft.language == draftvocab.ZH_CN.language:
+        return convert.to_simplified(s).strip()
+    if _draft.language == draftvocab.EN.language:
+        return s.strip()
     return convert.to_taiwan_traditional(s).strip()
 
 
@@ -665,9 +664,9 @@ def _ask(instructions: str, prompt: str) -> str:
     try:
         return _tw(_call("llm-ask", instructions, prompt).get("text", ""))
     except _Guardrail:
-        raise UserFacingError("Apple 的安全過濾擋下了這場的內容,沒有產生會議紀錄草稿。") from None
+        raise UserFacingError(t("Apple 的安全過濾擋下了這場的內容,沒有產生會議紀錄草稿。")) from None
     except (_Overflow, _CallFailed) as e:
-        raise UserFacingError(f"{_engine_name()}沒有回覆,請再試一次({e or '超出長度'})。") from None
+        raise UserFacingError(t("{v}沒有回覆,請再試一次({v2})。", v=_engine_name(), v2=e or t("超出長度"))) from None
 
 
 #: 主要議題最多幾點(提示詞也是這個數)
@@ -691,7 +690,7 @@ def _tidy_topics(text: str) -> str:
 
 def _engine_name() -> str:
     """錯誤訊息裡怎麼稱呼回答的那一方(子行程開著 = Qwen 那兩條)。"""
-    return "地端 AI 模型" if _session is not None else "Apple 的語言模型"
+    return t("地端 AI 模型") if _session is not None else t("Apple 的語言模型")
 
 
 @dataclass
@@ -707,7 +706,7 @@ def _map_chunk(lines: list[TimedLine]) -> _ChunkResult:
     被安全過濾擋下、超時、格式壞掉就跳過這一段(少一點內容,不讓整場失敗:
     手機版實測一場 44 分鐘的會有一段被擋)。"""
     try:
-        msg = _call("llm-notes", _MAP_INSTRUCTIONS, "\n".join(l.text for l in lines))
+        msg = _call("llm-notes", _draft.map_instructions, "\n".join(l.text for l in lines))
     except _Overflow:
         if len(lines) <= 1:
             return _ChunkResult([], [], 0, 1)
@@ -724,8 +723,9 @@ def _map_chunk(lines: list[TimedLine]) -> _ChunkResult:
     dropped = 0
     todo = msg.get("todo")
     if isinstance(todo, dict):
-        task, at = _tw(str(todo.get("task", ""))), locate(_tw(str(todo.get("quote", ""))), lines)
-        if at and looks_like_task(task):
+        task = _tw(str(todo.get("task", "")))
+        at = locate(_tw(str(todo.get("quote", ""))), lines, _draft.char_scale)
+        if at and looks_like_task(task, _draft.task_chars):
             todos.append((task, at))
         else:
             dropped += 1
@@ -735,19 +735,20 @@ def _map_chunk(lines: list[TimedLine]) -> _ChunkResult:
 def _merge(notes: list[str]) -> tuple[list[str], int, bool]:
     """重點太長就分批合併,直到塞得進一次呼叫;回 (合併後, 合併了幾層, 有沒有截短)。"""
     level, truncated = 0, False
-    while len("\n".join(notes)) > MERGE_CHARS:
+    limit = MERGE_CHARS * _draft.char_scale
+    while len("\n".join(notes)) > limit:
         level += 1
         nxt: list[str] = []
         cur: list[str] = []
         for n in notes:
-            if cur and len("\n".join(cur + [n])) > MERGE_CHARS:
-                nxt.append(cur[0] if len(cur) == 1 else _ask(_MERGE_INSTRUCTIONS, "\n".join(cur)))
+            if cur and len("\n".join(cur + [n])) > limit:
+                nxt.append(cur[0] if len(cur) == 1 else _ask(_draft.merge_instructions, "\n".join(cur)))
                 cur = []
             cur.append(n)
         if cur:
-            nxt.append(cur[0] if len(cur) == 1 else _ask(_MERGE_INSTRUCTIONS, "\n".join(cur)))
+            nxt.append(cur[0] if len(cur) == 1 else _ask(_draft.merge_instructions, "\n".join(cur)))
         if len(nxt) >= len(notes):  # 合併不再變少:截短保證收斂(會掉內容)
-            nxt = [n[:MERGE_CHARS // 3] for n in nxt]
+            nxt = [n[:limit // 3] for n in nxt]
             truncated = True
         notes = nxt
     return notes, level, truncated
@@ -760,22 +761,24 @@ def generate(md: str, progress: ProgressFn | None = None, engine: str | None = N
     global _used_engine
     can = capability()
     if not can.ok:
-        raise UserFacingError(f"無法產生會議紀錄草稿:{can.reason}")
+        raise UserFacingError(t("無法產生會議紀錄草稿:{reason}", reason=can.reason))
     engine = engine or default_engine()
     # ⚠️ 選的那個用不了(例如選了 Apple 而 Apple Intelligence 沒打開)就講它的理由,
     # **不換另一個**:悄悄換掉等於把「去打開」那句提示吞掉
     mine = engines().get(engine or "")
     if mine is None or not mine.ok:
-        raise UserFacingError(f"無法產生會議紀錄草稿:{mine.reason if mine else can.reason}")
+        raise UserFacingError(t("無法產生會議紀錄草稿:{v}", v=mine.reason if mine else can.reason))
     _used_engine = engine
     report = progress or (lambda f: None)
     t0 = time.monotonic()
-    global _highlights
+    global _highlights, _draft
+    # 提示詞與草稿的字照**逐字稿的會議語言**(不看介面語言,同 iOS);每一場重挑,不串到下一場
+    _draft = draftvocab.of(vocab.detect(md).language)
     lines = timed_lines(md)
     _highlights = highlighted_turns(md)
-    parts = timed_chunks(lines, CHUNK_CHARS)
+    parts = timed_chunks(lines, CHUNK_CHARS * _draft.char_scale)
     if not parts:
-        raise UserFacingError("逐字稿是空的,沒有東西可以整理。")
+        raise UserFacingError(t("逐字稿是空的,沒有東西可以整理。"))
     # ⚠️ 跟轉檔同一道:Windows 只有 CPU 時要跑 7~15 分鐘,筆電一闔蓋/鎖屏就進新式待命、
     # 整個行程被凍結(症狀長得跟當機一樣,見 `power.keep_awake`)
     with power.keep_awake():
@@ -806,8 +809,7 @@ def _generate_session(model_dir: Path, device: str, label: str,
             # ⚠️ 元件載不起來(最常見是缺 Visual C++ 執行階段)跟模型檔壞掉處方相反:
             # 叫他刪掉 3 GB 重新下載,下載完照樣載不起來
             raise errors.native_engine_error(ImportError(str(e))) from None
-        raise UserFacingError(f"地端 AI 模型載入失敗,請再試一次;仍然失敗的話,"
-                              f"{models.redownload_hint()}。") from None
+        raise UserFacingError(t("地端 AI 模型載入失敗,請再試一次;仍然失敗的話,{v}。", v=models.redownload_hint())) from None
     logger.info("會議紀錄草稿:%s 跑在 %s,載入 %.1f 秒", label, device, load)
     _session = session
     try:
@@ -833,12 +835,13 @@ def _compose(parts: list[list[TimedLine]], report: ProgressFn, t0: float) -> str
         if (i + 1) % 5 == 0:   # 心跳:Windows 只有 CPU 時一段要十幾秒,整場十幾分鐘
             logger.info("會議紀錄草稿:%d/%d 段", i + 1, len(parts))
     if not notes:  # 每段都失敗:可能是安全過濾,也可能是模型出錯(各段的錯誤都被跳過了,分不出是哪個)
-        raise UserFacingError("這場沒有整理出內容(可能被 Apple 的安全過濾擋下),請再試一次。"
+        raise UserFacingError(t("這場沒有整理出內容(可能被 Apple 的安全過濾擋下),請再試一次。")
                               if _session is None else
-                              "這場沒有整理出內容,請再試一次。")
+                              t("這場沒有整理出內容,請再試一次。"))
     unique: dict[str, tuple[str, str]] = {}
-    for t in todos:   # 同一件事出現在兩段:留第一次
-        unique.setdefault(squash(t[0]), t)
+    # ⚠️ 迴圈變數不可以叫 t:這個函式裡有 `t("…")`,一綁定就整個函式都是區域變數
+    for todo in todos:   # 同一件事出現在兩段:留第一次
+        unique.setdefault(squash(todo[0]), todo)
     todos = list(unique.values())
     # 不設上限:截掉的會是後半場(手機版實測)。照時間排是防線:現在一段最多一條、原句只在
     # 那一段裡核對,各段交上來的本來就照時間;一段放寬成多條時,同一段裡模型給的順序不一定照時間
@@ -849,19 +852,20 @@ def _compose(parts: list[list[TimedLine]], report: ProgressFn, t0: float) -> str
     report(0.9)
     joined = "\n".join(notes)
     # 摘要先看現場標的重點(同手機版):那是與會者自己講「這個重要」的地方
+    v = _draft
     summary = _tidy_summary(_ask(
-        _SUMMARY_INSTRUCTIONS,
-        (f"【與會者現場標記的重點】\n{marked}\n\n【各時段重點】\n{joined}" if marked else joined)))
+        v.summary_instructions,
+        (f"{v.marked_label}\n{marked}\n\n{v.notes_label}\n{joined}" if marked else joined)))
     report(0.95)
-    topics = _tidy_topics(_ask(_TOPICS_INSTRUCTIONS, joined))
-    todo_text = "\n".join(f"- {t}({at})" for t, at in todos) if todos else NO_TODOS
+    topics = _tidy_topics(_ask(v.topics_instructions, joined))
+    todo_text = "\n".join(f"- {t}({at})" for t, at in todos) if todos else v.no_todos
     logger.info("會議紀錄草稿:%d 段、合併 %d 層%s、待辦 %d 條(丟掉 %d 條)、跳過 %d 行,耗時 %.1f 秒",
                 len(parts), level, "(有截短)" if truncated else "", len(todos), dropped, skipped,
                 time.monotonic() - t0)
     report(1.0)
-    marked_text = f"\n\n{HIGHLIGHTS_HEADING}\n{marked}" if marked else ""
-    return (f"## 摘要\n{summary}{marked_text}\n\n## 主要議題\n{topics}"
-            f"\n\n{TODOS_HEADING}\n{todo_text}\n")
+    marked_text = f"\n\n{v.highlights_heading}\n{marked}" if marked else ""
+    return (f"{v.summary_heading}\n{summary}{marked_text}\n\n{v.topics_heading}\n{topics}"
+            f"\n\n{v.todos_heading}\n{todo_text}\n")
 
 
 #: 這一場標了〔重點〕的那幾輪(`generate` 開頭讀好;`_compose` 的兩條路共用)
@@ -872,11 +876,11 @@ def _marked_points(turns: list[MarkedTurn]) -> str:
     """每個重點一句「- …(時間)」。一個問不出來就跳過那一個(同 `_map_chunk`:少一點,不整場失敗)。"""
     out = []
     for h in turns[:MAX_HIGHLIGHTS]:
-        prompt = h.text[:CHUNK_CHARS]
+        prompt = h.text[:CHUNK_CHARS * _draft.char_scale]
         if h.notes:
-            prompt += "\n與會者的備註:" + ";".join(h.notes)
+            prompt += "\n" + _draft.attendee_note + _draft.note_sep.join(h.notes)
         try:
-            msg = _call("llm-ask", _HIGHLIGHT_INSTRUCTIONS, prompt)
+            msg = _call("llm-ask", _draft.highlight_instructions, prompt)
         except (_Guardrail, _Overflow, _CallFailed) as e:
             logger.info("會議紀錄草稿:跳過一個重點(%s):%s", h.time, e or "超出長度")
             continue

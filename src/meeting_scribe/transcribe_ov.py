@@ -3,7 +3,7 @@
 幻覺防治 parity(spec §5):openvino-genai 無內建 VAD,
 沿用 faster-whisper 內建 Silero VAD 先切出語音塊,靜音不送模型;
 各 VAD 塊獨立解碼,塊與塊之間等效 condition_on_previous_text=False;
-語言取 transcribe.LANGUAGE(單一出處,與 faster-whisper 路徑必然一致)。
+語言碼與領域詞都經 `meetlang.whisper_code` / `transcribe.hotwords_for`(與 faster-whisper 路徑同一支換算,parity 靠它)。
 parity 缺口與其緩解:單一塊超過 30 秒(長段連續發言)時,
 WhisperPipeline 內部 sliding window 的跨窗上下文行為不可設定
 (WhisperGenerationConfig 無 condition_on_prev 對應欄位,2026.2.1 實測),
@@ -30,7 +30,6 @@ from pathlib import Path
 import numpy as np
 
 from meeting_scribe import audio, cancel, hotwords, loopdetect, models
-from meeting_scribe.transcribe import LANGUAGE
 from meeting_scribe.types import TranscriptSegment
 
 logger = logging.getLogger(__name__)
@@ -239,6 +238,7 @@ def transcribe_ov(
     model_dir: str,
     progress: ProgressFn | None = None,
     device: str = "GPU",
+    language: str = "zh_TW",
 ) -> list[TranscriptSegment]:
     """model_dir:已解析的本地模型目錄(下載由呼叫端負責——下載失敗與
     引擎執行失敗的錯誤處理不同,見 transcribe.transcribe docstring)。"""
@@ -267,13 +267,16 @@ def transcribe_ov(
     if progress:
         progress(_PREP_FRAC)  # pipeline 載入/編譯完成
     config = pipe.get_generation_config()
-    config.language = f"<|{LANGUAGE}|>"  # OV 吃特殊 token 形式,值同 faster-whisper
+    from meeting_scribe import meetlang
+    from meeting_scribe.transcribe import hotwords_for
+
+    config.language = f"<|{meetlang.whisper_code(language)}|>"  # OV 吃特殊 token 形式,值同 faster-whisper
     config.task = "transcribe"
     config.return_timestamps = True
     # 領域詞表逐窗注入:OV 的 hotwords 與 faster-whisper 語意一致
     # (<|startofprev|> 前文、all processing windows,API 文件實查),
     # 此為 parity 項目而非缺口。空詞表不動 config(維持引擎預設 None)
-    hw = hotwords.as_string()
+    hw = hotwords_for(language)
     if hw:
         config.hotwords = hw
 

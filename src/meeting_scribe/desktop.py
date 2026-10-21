@@ -1,4 +1,4 @@
-r"""桌面視窗的**外殼**:標題列、四個頂層分頁、「聲音→MD」底下的三個子分頁。
+r"""桌面視窗的**外殼**:標題列、頂層分頁、「聲音→MD」底下的子分頁。
 
 2026-08-29 新增(原生介面遷移,決策記錄見 `docs/dev/native-ui.md`)。階段 3 只做
 殼(視窗開得起來、工作列身分與圖示、`啟動.vbs` 的守門會說話——那三件事與頁面內容
@@ -15,7 +15,7 @@ CLAUDE.md)。階段 4 接內容時**照這條線走**——要跑的東西交給
   頂層四分頁:**置中**、選中的那個底下一條 2px 的主色底線(使用者 2026-08-29 在
     三個模擬圖裡選的第三案「頂層置中 ＋ 子分頁靠左」,理由是他看 apple.com 這類
     現代網站的主選單都置中,靠左是舊式應用程式的樣子)
-  「聲音→MD」再分三個子分頁(轉檔 / 名單與聲紋 / 領域詞表):**靠左**、膠囊底
+  「聲音→MD」再分兩個子分頁(轉檔 / 名單與聲紋):**靠左**、膠囊底
   內容區:`PAGE_PAD` 的外距,裡面是圓角卡片(`CARD_PAD` 24 / `CARD_GAP` 20)
 
 ⚠️ **間距那三個數字完全照抄 MP4-2-SRT**(使用者 2026-08-29 指定「完全照抄
@@ -58,6 +58,9 @@ from meeting_scribe import (attendees, audit, cancel, diarize, docpipe, docsrc,
                             doctab, filelog, help_text,
                             helpmd, pending, plat, relabel, roster, settings, skin,
                             srcfile, transcribe, update, vpsync, wordlists)
+from meeting_scribe import i18n
+from meeting_scribe import meetlang
+from meeting_scribe import vocab
 from meeting_scribe import transcribe_apple
 from meeting_scribe import minutes
 from meeting_scribe import export
@@ -71,6 +74,7 @@ from meeting_scribe import voiceprints as voiceprints_store
 from meeting_scribe.cancel import Cancelled
 from meeting_scribe.errors import UserFacingError
 from meeting_scribe.brand import APP_TITLE
+from meeting_scribe.i18n import t
 from meeting_scribe import paths as paths_mod
 from meeting_scribe.paths import appdata_root, assets_dir, repo_root
 from meeting_scribe.pipeline import run_pipeline
@@ -197,9 +201,9 @@ BRAND_ICON_PT = 20
 # Label,把 emoji 寫進句子裡反而對不上那一排。
 # ⚠️ **「檔案不外傳」不可省**:那是隱私規格對使用者的承諾(spec §7),也是他敢把
 # 會議錄音丟進來的唯一理由;網頁版那邊測試守著,這邊由 `tests/test_desktop.py` 守。
-APP_SUBTITLE = ("本系統係將聲音、文字、圖像轉換成適合 AI 閱讀的 Markdown 格式"
+APP_SUBTITLE = (t("本系統係將聲音、文字、圖像轉換成適合 AI 閱讀的 Markdown 格式"
                 "(以節省 Token)。全部在本機轉換,檔案不外傳;"
-                "第一次使用請先看「使用說明」(首次轉檔需下載模型)。")
+                "第一次使用請先看「使用說明」(首次轉檔需下載模型)。"))
 
 # 頁首三行(大標、副標、頂層分頁列)之間的行距(邏輯 px),**量網頁版得到的**
 # (2026-09-03 使用者:「AP 最上面幾行字的行距,請依照 WEB 的行距調整」;@150% 逐列掃
@@ -223,12 +227,20 @@ HEAD_GAP_SUB, HEAD_GAP_NAV = 17, 20
 # ⚠️ **文字裡的圖示由 `HandButton` 自己拆**(`split_icon` → `button_icon` 畫成彩色
 # 圖),格式照 `ADV_BUTTON`。⚠️ **「記錄」不是「紀錄」**:log 的繁中譯名全 repo 統一
 # 成「記錄」(同日使用者裁定,444 處一起改),別又寫回去。
-LOG_BUTTON = "📂 記錄檔…"
+LOG_BUTTON = t("📂 記錄檔…")
+# **畫面上**的程式名(視窗標題、頁首、對話框)。⚠️ 英文是 Scribe2MD(使用者 2026-10-21 定;
+# 網址與下載檔名照舊全小寫 scribe2md)。⚠️ **不可以拿它取代 `brand.APP_TITLE`**:那一個同時是 `.app`
+# 的資料夾名、捷徑名與記錄檔標頭,跟著語言變的話,換了語言 App 就找不到自己(換版也是)。
+# 兩者的繁中必須一字不差,`test_畫面上的程式名_繁中就是_APP_TITLE` 守著。
+WINDOW_TITLE = t("AI 文件.MD 轉換器")
+# 頁首右上角的介面語言選單(`App._lang_button`)。⚠️ 按鈕上寫的是**目前**語言的名字,用它
+# 自己的字寫(`i18n.NATIVE_NAMES`),所以這一串本身不翻。
+LANG_BUTTON = "🌐 {name}"
 # 出錯時的指路。⚠️ **不要再寫「logs 資料夾」**:同仁是用桌面捷徑開的,根本不知道
 # 工具資料夾在哪——那正是這顆鈕存在的理由。⚠️ **指的是那一頁的右上角,不是視窗的**
 # (2026-09-19 鈕從頁首搬進說明頁之後)。⚠️ **命令列那條路不能用這句**(`doccli` 沒有
 # 視窗,它印的是記錄檔的完整路徑)。
-LOG_HINT = "詳情見記錄檔(「❓ 使用說明」右上角的「記錄檔…」)"
+LOG_HINT = t("詳情見記錄檔(「❓ 使用說明」右上角的「記錄檔…」)")
 
 
 def relabel_stage(have_media: bool, have_features: bool) -> str:
@@ -239,33 +251,33 @@ def relabel_stage(have_media: bool, have_features: bool) -> str:
     沒有,使用者只會以為功能壞了。⚠️ **只講缺了什麼、少了哪幾樣**,怎麼補(放回同一個
     資料夾、檔名相同)寫在預覽區那句與使用說明裡,這一行放不下。"""
     if not have_media:
-        return ("已讀取,但旁邊沒有同名的錄音檔:只能改名字"
-                "(沒有試聽、不記聲紋、不能改人數)。")
+        return (t("已讀取,但旁邊沒有同名的錄音檔:只能改名字"
+                "(沒有試聽、不記聲紋、不能改人數)。"))
     if not have_features:
-        return "已讀取,但旁邊沒有同名的分群檔(.分群.npz):不能改講者人數,其餘照常。"
-    return "已讀取,請在左邊替講者命名。"
+        return t("已讀取,但旁邊沒有同名的分群檔(.分群.npz):不能改講者人數,其餘照常。")
+    return t("已讀取,請在左邊替講者命名。")
 
 # 檢查新版(2026-10-07 使用者在四張設計稿裡選案 B:說明頁內容框底下一列「目前版本 /
 # 檢查更新 / 結果 / 啟動時自動檢查新版」;啟動時發現新版另跳一扇對話框)。
 # ⚠️ **那顆勾選框就是「不要再提醒」的回頭路**:對話框勾了「不要再提醒」之後,唯一
 # 重新打開的地方就是它——兩邊是同一個值(`App._update_auto`,落地在 `settings`)。
 # ⚠️ **說明頁是點了才建的**,所以值住在視窗上、勾選框住在說明頁;別頁不准回頭摸它。
-UPDATE_BUTTON = "🔄 檢查更新"
-UPDATE_AUTO = "啟動時自動檢查新版"
-UPDATE_CHECKING = "正在檢查…"
-UPDATE_LATEST = "✔ 已經是最新版"
-UPDATE_FAILED = "⚠ 連不上 GitHub,請稍後再試"
-UPDATE_DEV = "開發用的資料夾(git)不會自動換版"
-UPDATE_TITLE = "有新版本"
-UPDATE_DONT_ASK = "不要再提醒"
-UPDATE_GO = "立即更新"
-UPDATE_PAGE = "前往下載頁"
-UPDATE_LATER = "以後再說"
-UPDATE_KEEPS = "更新時會先關閉本程式,換好新版後自動重新開啟;你的聲紋、名單與用詞替換表都會保留。"
-UPDATE_MANUAL = "這台電腦要到下載頁手動更新:下載、解壓縮後覆蓋到工具資料夾即可,你的聲紋與名單不會被蓋掉。"
+UPDATE_BUTTON = t("🔄 檢查更新")
+UPDATE_AUTO = t("啟動時自動檢查新版")
+UPDATE_CHECKING = t("正在檢查…")
+UPDATE_LATEST = t("✔ 已經是最新版")
+UPDATE_FAILED = t("⚠ 連不上 GitHub,請稍後再試")
+UPDATE_DEV = t("開發用的資料夾(git)不會自動換版")
+UPDATE_TITLE = t("有新版本")
+UPDATE_DONT_ASK = t("不要再提醒")
+UPDATE_GO = t("立即更新")
+UPDATE_PAGE = t("前往下載頁")
+UPDATE_LATER = t("以後再說")
+UPDATE_KEEPS = t("更新時會先關閉本程式,換好新版後自動重新開啟;你的聲紋、名單與用詞替換表都會保留。")
+UPDATE_MANUAL = t("這台電腦要到下載頁手動更新:下載、解壓縮後覆蓋到工具資料夾即可,你的聲紋與名單不會被蓋掉。")
 # ⚠️ **開發用的資料夾不能套 `UPDATE_MANUAL`**:不自動換版正是為了不讓公開版蓋掉 repo,
 # 那句「覆蓋到工具資料夾」等於教人手動做同一件事(2026-10-07 在 Mac 驗收時看到)
-UPDATE_DEV_HINT = "這是開發用的資料夾(有 .git),不會自動換版,也不要拿下載的新版覆蓋它;要更新請用 git pull。"
+UPDATE_DEV_HINT = t("這是開發用的資料夾(有 .git),不會自動換版,也不要拿下載的新版覆蓋它;要更新請用 git pull。")
 
 # 「這台電腦載不起 AI 元件」的橫幅(2026-09-20 使用者選案 C;五案實拍見
 # `docs/dev/native-ui.md` §21)。⚠️ **這一條只在壞掉的電腦上出現**,正常的機器從頭到尾
@@ -273,20 +285,20 @@ UPDATE_DEV_HINT = "這是開發用的資料夾(有 .git),不會自動換版,也�
 # 錄了一場會議、按下停止,才在收尾時撞上 `ImportError: DLL load failed …`,而畫面上
 # 只有「收尾時出錯」五個字。⚠️ **位置在頁首底下、四個分頁都看得到**:缺這個元件的
 # 電腦上,錄音、轉檔、文件 OCR 全部做不完,不是某一頁的事。
-BANNER_TITLE = "⚠ 這台電腦少了 AI 元件需要的系統元件,錄音與轉檔都會失敗"
+BANNER_TITLE = t("⚠ 這台電腦少了 AI 元件需要的系統元件,錄音與轉檔都會失敗")
 # ⚠️ **把兩種病因的處方都講完,而不是指路到說明頁**:說明頁那一條寫的就是同一件事,
 # 而這條橫幅出現的時機是「他正要開始做事」——多一次跳轉就多一次放棄。實拍也證實指路
 # 那一句會把第二行斷在「使用說/明」中間(`break_lines` 中文處處可斷)。
 BANNER_BODY = (
-    "請安裝「Microsoft Visual C++ 2015-2022 可轉散發套件(x64)」後重新啟動本工具"
+    t("請安裝「Microsoft Visual C++ 2015-2022 可轉散發套件(x64)」後重新啟動本工具"
     "——虛擬機器、剛重灌或精簡安裝的 Windows 常常沒有預裝。"
-    "裝了仍然失敗的話,請重新執行一次「安裝.bat」。"
+    "裝了仍然失敗的話,請重新執行一次「安裝.bat」。")
 )
 # ⚠️ **按鈕只把網址放進剪貼簿,不自己開瀏覽器**:這支工具 2026-09-05 之後就沒有瀏覽器
 # 那一層了(使用者裁定「AP 不會用瀏覽器」),為了一顆鈕破例不划算。
 # ⚠️ **圖示與字中間那個空白不可以省**(同 `LOG_BUTTON`):`split_icon` 的判準就是它。
-BANNER_COPY = "📋 複製下載網址"
-BANNER_COPIED = "✓ 已複製"
+BANNER_COPY = t("📋 複製下載網址")
+BANNER_COPIED = t("✓ 已複製")
 # 微軟自己的短網址(aka.ms),貼進瀏覽器就開始下載 x64 版。⚠️ **不寫版號**:這條是
 # 「最新的那一份」,而 2015~2022 是同一個可轉散發套件、向下相容。
 VCREDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
@@ -312,14 +324,20 @@ OUTPUT_DIR = repo_root() / "output"
 # 模型的介面標籤 ↔ 引擎鍵。⚠️ **這個選擇必須保留**(2026-07-26 曾移除、同日裁定
 # 還原):快速 = large-v3-turbo、精準 = large-v3、Apple = Mac 內建的語音辨識(2026-10-10,
 # 只在 `transcribe_apple.capability()` 是 ok 的機器上出現)。
-MODEL_LABELS = {"精準": "accurate", "快速": "fast", "Apple": "apple"}
+MODEL_LABELS = {t("精準"): "accurate", t("快速"): "fast", "Apple": "apple"}
 MODEL_KEYS = {v: k for k, v in MODEL_LABELS.items()}
+# 會議語言(`meetlang`;docs/dev/i18n.md 第 0 期 B 案):畫面上的字 → 引擎鍵,同 `MODEL_LABELS`。
+# ⚠️ **名稱照介面語言寫**(英文介面是「Traditional Chinese」,同 iOS),不是各語言的自稱——
+# 自稱是「🌐」那顆選單的事(`i18n.NATIVE_NAMES`):那邊是給看不懂目前介面的人找路用的
+MEETING_LANG_LABELS = {t("繁體中文"): meetlang.ZH_TW, t("簡體中文"): meetlang.ZH_CN,
+                       t("英文"): meetlang.EN}
+MEETING_LANG_NAMES = {v: k for k, v in MEETING_LANG_LABELS.items()}
 # ⚠️ **排列順序就是對話框裡那排的左右**(`model_options` 照它排),兩種排法都把**預設選中
 # 的那一格放在最左**(同運算裝置那排的「自動」,理由見 `DEVICE_OPTIONS`):
 # 其他機器「精準」在左(使用者 2026-09-15 指定);有 Apple 的 Mac 是「Apple|快速|精準」
 # (使用者 2026-10-10 選定,由快到準)。
-MODEL_ORDER = ("精準", "快速")
-MODEL_ORDER_APPLE = ("Apple", "快速", "精準")
+MODEL_ORDER = (t("精準"), t("快速"))
+MODEL_ORDER_APPLE = ("Apple", t("快速"), t("精準"))
 
 # 核對表最多列幾列。⚠️ **限的是列數不是長度**(使用者 2026-08-13 指定改成逐列
 # 播放):逐列播放一次只聽一段,限制長度反而是把東西藏起來;而幾百列光是排版就
@@ -333,17 +351,17 @@ AUDIT_ROW_H = 28
 AUDIT_PICKED, AUDIT_UNPICKED, AUDIT_STOP = "☑", "☐", "■"
 AUDIT_COLS = ("pick", "play", "time", "secs", "text")
 AUDIT_COL_SPEC = (("pick", "", 36, "center"), ("play", "", 36, "center"),
-                  ("time", "時間", 72, "center"), ("secs", "長度", 64, "e"),
-                  ("text", "摘錄", 0, "w"))
+                  ("time", t("時間"), 72, "center"), ("secs", t("長度"), 64, "e"),
+                  ("text", t("摘錄"), 0, "w"))
 # 一行灰一行白(使用者 2026-09-02 拿網頁版核對表對照):列多時眼睛才跟得住同一列的
 # 時間與摘錄。⚠️ **白那一半要自己設**(`_styles` 把 `Audit.Treeview` 的底色設成卡片的白):
 # 共用包給 Treeview 的底色是記錄框那個淺灰(`log_bg` = #f0f0f3),第一版的斑馬灰 #f4f4f6
 # 疊在上面幾乎同色,使用者當場問「灰及白的差異太小,你是不是設錯了」。灰要看得出來、
 # 又不跟 hover/選中那一列(`row_sel`)與琥珀底打架。
 AUDIT_ZEBRA_LIGHT, AUDIT_ZEBRA_DARK = "#ececf0", "#2c2c31"
-AUDIT_HINT = ("一列一輪發言:點「▶」逐列聽(播放中會變成「■」,再點一下停止)、點第一格"
+AUDIT_HINT = (t("一列一輪發言:點「▶」逐列聽(播放中會變成「■」,再點一下停止)、點第一格"
               "勾選(鍵盤:上下選列、空白鍵勾選、Enter 播放)。要問的是「這一群裡面是不是"
-              "混了別人」——混進來的通常是很短的插話,所以短的那幾列特別值得聽。")
+              "混了別人」——混進來的通常是很短的插話,所以短的那幾列特別值得聽。"))
 
 # 現場收音的三個情境。⚠️ **三個錄的東西不同**,不是同一件事的三個名字:現場會議
 # 只錄麥克風;線上會議**麥克風與系統聲音分兩軌**(回音在文字層去重);只錄電腦
@@ -356,17 +374,19 @@ SCENARIOS = {"現場會議": "onsite", "線上會議": "online", "只錄電腦�
 # 會議,錄到的卻是麥克風」,而畫面上完全看不出來。
 # ⚠️ 圖示照網頁版的 `SCENARIO_LABELS`,**但拿掉 VS16**(見檔頭)。
 SCENARIO_OPTIONS = (
-    ("現場會議", "\U0001F399", "現場會議"),
-    ("線上會議", "\U0001F4BB", "線上會議"),
-    ("只錄電腦聲音", "\U0001F50A", "只錄電腦聲音"),
+    ("現場會議", "\U0001F399", t("現場會議")),
+    ("線上會議", "\U0001F4BB", t("線上會議")),
+    ("只錄電腦聲音", "\U0001F50A", t("只錄電腦聲音")),
 )
+# 狀態列上講「這一場是哪一種情境」用的(`_rec["scene"]` 存的是鍵,不是畫面上的字)
+SCENARIO_LABELS = {key: label for key, _icon, label in SCENARIO_OPTIONS}
 
 # 情境的說明**跟著選中的那一個換**(使用者 2026-08-07 指定,同網頁版的
 # `_SCENARIO_INFO`):三段一起攤在上面時,只有一段是當下有用的。
 SCENARIO_INFO = {
-    "現場會議": "大家在同一個房間,只錄麥克風收到的聲音",
-    "線上會議": "如 Teams / Meet,麥克風+喇叭都錄,回音自動剔除",
-    "只錄電腦聲音": "只錄電腦放出來的聲音,適合純旁聽、線上課程",
+    "現場會議": t("大家在同一個房間,只錄麥克風收到的聲音"),
+    "線上會議": t("如 Teams / Meet,麥克風+喇叭都錄,回音自動剔除"),
+    "只錄電腦聲音": t("只錄電腦放出來的聲音,適合純旁聽、線上課程"),
 }
 
 # 模型那一排 segmented。⚠️ **沒有圖示**(空字串):兩個選項是同一件事的兩個檔位,
@@ -390,12 +410,12 @@ def model_options() -> tuple:
 # 不要照字數估:GPU、4 這種半形字比中文窄。完整版的說法在「使用說明」的「⚙️ 調準確度與
 # 速度」那篇,這裡只留一句結論。
 MODEL_INFO = {
-    True: "走 GPU:「精準」和「快速」的總時間差不多",
-    False: "走 CPU:改選「精準」會慢約 4 倍",
+    True: t("走 GPU:「精準」和「快速」的總時間差不多"),
+    False: t("走 CPU:改選「精準」會慢約 4 倍"),
 }
 # 有 Apple 那一格時改講這句(使用者 2026-10-10 選定):2 小時 14 分的會議 Apple 44 秒、
 # 「快速」1,790 秒;代價是英文術語、單位、數字(ISO、kW、Mbps)明顯較弱,見 docs/spec/mac/05
-MODEL_APPLE_INFO = "Apple 快 40 倍,英文與數字較弱"
+MODEL_APPLE_INFO = t("Apple 快 40 倍,英文與數字較弱")
 
 
 def model_info() -> str:
@@ -407,13 +427,13 @@ def model_info() -> str:
 # ⚠️ **不講就是介面在說謊**:錄音實際跑的是「快速」(`live.recording_plan`),而這一頁
 # 寫著「精準」還亮著、還按得下去。⚠️ 它一樣要排得進一行(`ADV_TEXT_W`,實測 132px),
 # 改文案先跑 `test_the_advanced_dialog_keeps_every_hint_to_one_line`。
-MODEL_PINNED_INFO = "現場收音不能用「精準」,改用「快速」"
+MODEL_PINNED_INFO = t("現場收音不能用「精準」,改用「快速」")
 # 收音模式下「運算裝置」那一句(2026-09-26 使用者選的;他的問題是「它灰的理由跟這兩列
 # 不同」)。⚠️ **三列一起灰的時候最容易被誤讀**:模型與核心數是**被錄音釘住**的,而這一列
 # 是**這台機器沒有 GPU**——前者換個模式就放開,後者換到哪個模式都一樣。
 # ⚠️ **只在另外兩列真的被釘住時才換這一句**:Windows 上那兩列不釘,只有這一列灰,沒有
 # 三個灰混在一起的困惑——加了反而是一個那個平台看得到的文案變更。
-DEVICE_PINNED_INFO = "本機沒有 GPU;這一列與收音模式無關"
+DEVICE_PINNED_INFO = t("本機沒有 GPU;這一列與收音模式無關")
 
 
 # 「現場收音也照上面的設定跑」那一列(2026-09-28 使用者選案「加一顆開關,預設關」)。
@@ -422,9 +442,9 @@ DEVICE_PINNED_INFO = "本機沒有 GPU;這一列與收音模式無關"
 # 那個平台看得到的文案變更——同 `DEVICE_PINNED_INFO` 那條「只在真的被釘住時才換」。
 # ⚠️ **說明一樣只有一行**(`ADV_TEXT_W`),改文案先跑
 # `test_the_advanced_dialog_keeps_every_hint_to_one_line`。
-HONOR_TITLE = "現場收音"
-HONOR_INFO = "平常會自己改用快速與較少核心"
-HONOR_LABEL = "也照上面的設定跑"
+HONOR_TITLE = t("現場收音")
+HONOR_INFO = t("平常會自己改用快速與較少核心")
+HONOR_LABEL = t("也照上面的設定跑")
 
 
 def cores_pinned_info(n: int) -> str:
@@ -432,7 +452,7 @@ def cores_pinned_info(n: int) -> str:
 
     ⚠️ 一樣要排得進一行(`ADV_TEXT_W`),改文案先跑
     `test_the_advanced_dialog_keeps_every_hint_to_one_line`。"""
-    return f"現場收音固定用 {n} 核(留餘裕給講者分析)"
+    return t("現場收音固定用 {n} 核(留餘裕給講者分析)", n=n)
 
 # 「運算裝置」那一排 segmented(2026-09-07 使用者:「有些較舊的主機雖然有 GPU,但因為
 # 是舊電腦 GPU 效能不好,因此需要手動自行切換到 CPU」)。
@@ -448,7 +468,7 @@ def cores_pinned_info(n: int) -> str:
 # 那是 `default_device_key()` 算出來的,與這個 tuple 的排列無關。⚠️ 沒有 GPU 的機器上模型
 # 預設是「快速」、會落在右邊,但那時運算裝置那排整排停用,對不齊的是一排灰的。
 DEVICE_AUTO, DEVICE_CPU = "auto", "cpu"
-DEVICE_OPTIONS = ((DEVICE_AUTO, "", "自動"), (DEVICE_CPU, "", "只用 CPU"))
+DEVICE_OPTIONS = ((DEVICE_AUTO, "", t("自動")), (DEVICE_CPU, "", t("只用 CPU")))
 
 # 「運算裝置」底下那句,三種情形各一句(**一行**,理由與量法見 `MODEL_INFO`)。
 # ⚠️ **「自動」那句要講的是「什麼時候該改」**,不是「現在偵測到什麼」——偵測結果就寫在
@@ -456,10 +476,10 @@ DEVICE_OPTIONS = ((DEVICE_AUTO, "", "自動"), (DEVICE_CPU, "", "只用 CPU"))
 # ⚠️ **「沒有 GPU」那句要講「不會有差別」**:機器本來就在用 CPU,不講的話使用者會以為
 # 自己剛剛做了一件有用的事,下次轉檔還是一樣慢就會回來問。
 DEVICE_INFO = {
-    (True, DEVICE_AUTO): "舊電腦的 GPU 比 CPU 還慢時,改成「只用 CPU」",
-    (True, DEVICE_CPU): "轉錄與講者分析改成依序跑,下一趟開始生效",
-    (False, DEVICE_AUTO): "本機沒有偵測到 GPU,改它不會有差別",
-    (False, DEVICE_CPU): "本機沒有偵測到 GPU,改它不會有差別",
+    (True, DEVICE_AUTO): t("舊電腦的 GPU 比 CPU 還慢時,改成「只用 CPU」"),
+    (True, DEVICE_CPU): t("轉錄與講者分析改成依序跑,下一趟開始生效"),
+    (False, DEVICE_AUTO): t("本機沒有偵測到 GPU,改它不會有差別"),
+    (False, DEVICE_CPU): t("本機沒有偵測到 GPU,改它不會有差別"),
 }
 
 # 進階參數設定對話框的兩欄(2026-09-07 使用者選案 D,五案實拍見 `docs/dev/native-ui.md`):
@@ -491,11 +511,11 @@ def default_device_key() -> str:
 # ⚠️ **是函式不是常數**:核心數是這台機器的事,import 當下不該定死
 # (測試會換掉 `cpu_count`)。
 def cores_info() -> str:
-    return f"預設 {power.default_worker_count()}(自動留 1 核);轉檔時太卡就調小"
+    return t("預設 {v}(自動留 1 核);轉檔時太卡就調小", v=power.default_worker_count())
 
 
 # 還沒開始錄音時狀態列那一句(同網頁版的 `_REC_IDLE_MD`)。
-REC_IDLE = "尚未開始錄音。"
+REC_IDLE = t("尚未開始錄音。")
 
 # 錄音狀態列前面那顆色點的直徑(邏輯 px),與它和字之間的縫(2026-09-17 使用者選案 D)。
 # 顏色跟著狀態換,對照表在 `App._rec_say`。
@@ -526,13 +546,13 @@ REC_DOT, REC_DOT_GAP = 8, SP_SM
 # 使用者的說法是「這三句話沒有對齊,很醜」。⚠️ **拿掉 VS16 只縮小到 3px、不會歸零**
 # (`⚠ ` 量出來 16px),所以整顆記號一起拿掉——`test_the_recording_status_lines_all_start_flush` 釘著,突變 M1009。
 # ⚠️ **警告的份量改由色點承擔**:錄音中那顆點本來就是紅的,而這一塊只在錄音中出現。
-REC_CLAMSHELL = "錄音中請不要闔上螢幕,闔上螢幕就會掉音訊"
-REC_FINISHING = "收尾中:完成剩餘轉錄與講者分析,進度見下方的預覽區…"
+REC_CLAMSHELL = t("錄音中請不要闔上螢幕,闔上螢幕就會掉音訊")
+REC_FINISHING = t("收尾中:完成剩餘轉錄與講者分析,進度見下方的預覽區…")
 # 收尾沒做完時狀態列的開頭(見 `_rec_done`),後面一律接 `salvage_note` 講錄音檔存到哪。
 # ⚠️ **要講錄音檔在哪、以及怎麼補救**:放棄的是一整場會議的逐字稿,只講「已停止」或
 # 「出錯」的話,使用者會以為那場會議整個沒了。
-REC_ABORTED = "已依要求停止,這一趟的逐字稿放棄了。"
-REC_FAILED = f"收尾時出錯,{LOG_HINT}。"
+REC_ABORTED = t("已依要求停止,這一趟的逐字稿放棄了。")
+REC_FAILED = t("收尾時出錯,{LOG_HINT}。", LOG_HINT=LOG_HINT)
 
 
 def salvage_note(salvaged: tuple[list[Path], int] | None, rec_dir: Path | None) -> str:
@@ -547,12 +567,10 @@ def salvage_note(salvaged: tuple[list[Path], int] | None, rec_dir: Path | None) 
     saved, want = salvaged
     text = ""
     if saved:
-        text = (f"錄音檔已存到 output 資料夾:{'、'.join(p.name for p in saved)},"
-                "之後可以用「轉錄音檔」重轉。")
+        text = (t("錄音檔已存到 output 資料夾:{v},之後可以用「轉錄音檔」重轉。", v=t("、").join(p.name for p in saved)))
     if len(saved) < want:
         where = f":{rec_dir}" if rec_dir is not None else ""
-        text += (f"⚠ {'有一條音軌' if saved else '錄音檔'}沒能存到 output(詳見記錄檔),"
-                 f"原始檔還在{where}")
+        text += (t("⚠ {v}沒能存到 output(詳見記錄檔),原始檔還在{where}", v=t("有一條音軌") if saved else t("錄音檔"), where=where))
     return text
 
 # 摺疊卡收合的記號(**文件頁**那張「進階參數設定」;轉檔頁那張 2026-09-07 改成對話框,
@@ -561,13 +579,13 @@ def salvage_note(salvaged: tuple[list[Path], int] | None, rec_dir: Path | None) 
 ADV_CLOSED, ADV_OPEN = "▶", "▼"
 
 # 「進階參數設定」:對話框的標題,與文件頁那張摺疊卡的標題。
-ADV_TITLE = "進階參數設定"
+ADV_TITLE = t("進階參數設定")
 # 轉檔頁的入口鈕(2026-09-13 使用者選案 B,坐在主要動作鈕右邊)。⚠️ **刪節號不可以拿掉**:
 # 那是 Windows 自己的「點了會開一扇窗」慣例,而同一頁的「輸出資料夾…」也這樣寫。
 # ⚠️ **齒輪不帶 VS16**(見檔頭;⚙ 不在受害名單裡,但帶了就是跟別的圖示不同一套寫法)。
 # ⚠️ **它跟主要動作鈕一樣受 `ACTION_BTN_W` 限制**:開發機 150% 下要 254 / 270 px,
 # 放不下時 Tk 直接裁字、不給省略號——要改字先跑 `test_the_advanced_button_sits_beside_every_action_button`。
-ADV_BUTTON = "⚙ 進階參數設定…"
+ADV_BUTTON = t("⚙ 進階參數設定…")
 
 # 兩頁右上角／動作列那顆「開啟成品所在」的鈕(轉檔頁 `_run_open`、文件頁 `_doc_open`)。
 # ⚠️ **字樣只有這一份**:兩頁是同一個角色,各寫一份的話下次改字就只會改到其中一頁。
@@ -578,20 +596,20 @@ ADV_BUTTON = "⚙ 進階參數設定…"
 # 沒有任何錯誤)。⚠️ **不帶 VS16**(見檔頭)。
 # ⚠️ **文件頁那顆受 `ACTION_BTN_W` 限制**(與主要動作鈕同寬並排):圖示是實打實的寬度,
 # 改字樣之前先跑 `test_the_output_folder_buttons_wear_the_folder_icon`。
-OPEN_DIR_BUTTON = "📂 輸出資料夾…"
+OPEN_DIR_BUTTON = t("📂 輸出資料夾…")
 # 「地端 AI」模式(`minutes.py`;2026-10-11 使用者選定 B 案、草稿存 App 自己的資料夾)。
 # ⚠️ **「它是 AI 草稿」要講在按下去之前**:小模型會漏、會寫錯,而沒參加會議的人分不出來
 # (手機版三輪實測,scribe2md-ios `docs/spec/08` §8.12)。
 # ⚠️ 「品質比不上雲端 AI」那句是使用者 2026-10-11 要求特別提醒的:地端小模型能力有限,
 # 按下去之前就要讓人知道(「⚠」不帶 VS16,Tk 畫得出來)。2026-10-14 使用者嫌字多,選了兩句版
 # (「正式紀錄請對照逐字稿另行整理」改由草稿檔第一行的警語與使用說明講)
-MINUTES_HINT = ("挑一份轉好的 .md(建議先替講者命名),整理出摘要、議題、待辦。"
-                "⚠ 地端小模型,品質比不上雲端 AI,只能當草稿。")
+MINUTES_HINT = (t("挑一份轉好的 .md(建議先替講者命名),整理出摘要、議題、待辦。"
+                "⚠ 地端小模型,品質比不上雲端 AI,只能當草稿。"))
 # 動作列右邊那顆:開草稿資料夾。⚠️ 草稿**不在**逐字稿旁邊(見 `minutes.drafts_dir`),
 # 不給這顆的話使用者找不到它
-MINUTES_DIR_BUTTON = "📂 草稿資料夾…"
+MINUTES_DIR_BUTTON = t("📂 草稿資料夾…")
 # 命名收工之後右邊預覽卡上那顆捷徑(B 案的後半):帶入剛寫好的那份、直接開始
-MINUTES_SHORTCUT = "✨ 用這份產生會議紀錄草稿"
+MINUTES_SHORTCUT = t("✨ 用這份產生會議紀錄草稿")
 # 「地端 AI」那一格的模型選擇(Mac;2026-10-14 使用者選案 A:膠囊二選一 ＋ 底下一行說明;
 # 只有一個能用時整排收起來,見 `minutes.choices`)。⚠️ 說明那一行是「選之前」唯一講得到
 # 「要下載 3 GB」與「比較慢」的地方,不可以為了省高度拿掉(量過:最窄視窗多 102 px、
@@ -604,29 +622,29 @@ def minutes_engine_note(engine: str, can: plat.Outcome | None, downloaded: bool)
     if can is not None and not can.ok:
         return can.reason
     if engine == minutes.ENGINE_QWEN:
-        first = "已下載" if downloaded else f"第一次用時下載約 {models.MLX_LLM_DOWNLOAD_GB} GB"
-        return f"Qwen 4B:{first};整理得比較完整,比 Apple 慢約五成。"
-    return "Apple:不必下載、比較快;偶爾有幾段整理不出來。"
+        first = t("已下載") if downloaded else t("第一次用時下載約 {MLX_LLM_DOWNLOAD_GB} GB", MLX_LLM_DOWNLOAD_GB=models.MLX_LLM_DOWNLOAD_GB)
+        return t("Qwen 4B:{first};整理得比較完整,比 Apple 慢約五成。", first=first)
+    return t("Apple:不必下載、比較快;偶爾有幾段整理不出來。")
 
 
 # 第一次選 Qwen 按下去時的確認框(使用者 2026-10-14 選「先問一次」;實測這台下載花過 24 分鐘)
-MINUTES_DOWNLOAD_ASK = ("要先下載 Qwen 4B 模型(約 {gb} GB)。\n\n"
-                        "可能要二三十分鐘,下載完接著整理。中斷了再按一次,會接著下載。")
-MINUTES_DOWNLOAD_OK = "下載並開始"
+MINUTES_DOWNLOAD_ASK = (t("要先下載 Qwen 4B 模型(約 {gb} GB)。\n\n"
+                        "可能要二三十分鐘,下載完接著整理。中斷了再按一次,會接著下載。"))
+MINUTES_DOWNLOAD_OK = t("下載並開始")
 # 「進階參數設定」裡那一列(Mac、這台能用 Qwen 時才有;使用者 2026-10-14 選放這裡)
-QWEN_ROW_TITLE = "地端 AI 模型"
-QWEN_DELETE = "刪除模型…"
-QWEN_DELETE_ASK = "要刪除 Qwen 4B 模型({gb:.1f} GB)嗎?\n\n刪除後,下次選 Qwen 4B 時會重新下載。"
+QWEN_ROW_TITLE = t("地端 AI 模型")
+QWEN_DELETE = t("刪除模型…")
+QWEN_DELETE_ASK = t("要刪除 Qwen 4B 模型({gb:.1f} GB)嗎?\n\n刪除後,下次選 Qwen 4B 時會重新下載。")
 
 
 def qwen_row_info() -> str:
     """那一列的說明(一行):下載了沒、佔多少。"""
     size = models.mlx_llm_size()
     if models.mlx_llm_cached():
-        return f"會議紀錄草稿用的 Qwen 4B,已下載 {size / 1e9:.1f} GB"
+        return t("會議紀錄草稿用的 Qwen 4B,已下載 {v:.1f} GB", v=size / 1000000000.0)
     if size:
-        return f"會議紀錄草稿用的 Qwen 4B,下載到一半({size / 1e9:.1f} GB)"
-    return "會議紀錄草稿用的 Qwen 4B,還沒下載"
+        return t("會議紀錄草稿用的 Qwen 4B,下載到一半({v:.1f} GB)", v=size / 1000000000.0)
+    return t("會議紀錄草稿用的 Qwen 4B,還沒下載")
 
 # 使用說明裡那張 Claude 隱私設定截圖(全篇唯一一張圖)。
 PRIVACY_IMG = repo_root() / "docs" / "claude-privacy-setting.jpg"
@@ -680,17 +698,32 @@ TOC_INSET, TOC_R_ON, TOC_TEXT_PAD = 2, 10, 12
 # 頂層四分頁。⚠️ 順序與網頁版一致(使用者對「第幾個分頁」是有肌肉記憶的);
 # ⚠️ 字串少了 VS16、與網頁版不同,理由見檔頭。
 TABS = (
-    ("audio", "\U0001F399", "聲音→MD"),
-    ("doc", "\U0001F4C4", "文字、圖像→MD"),
-    ("lexicon", "\U0001F4DA", "用詞替換表"),
-    ("help", "❓", "使用說明"),
+    ("audio", "\U0001F399", t("聲音→MD")),
+    ("doc", "\U0001F4C4", t("文字、圖像→MD")),
+    ("lexicon", "\U0001F4DA", t("用詞替換表")),
+    ("help", "❓", t("使用說明")),
 )
 
-# 「聲音→MD」底下的三個子分頁(同上,順序照網頁版)。
+
+def nav_tabs() -> tuple:
+    r"""這個介面語言畫得出來的頂層分頁:**「用詞替換表」只在繁中介面出現**(使用者 2026-10-21)。
+
+    那份表是「大陸用詞 → 台灣用詞」,只對繁中的輸出有意義(簡中、英文會議不套用,見
+    `meetlang.traditionalize`);英文介面打開它看到的是整頁中文規則,使用者覺得奇怪。
+    ⚠️ **隱藏的只是編輯頁,不是功能**:文件轉檔不分介面語言一律繁化並套用它
+    (`docpipe.traditionalize`),要改它就把介面切回繁中。
+    ⚠️ 介面語言整個行程不變(`i18n.current()`),所以在建分頁列時問一次就夠。"""
+    if i18n.current() == i18n.ZH_TW:
+        return TABS
+    return tuple(tab for tab in TABS if tab[0] != "lexicon")
+
+
+# 「聲音→MD」底下的子分頁(同上,順序照網頁版)。⚠️ **「🔤 領域詞表」2026-10-21 拿掉了**
+# (使用者:「只要隱藏介面,真的要改我自己去改」):詞表照常注入繁中會議(`meetlang.inject_hotwords`),
+# 改成只用記事本維護 `data/hotwords.txt`;超出預算的警告只剩記錄檔那一行(`hotwords.as_string`)。
 SUBTABS = (
-    ("run", "\U0001F3A7", "轉檔"),
-    ("roster", "\U0001F465", "名單與聲紋"),
-    ("hotwords", "\U0001F524", "領域詞表"),
+    ("run", "\U0001F3A7", t("轉檔")),
+    ("roster", "\U0001F465", t("名單與聲紋")),
 )
 
 # 三條互斥的工作路徑,以及被擋下來時要說的話(見 `App._busy_reason`)。
@@ -708,10 +741,10 @@ SUBTABS = (
 # 一套命名區**,差別只在資料從哪裡來(那邊是剛跑完的 `PipelineResult`,這邊是解析既
 # 有的 md),所以 `_naming_show` 多開了兩個參數收「已經算好的」核對資料與試聽片段。
 RUN_MODES = (
-    ("rec", "🎙", "現場收音", "開會時直接收音,邊開會邊轉,散會幾乎不用等"),
-    ("file", "🎧", "轉錄音檔", "挑已經錄好的錄音/錄影檔,轉成逐字稿"),
-    ("relabel", "\U0001F504", "重設講者",
-     "拿一份已經轉好的逐字稿,重新命名裡面的講者(不會重轉)"),
+    ("rec", "🎙", t("現場收音"), t("開會時直接收音,邊開會邊轉,散會幾乎不用等")),
+    ("file", "🎧", t("轉錄音檔"), t("挑已經錄好的錄音/錄影檔,轉成逐字稿")),
+    ("relabel", "\U0001F504", t("重設講者"),
+     t("拿一份已經轉好的逐字稿,重新命名裡面的講者(不會重轉)")),
     # ⚠️ **只在用得了地端語言模型的機器上出現**(2026-10-11 使用者選 B 案:第四個模式 ＋
     # 命名收工的捷徑):Mac 要 Apple Intelligence(或打開就能用),Windows 一律有(Qwen3.5,
     # 見 `minutes._backend`)。開窗時先藏著,背景偵測問完才放出來(`App._minutes_tab_sync`)。
@@ -721,8 +754,8 @@ RUN_MODES = (
     # 所以不寫「不連網」:Windows 第一次用要下載模型(逐字稿內容一樣不出這台電腦)。
     # ⚠️ 說明不可比「重設講者」那句寬(同日使用者:原本那句 448 px 一定折行;這一行最寬
     # 381 px,滑過去還要多放「✨ 地端 AI:」),`test_mode_infos_fit_one_line` 守著
-    ("minutes", "\u2728", "地端 AI",
-     "把逐字稿整理成摘要、議題、待辦的草稿(內容不上傳)"),
+    ("minutes", "\u2728", t("地端 AI"),
+     t("把逐字稿整理成摘要、議題、待辦的草稿(內容不上傳)")),
 )
 
 # 「文字、圖像→MD」上方那段說明、備註與路徑框的提示字(2026-09-03 照網頁版重排;三段都
@@ -735,18 +768,18 @@ RUN_MODES = (
 # 帶記號(`test_the_wordlist_pages_carry_no_markdown` 那一族)。
 # ⚠️ 2026-10-02 縮短(使用者:「說明文字也可以幫忙調整字少一點」,同一輪右邊多了「安裝
 # Claude Skill」那顆鈕):拿掉的「副檔名換成 .md」「圖片存進 .assets」使用說明裡都有。
-DOC_INTRO = ("把 Word、PowerPoint、Excel、PDF、網頁、掃描件、照片與**錄音錄影**轉成 Markdown(`.md`),"
+DOC_INTRO = (t("把 Word、PowerPoint、Excel、PDF、網頁、掃描件、照片與**錄音錄影**轉成 Markdown(`.md`),"
              "方便交給 AI 閱讀。成品放在**原始檔案旁邊**,共支援 {n} 種格式(清單見"
-             "「❓ 使用說明」);錄音要**替講者取真實姓名**請改用「🎙 聲音→MD」。")
+             "「❓ 使用說明」);錄音要**替講者取真實姓名**請改用「🎙 聲音→MD」。"))
 # 文件頁右上那顆(2026-10-02 選案 C1):Mac 的工具資料夾藏在 `~/Library`,雙擊
 # `安裝Skill.command` 太繞。⚠️ 🤖 沒有 VS16,Tk 畫得出來(見檔頭那條 VS16 規則)
-SKILL_BUTTON = "🤖 安裝 Claude Skill…"
-DOC_NOTE = ("轉出的內容裡,「〔 〕」標的是無法完整呈現的地方(圖表、儲存格底色等),"
-            "檔頭也有一份清單——寧可讓你看到少了什麼,也不要安靜地少掉。")
+SKILL_BUTTON = t("🤖 安裝 Claude Skill…")
+DOC_NOTE = (t("轉出的內容裡,「〔 〕」標的是無法完整呈現的地方(圖表、儲存格底色等),"
+            "檔頭也有一份清單——寧可讓你看到少了什麼,也不要安靜地少掉。"))
 # 路徑框空著時的提示(網頁版 Textbox 的 placeholder)。⚠️ `tk.Text` 沒有 placeholder,
 # 自己畫:空的時候塞這一句(灰字、`ph` tag),游標一進來就拿掉(`_doc_ph_show/_hide`)。
-DOC_PLACEHOLDER = "按下方按鈕挑選,或直接把路徑貼進來"
-# 三段說明(文件頁、用詞替換表、領域詞表)的行距(邏輯 px),**量網頁版得到的**(2026-09-03
+DOC_PLACEHOLDER = t("按下方按鈕挑選,或直接把路徑貼進來")
+# 兩段說明(文件頁、用詞替換表)的行距(邏輯 px),**量網頁版得到的**(2026-09-03
 # 使用者:「說明文字的行距太擠,
 # 請參考 WEB 頁面」;@150% 逐列掃截圖,實體 px):網頁版兩行的墨跡頂到墨跡頂 37,原生
 # 10pt 的行高 25 → 多留 12 = px(8)。⚠️ **上下各半**(`_icon_text` 的 spacing1/spacing3):
@@ -813,9 +846,9 @@ COL_SEED_H = 400
 # `RUN_MODES`、不帶 emoji)。⚠️ **一定要明講**:不講的話畫面上只有一份空的逐字稿,而
 # 使用者(2026-08-15 錄了一段沒有人聲的電腦聲音)第一個念頭是「程式壞了」。
 NO_SPEECH_NOTE = (
-    "這一段聲音裡沒有聽到任何人說話,所以逐字稿是空的,也沒有講者可以命名。\n"
+    t("這一段聲音裡沒有聽到任何人說話,所以逐字稿是空的,也沒有講者可以命名。\n"
     "常見原因:收音時電腦其實沒有在出聲、麥克風被靜音或選錯裝置。"
-    "音檔已經存起來了——確認聲音沒問題之後,可以用「轉錄音檔」把它重轉一次。"
+    "音檔已經存起來了——確認聲音沒問題之後,可以用「轉錄音檔」把它重轉一次。")
 )
 
 def silent_track_note(kinds: list[str]) -> str:
@@ -829,41 +862,36 @@ def silent_track_note(kinds: list[str]) -> str:
     一小時白錄了」。
     ⚠️ **不要說「請重錄」**:那一軌真的是空的,重錄前要先把成因解掉,不然就是
     再錄一場空的。"""
-    names = "、".join(RECORD_TRACK_LABEL.get(k, k) for k in kinds)
+    names = t("、").join(RECORD_TRACK_LABEL.get(k, k) for k in kinds)
     return (
-        f"⚠ {names}整場都沒有收到任何聲音(不是「很小聲」,是一個非零樣本都沒有),"
-        "所以逐字稿是空的。\n"
-        "最常見的成因是**麥克風權限在開始錄音之後才被拒**,或裝置被別的程式搶走"
-        "(視訊會議軟體、瀏覽器分頁)。\n"
-        "錄音檔仍然保留著——把成因解掉、確認錄得到聲音之後再錄一次;"
-        "這一份可以直接刪掉,重轉它也不會有內容。"
+        t("⚠ {names}整場都沒有收到任何聲音(不是「很小聲」,是一個非零樣本都沒有),所以逐字稿是空的。\n最常見的成因是**麥克風權限在開始錄音之後才被拒**,或裝置被別的程式搶走(視訊會議軟體、瀏覽器分頁)。\n錄音檔仍然保留著——把成因解掉、確認錄得到聲音之後再錄一次;這一份可以直接刪掉,重轉它也不會有內容。", names=names)
     )
 
 
 #: 錄音軌在畫面上的名字(記錄檔那份在 `record._KIND_LABEL`,**兩份刻意分開**:
 #: 這裡是給使用者看的,那裡是給看記錄檔的人看的,措辭不必一致)
-RECORD_TRACK_LABEL = {"mic": "麥克風", "system": "電腦聲音"}
+RECORD_TRACK_LABEL = {"mic": t("麥克風"), "system": t("電腦聲音")}
 
 # 命名卡的標題與說明:同網頁版 `#name-box` 頂端那一句,拆成標題＋說明兩個 Label,
 # 「套用」寫成這裡按鈕的字樣。⚠️ 2026-09-02 照網頁版對齊(使用者:「UI 的樣式要比照
 # WEB」),先前多出來的那句「認不出來的人不要硬填…」拿掉了——網頁版 2026-08-18 精簡
 # 面板時就沒有它,那句話在使用說明裡。
-NAMING_TITLE = "為講者命名(選填)"
+NAMING_TITLE = t("為講者命名(選填)")
 # ⚠️ 字數壓在 1280 寬時左欄一行排得下的長度:多兩三個字,句尾那個「。」就自己掉到第二行
 # (Tk 不做避頭尾)。
-NAMING_HINT = ("看摘錄、按「▶ 試聽」或「🔍 核對」認人;"
-               "按「套用名字」寫回,留白維持講者 N。")
+NAMING_HINT = (t("看摘錄、按「▶ 試聽」或「🔍 核對」認人;"
+               "按「套用名字」寫回,留白維持講者 N。"))
 
 # 「改成幾位講者」底下那句限制說明(同網頁版 `app._RECLUSTER_HINT`)。⚠️ **一定要寫**:
 # md 的區塊是原子的,往多的方向改只能在現有段落之間重新分配,而使用者填了 5 卻安靜地
 # 只拿到 3 是最糟的一種——他不會知道。
-RECLUSTER_HINT = "往少改一定準;當初就在同一段裡的兩個人拆不開,要重轉。"
+RECLUSTER_HINT = t("往少改一定準;當初就在同一段裡的兩個人拆不開,要重轉。")
 
 # 「未知」命名框線索前面那半句(同網頁版):它只改逐字稿文字,絕不登記聲紋。
-UNKNOWN_NO_ENROLL = "只改逐字稿文字、不會登記聲紋"
+UNKNOWN_NO_ENROLL = t("只改逐字稿文字、不會登記聲紋")
 
 # 開頁還原未完成命名時,預覽最前面那一句(同網頁版 `_restore_pending`)。
-RESTORED_NOTE = "(已還原上次未完成的講者命名,可直接接續;不需要重新轉檔。)"
+RESTORED_NOTE = t("(已還原上次未完成的講者命名,可直接接續;不需要重新轉檔。)")
 
 # 「跳過命名」之後預覽留的那一段(同網頁版 `_discard_naming`):成品**不**刪,講清楚它
 # 在哪,不讓使用者以為檔案不見了。
@@ -874,12 +902,12 @@ RESTORED_NOTE = "(已還原上次未完成的講者命名,可直接接續;不需
 # (671 px @1280)裡一定折,而它自己折的位置落在「原檔名.md」或「同名」中間(實拍看到的)。
 # 拆成 467 ＋ 330 兩段各一行、斷在逗號上;高度與自動折行一樣是三行,視窗再寬也是三行
 # (內容區上限 1240,換行寬度不會再變大)。
-FILE_MODE_HINT = ("選 1 個檔案:轉完可替講者命名(記住聲紋),成品在 output 資料夾。\n"
+FILE_MODE_HINT = (t("選 1 個檔案:轉完可替講者命名(記住聲紋),成品在 output 資料夾。\n"
                   "選多檔或資料夾:整批連轉、不做命名(只標「講者 1/2/3」),\n"
-                  "成品放在原檔旁邊,已有同名 md 就跳過。")
-SKIPPED_NOTE = ("已跳過講者命名,畫面已清空。\n"
+                  "成品放在原檔旁邊,已有同名 md 就跳過。"))
+SKIPPED_NOTE = (t("已跳過講者命名,畫面已清空。\n"
                 "已完成的逐字稿(講者以「講者 1、講者 2…」標示,現場收音含錄音檔)"
-                "仍在 output 資料夾。")
+                "仍在 output 資料夾。"))
 
 # 命名區塊右側那一欄(「▶ 試聽」「🔍 核對」兩顆鈕疊著)的寬度,邏輯 px。⚠️ 照網頁版
 # `.name-btns` 的 `min_width=100`:那一欄**每一塊都佔位**,有沒有鈕都一樣,下拉的右
@@ -900,16 +928,16 @@ PICK_HOVER_LIGHT, PICK_HOVER_DARK = "#e8e8ed", "#3a3a3f"   # hover/選中列(網
 # ——進了 values,收起來時按 ↑↓ 會把這句話輪進欄位、變成人名。
 # ⚠️ **標題分兩列**:Treeview 的列不換行,整句擠一列在命名欄那個寬度(150% 實拍 420px)
 # 會被截掉後半——而被截掉的正是「可能都不是,先聽再選」。字比名字小一號、灰色。
-PICK_NEAREST_HEAD = ("聲音最接近(僅供參考)", "都不夠像,可能都不是,先聽再選。")
-PICK_NEAREST_REST = "─── 全部名單 ───"
+PICK_NEAREST_HEAD = (t("聲音最接近(僅供參考)"), t("都不夠像,可能都不是,先聽再選。"))
+PICK_NEAREST_REST = t("─── 全部名單 ───")
 PICK_HEAD_TAG = "head"            # 標題列的 tag 與 iid 前綴(iid 不是數字 = 選不到)
 
 WORK_BUSY_TEXT = {
-    "doc": "文件轉檔還在跑,請先等它結束,或到「文字、圖像→MD」按停止。",
-    "run": "檔案轉檔還在跑,請先等它結束,或到「聲音→MD」按停止。",
+    "doc": t("文件轉檔還在跑,請先等它結束,或到「文字、圖像→MD」按停止。"),
+    "run": t("檔案轉檔還在跑,請先等它結束,或到「聲音→MD」按停止。"),
     # ⚠️ **鈕名要跟 `REC_ACTION.busy` 一致**(測試釘著):2026-09-12 四組合成「同一顆兼任
     # 停止」之後那顆叫「■ 停止錄音」,這句卻一直寫著更早的「停止並轉檔」到 09-15 才發現。
-    "rec": "現在正在錄音,請先按「停止錄音」。",
+    "rec": t("現在正在錄音,請先按「停止錄音」。"),
 }
 
 # 工作列那條進度的刻度數(見 `App._taskbar`)。⚠️ **與畫面上的進度條無關**:那條吃
@@ -935,40 +963,26 @@ WORK_OUTCOME = {
     "done": winui.TBPF_NOPROGRESS,   # 真的收乾淨了
 }
 
-# 兩份可以直接編輯的詞表檔。⚠️ **兩頁長得一樣是刻意的**(同一個 builder):它們
-# 對使用者是同一件事——「改一份純文字檔,存檔後下一個檔案生效」,而長得不一樣只
-# 會讓人以為規矩不同。⚠️ **卡片上沒有標題**(2026-09-03 使用者圈出「領域詞表」那個
-# 標題:「紅框多餘,請刪除」):分頁列已經寫著同一個名字,網頁版的卡片上也沒有;兩頁
-# 同一個 builder,用詞替換表那頁的一起拿掉。⚠️ **但文案不可以互相照抄**,兩份檔的規矩真的不同(一個有
-# 長度預算、一個沒有;一個只影響轉錄、一個兩條路徑都吃),見 `wordlists` docstring。
+# 可以直接在畫面上編輯的詞表檔(現在只剩用詞替換表;領域詞表 2026-10-21 拿掉了,見 `SUBTABS`)。
+# 留成一張表是因為 builder 本來就是照它建頁的,再加一份詞表時照這裡補。
+# ⚠️ **卡片上沒有標題**(2026-09-03 使用者圈出當時領域詞表頁的那個標題:「紅框多餘,請刪除」):
+# 分頁列已經寫著同一個名字,網頁版的卡片上也沒有。
 # ⚠️ **`note` 照網頁版 `app.build_ui` 一字不改**(2026-09-03 使用者:「行距與斷行請比照
 # WEB,寫兩行即可」→「請依照 WEB 為準,不要自己發明」):粗體與反引號的記號留著,由
 # `App._icon_text` 渲染;網頁版 Markdown 裡那個軟換行(`\n`)瀏覽器畫成一個空白,這裡
 # 也寫成空白。先前那版三句各自硬斷行、第三句拿 ⚠ 代替粗體,都是 Label 畫不出來的權宜。
 WORDLIST_PAGES = {
     "lexicon": dict(
-        note=("輸出前把偶發的大陸用詞換成台灣用詞(軟件→軟體)。"
+        note=(t("輸出前把偶發的大陸用詞換成台灣用詞(軟件→軟體)。"
               "一行一條「原詞 新詞」(空格或 Tab 分隔)、`#` 開頭是註解,"
               "在這裡編輯等同用記事本改 `data/replace.txt`,"
               "**存檔後下一個轉換的檔案生效**(進行中的那個不受影響)。 "
               "**加詞前先讀檔頭的收詞原則**:台灣也在用的詞"
-              "(如「優化、用戶」)收了反而會改壞原文。"),
-        save="儲存替換表",
+              "(如「優化、用戶」)收了反而會改壞原文。")),
+        save=t("儲存替換表"),
         read=wordlists.replace_file,
         status=wordlists.replace_status,
         write=wordlists.save_replace,
-    ),
-    "hotwords": dict(
-        note=("轉錄時提示 AI 優先選這些詞,減少同音錯字"
-              "(如公司名、產品名)。一行一詞、`#` 開頭是註解,"
-              "在這裡編輯等同用記事本改 `data/hotwords.txt`,"
-              "**存檔後下一個轉錄的檔案生效**(進行中的那個不受影響)。 "
-              "**順序即優先序**:詞表有長度預算,超出的尾端會被靜默"
-              "忽略——重要的詞放前面。"),
-        save="儲存詞表",
-        read=wordlists.hotwords_file,
-        status=wordlists.hotwords_status,
-        write=wordlists.save_hotwords,
     ),
 }
 
@@ -1168,7 +1182,7 @@ class ActionText:
 # 是哪一個模式。⚠️ **「停止錄音」後面原本還有「並完成逐字稿」**,拿掉是因為視窗拉到
 # 最小寬時那 12 個字**會被裁成「■ 停止錄音並」而且沒有省略號**(實測:那一顆實得
 # 135px、文字要 211px)。那件事改由收尾期間的狀態列講。
-ACTION_STOPPING = "停止中…"
+ACTION_STOPPING = t("停止中…")
 # 開錄之後隔多久才讓那顆鈕按得下去(防誤按,見 `App._rec_arm`)。⚠️ **不要再拉長**:
 # 真的按錯情境(開會前試按)兩秒就夠了,而超過這個長度會變成「按了停止沒反應」。
 REC_ARM_DELAY_MS = 2000
@@ -1193,31 +1207,30 @@ CLOSE_SALVAGE_WAIT_SEC = 10
 # **直接裁字、不給省略號**,而畫面上看不出來它被裁過(同「■ 停止錄音並完成逐字稿」
 # 在窄視窗下變成「■ 停止錄音並」那次)。要加字就先把這個數字調大。
 ACTION_BTN_W = 180
-REC_ACTION = ActionText("● 開始錄音", "■ 停止錄音", "■ 中止收尾")
+REC_ACTION = ActionText(t("● 開始錄音"), t("■ 停止錄音"), t("■ 中止收尾"))
 # 錄音中右邊那顆(2026-10-07 使用者選 A 案:錄音中「⚙ 進階參數設定…」本來就鎖著,
 # 暫停鈕就佔它的位置;落選的 B 案是三顆並排,左欄只有約 440 px、第三顆會被裁掉)。
 # ⚠️ **記號是「‖」**:與 ● ■ 一樣是文字字型畫的單色符號(不在 `is_symbol` 的範圍,
 # 不會被畫成圖)。⏸ 會被畫成藍色 emoji 方塊,同 ⏹ 不准用的理由。
 # ⚠️ **繼續用 ●**(同「開始一律 ●」),而且是藍的:暫停中畫面上唯一該被按的就是它
-REC_PAUSE = "‖ 暫停錄音"
-REC_RESUME = "● 繼續錄音"
+REC_PAUSE = t("‖ 暫停錄音")
+REC_RESUME = t("● 繼續錄音")
 # 暫停中狀態列的第二行(2026-10-07 使用者看過實拍選定)。⚠️ **兩顆鈕的名字從常數組、
 # 不照抄字面**:鈕上的字一改,這句就會指向一顆不存在的鈕(同 `WORK_BUSY_TEXT` 那條)
-REC_PAUSED_HINT = (f"暫停期間的聲音不會錄進去。按「{REC_RESUME}」接著錄;"
-                   f"按「{REC_ACTION.busy}」就直接收尾、產生逐字稿。")
+REC_PAUSED_HINT = (t("暫停期間的聲音不會錄進去。按「{REC_RESUME}」接著錄;按「{busy}」就直接收尾、產生逐字稿。", REC_RESUME=REC_RESUME, busy=REC_ACTION.busy))
 # 錄音中第三顆(2026-10-17 使用者:照手機版的「重點」;版面選 A 案「動作列第三顆」,
 # 落選的是右卡頂端一整條、右卡標題列右側)。按一下 = 標「剛剛那段話」(`highlights.py`),
 # 右邊的預覽框改放重點卡片、游標停在新卡片的輸入格(使用者選「卡片內直接打字」)。
 # ⚠️ **錄音中的即時逐字稿同日拿掉了**(使用者:「關掉逐字稿預覽功能,將位置留給重點輸入」,
 # 同手機版):背景照轉,停止後一樣快,只是不畫出來
-REC_MARK = "★ 重點"
+REC_MARK = t("★ 重點")
 # 三顆擠不下時只留記號(2026-10-17 真視窗量:左欄最寬 441,三顆各分到 133、字要 123~127;
 # 最窄的視窗每顆只剩 84)。⚠️ Tk 放不下時**直接裁字、不給省略號**,所以不能讓它自己裁
 REC_COMPACT = {REC_ACTION.busy: "■", REC_PAUSE: "‖", REC_RESUME: "●"}
-RUN_TITLE = "逐字稿預覽(轉檔進度顯示於此)"
+RUN_TITLE = t("逐字稿預覽(轉檔進度顯示於此)")
 # 命名卡裡「現場標記的重點」那一區的說明(使用者 2026-10-17 選「事後在重設講者補改」)
-HLREV_HINT = "錄音時按「★ 重點」標的。改備註按 Enter 寫回逐字稿;按 ✕ 刪掉按錯的。"
-HL_TITLE = "重點(錄音中)"
+HLREV_HINT = t("錄音時按「★ 重點」標的。改備註按 Enter 寫回逐字稿;按 ✕ 刪掉按錯的。")
+HL_TITLE = t("重點(錄音中)")
 
 
 def mark_face(count: int, compact: bool = False) -> str:
@@ -1229,14 +1242,13 @@ def mark_face(count: int, compact: bool = False) -> str:
 
 def hl_hint(key: str) -> str:
     """重點卡片最上面那句(`key` 是快捷鍵怎麼寫,Mac 是 ⌘B、Windows 是 Ctrl+B)。"""
-    return (f"聽到重點就按「{REC_MARK}」或 {key},標的是剛剛那段話;按下去就能在卡片裡打備註"
-            "(可以留空,按 Enter 收起),錄音照常進行。按錯了按右邊的 ✕。")
+    return (t("聽到重點就按「{REC_MARK}」或 {key},標的是剛剛那段話;按下去就能在卡片裡打備註(可以留空,按 Enter 收起),錄音照常進行。按錯了按右邊的 ✕。", REC_MARK=REC_MARK, key=key))
 
 
-FILE_ACTION = ActionText("● 開始轉檔", "■ 停止轉檔")
-RELABEL_ACTION = ActionText("● 讀取並開始命名", "■ 停止分析")
-MINUTES_ACTION = ActionText("● 產生草稿", "■ 停止整理")
-DOC_ACTION = ActionText("● 開始轉檔", "■ 停止轉檔")
+FILE_ACTION = ActionText(t("● 開始轉檔"), t("■ 停止轉檔"))
+RELABEL_ACTION = ActionText(t("● 讀取並開始命名"), t("■ 停止分析"))
+MINUTES_ACTION = ActionText(t("● 產生草稿"), t("■ 停止整理"))
+DOC_ACTION = ActionText(t("● 開始轉檔"), t("■ 停止轉檔"))
 
 
 def pause_button(paused: bool, ready: bool = True) -> tuple[str, str, bool]:
@@ -1622,7 +1634,7 @@ class App(tk.Tk):
         # 當掉、截圖也看不出來**(`PrintWindow` 經過 DWM 會補齊),使用者看到的只是
         # 開窗時多閃一幀,所以 `tests/test_desktop.py` 釘著這個順序。
         self.withdraw()
-        self.title(APP_TITLE)
+        self.title(WINDOW_TITLE)
         # ⚠️ 縮放倍率要問 Tk 自己(DPI-aware 之後它量得到真實 DPI):寫死的像素一律
         # 過 `self.px()`,否則 150% 下整個版面會縮成 2/3。
         self.scale = self.winfo_fpixels("1i") / 96.0
@@ -1865,6 +1877,10 @@ class App(tk.Tk):
             # (2026-09-25),而這一行在兩個平台的記錄檔裡都會出現
             logger.info("視窗畫好:啟動後 %.2f 秒(從行程建立算起,不含啟動器那一層)",
                         secs)
+        # 介面語言在第一次取字時就決定了(那時記錄檔還沒開),所以在這裡再記一次:
+        # 「英文版怎麼一半是中文」這類回報,先要知道他選的是哪一種、還是跟著系統
+        logger.info("介面語言:%s(%s)", i18n.current(),
+                    "使用者選的" if i18n.chosen() else "跟著系統")
         self._probe_start()
         self._update_check(manual=False)
 
@@ -1887,7 +1903,7 @@ class App(tk.Tk):
                 device = transcribe.predicted_device()
             except Exception:
                 logger.debug("背景偵測轉錄裝置失敗", exc_info=True)
-                device = "(偵測失敗)"
+                device = t("(偵測失敗)")
             # 順便問 Apple 語音辨識(要起一支小程式,約零點幾秒):預設模型與模型那一排
             # 都看它,不先問好的話第一次讀預設值時介面會卡一下。結果留在它自己的快取
             try:
@@ -3462,13 +3478,47 @@ class App(tk.Tk):
         if photo is not None:
             ico = ttk.Label(line, image=photo, style="Brand.TLabel")
             ico.pack(side="left", padx=(0, self.px(SP_SM)))
-        ttk.Label(line, text=APP_TITLE, style="Brand.TLabel").pack(side="left")
+        ttk.Label(line, text=WINDOW_TITLE, style="Brand.TLabel").pack(side="left")
         # ⚠️ 上 pady 是量網頁版得到的 `HEAD_GAP_SUB`,不是尺規上的 SP_XS(見那個常數)。
         # ⚠️ **這三顆的底色不在這裡清**(2026-09-29):清完會被 `tk::RecolorTree` 蓋
         # 回去,統一交給 `_clear_label_bgs()` 跟著 `<<ThemeChanged>>` 做。
         self._wrap(ttk.Label(head, text=APP_SUBTITLE, style="BrandSub.TLabel",
                              justify="center")).pack(pady=(self.px(HEAD_GAP_SUB), 0))
+        self._lang_menu = self._lang_button(head)
         return head
+
+    def _lang_button(self, head) -> ttk.Menubutton:
+        r"""頁首右上角的 🌐 介面語言選單(使用者 2026-10-21 選 A 案,docs/dev/i18n.md)。
+
+        ⚠️ **放頁首不放對話框**:看不懂目前語言的人要找得到它,而地球圖示不必識字;
+        選單裡每一種語言也都用它自己的字寫(`i18n.NATIVE_NAMES`)。
+        ⚠️ **`place` 在頁首框的右上角,不加進那一排 `pack`**:程式名與副標是置中的,
+        擠一顆鈕進去會把它們推歪。
+        ⚠️ **刻意不登記 `_lockable()`**:改的只是下次開窗用哪種語言,工作進行中也不受影響。"""
+        btn = ttk.Menubutton(head, text=LANG_BUTTON.format(
+            name=i18n.NATIVE_NAMES[i18n.current()]))
+        menu = tk.Menu(btn, tearoff=False)
+        for lang in i18n.LANGS:
+            menu.add_command(label=i18n.NATIVE_NAMES[lang],
+                             command=lambda lang=lang: self._lang_pick(lang))
+        btn["menu"] = menu
+        btn.place(relx=1.0, x=-self.px(SP_SM), y=0, anchor="ne")
+        return btn
+
+    def _lang_pick(self, lang: str) -> None:
+        r"""記下新的介面語言,並講清楚「要重開才生效」(使用者 2026-10-21 選的)。
+
+        ⚠️ **這一句要用兩種語言講**:會換語言的人,多半看不懂現在這一種——只用現在的
+        語言講「重開後生效」,他根本讀不懂剛剛發生什麼事。
+        ⚠️ **選回目前這一種也要記下、但不必再講一次**:之前選過別的、還沒重開就改回來
+        的話,不記就是下次照舊換過去;而畫面本來就是這一種,沒有要等的事。"""
+        i18n.choose(lang)
+        if lang == i18n.current():
+            return
+        name = i18n.NATIVE_NAMES[lang]
+        msg = (t("介面語言會在下次開啟程式時換成「{name}」。", name=name) + "\n\n"
+               + i18n.translate("介面語言會在下次開啟程式時換成「{name}」。", lang, name=name))
+        self._ask_close(msg, ok_text=t("知道了"), cancel_text=None)
 
     def _open_log(self) -> None:
         r"""把這一趟的記錄檔在檔案總管裡指出來。
@@ -3718,7 +3768,7 @@ class App(tk.Tk):
         # 放在父容器正中間,不必自己算偏移(算的話字型一換就歪掉)。
         navin = ttk.Frame(nav, style="Page.TFrame")
         navin.pack()
-        for key, icon, text in TABS:
+        for key, icon, text in nav_tabs():
             self._nav[key] = self._tab_cell(
                 navin, icon, text, 11, NAV_LIFT, "Nav.TLabel",
                 lambda k=key: self._show(k))
@@ -3765,7 +3815,7 @@ class App(tk.Tk):
         return self._pages[key]
 
     def _wordlist_page(self, key: str) -> ttk.Frame:
-        r"""一份詞表檔的編輯頁(兩頁共用,規格見 `WORDLIST_PAGES`)。
+        r"""一份詞表檔的編輯頁(規格見 `WORDLIST_PAGES`;現在只剩用詞替換表,領域詞表 2026-10-21 拿掉)。
 
         ⚠️ **純文字原樣編輯,不做成表格**:兩份檔的註解(收詞原則、預算說明)與
         行序都有意義,而表格 round-trip 會把兩者一起弄丟。
@@ -3825,7 +3875,7 @@ class App(tk.Tk):
         self._lockable(HandButton(row, text=spec["save"], style=skin.RUN_SMALL_STYLE,
                                   command=lambda: self._wordlist_save(key))).pack(
                                       side="left")
-        HandButton(row, text="重新載入", style=skin.CTA_STYLE,
+        HandButton(row, text=t("重新載入"), style=skin.CTA_STYLE,
                    command=lambda: self._wordlist_load(key)).pack(
                        side="left", padx=(self.px(SP_SM), 0))
 
@@ -4028,13 +4078,13 @@ class App(tk.Tk):
         self._stopping = True
         self._action_refresh(key)
         if key == "doc":
-            self._doc_say("正在停止…(會先把手上這一份做完)")
+            self._doc_say(t("正在停止…(會先把手上這一份做完)"))
         elif key == "rec":
-            self._rec_say("正在停止…(算完手上這一段就停)。這一趟的逐字稿會放棄,"
-                          "錄音檔會存到 output 資料夾,之後可以用「轉錄音檔」重轉。",
+            self._rec_say(t("正在停止…(算完手上這一段就停)。這一趟的逐字稿會放棄,"
+                          "錄音檔會存到 output 資料夾,之後可以用「轉錄音檔」重轉。"),
                           "warn")
         else:
-            self._stage("正在停止…(引擎會在下一個段落邊界停下)")
+            self._stage(t("正在停止…(引擎會在下一個段落邊界停下)"))
 
     def _rec_arm(self) -> None:
         r"""開錄兩秒後解鎖那顆停止鈕(2026-09-12 使用者指定的防誤按)。
@@ -4178,7 +4228,7 @@ class App(tk.Tk):
         ⚠️ **欄寬寫死、不准由內容決定**(同 `_two_columns`):`tk.Text` 不給 `width`
         就是 80 個字元寬、`tk.Listbox` 是 20——放進 292px 的欄裡,那一欄會被自己的
         內容撐開,而畫面上看起來只是「右邊那欄被切掉了」。三個清單都給了 `width=1`
-        再靠 `fill` 撐滿;`test_the_roster_page_columns_never_overflow` 守著。
+        再靠 `fill` 撐滿;`test_the_roster_cards_fit_their_columns_in_every_language` 守著(三種語言的譯文都量)。
         ⚠️ **一行一個名字的純文字編輯**,不是表格:那份檔案本來就是純文字,而**順序
         有意義**(命名時下拉選單照它排,使用者是照部門排的)。
         ⚠️ **改名字時聲紋要跟著走**——不跟的話那個人下次開會**認不出來**,而那個症狀
@@ -4236,11 +4286,11 @@ class App(tk.Tk):
     # ---- 第一欄:與會人員名單 -------------------------------------------- #
     def _roster_build(self, card: ttk.Frame) -> None:
         """與會人員名單(命名時下拉選單的來源):編輯、儲存、以及改名時的追問。"""
-        ttk.Label(card, text="與會人員名單", style="CardH.TLabel").pack(anchor="w")
+        ttk.Label(card, text=t("與會人員名單"), style="CardH.TLabel").pack(anchor="w")
         self._wrap(ttk.Label(
-            card, text="一行一個名字。這份名單是替講者命名時那個下拉選單的來源,"
+            card, text=t("一行一個名字。這份名單是替講者命名時那個下拉選單的來源,"
                        "順序就是選單的順序。改了名字,工具會問你要不要把那個人的"
-                       "聲紋一起改掛過去。",
+                       "聲紋一起改掛過去。"),
             style="Hint.TLabel", justify="left")).pack(
                 anchor="w", pady=(self.px(SP_SM), self.px(SP_LG)))
         wrap = ttk.Frame(card, style="Sunken.TFrame", padding=self.px(SP_XS))
@@ -4263,9 +4313,9 @@ class App(tk.Tk):
 
         row = ttk.Frame(card, style="CardBody.TFrame")
         row.pack(fill="x", pady=(self.px(SP_MD), 0))
-        self._lockable(HandButton(row, text="儲存名單", style=skin.CTA_STYLE,
+        self._lockable(HandButton(row, text=t("儲存名單"), style=skin.CTA_STYLE,
                                   command=self._roster_save)).pack(side="left")
-        HandButton(row, text="重新載入", style="Small.TButton",
+        HandButton(row, text=t("重新載入"), style="Small.TButton",
                    command=self._roster_load).pack(side="left",
                                                    padx=(self.px(SP_SM), 0))
         self._roster_status = self._wrap(
@@ -4289,11 +4339,11 @@ class App(tk.Tk):
         ⚠️ **順序照與會名單,不是字典序**(同網頁版 `vp_names_in_roster_order`):左邊
         名單是使用者自己排的(照部門),兩邊順序不一樣的話,要在七十幾個人裡找同一個
         人就得重新掃一遍。"""
-        ttk.Label(card, text="聲紋資料管理", style="CardH.TLabel").pack(anchor="w")
+        ttk.Label(card, text=t("聲紋資料管理"), style="CardH.TLabel").pack(anchor="w")
         self._vp_summary = self._wrap(
             ttk.Label(card, style="Hint.TLabel", justify="left"))
         self._vp_summary.pack(anchor="w", pady=(self.px(SP_SM), self.px(SP_LG)))
-        ttk.Label(card, text="已登記的人(要刪除聲紋時在此選取,可多選)",
+        ttk.Label(card, text=t("已登記的人(要刪除聲紋時在此選取,可多選)"),
                   style="Field.TLabel").pack(anchor="w")
         wrap = ttk.Frame(card, style="Sunken.TFrame", padding=self.px(SP_XS))
         # ⚠️ **不給 `expand`**(見 `VP_LIST_LINES`):卡片是撐滿高度的,一旦讓這一框
@@ -4319,15 +4369,15 @@ class App(tk.Tk):
         # ⚠️ **實心藍只給「聲紋健檢」**(2026-09-03 使用者指定的主次:主要動作實心、
         # 次要線框或灰):健檢是這一欄唯一**只讀不寫**的動作,擺在最顯眼的位置正好,
         # 而「刪除選取」不該比它搶眼。
-        self._lockable(HandButton(row, text="刪除選取", style="Small.TButton",
+        self._lockable(HandButton(row, text=t("刪除選取"), style="Small.TButton",
                                   command=self._vp_delete_people)).pack(side="left")
-        self._lockable(HandButton(row, text="清除全部", style="Small.TButton",
+        self._lockable(HandButton(row, text=t("清除全部"), style="Small.TButton",
                                   command=self._vp_clear_ask)).pack(
                                       side="left", padx=(self.px(SP_SM), 0))
-        HandButton(row, text="重新載入", style="Small.TButton",
+        HandButton(row, text=t("重新載入"), style="Small.TButton",
                    command=self._vp_reload).pack(side="left",
                                                  padx=(self.px(SP_SM), 0))
-        HandButton(row, text="聲紋健檢", style=skin.RUN_SMALL_STYLE,
+        HandButton(row, text=t("聲紋健檢"), style=skin.RUN_SMALL_STYLE,
                    command=self._vp_check).pack(side="left",
                                                 padx=(self.px(SP_SM), 0))
         self._vp_status = self._wrap(
@@ -4355,15 +4405,15 @@ class App(tk.Tk):
         # ⚠️ `tk.Frame` 當分隔線(同進階參數那幾條):顏色要跟著皮膚走
         tk.Frame(box, height=1, background=self.pal["card_line"]).pack(
             fill="x", pady=(0, self.px(SP_LG)))
-        ttk.Label(box, text="聲紋同步資料夾", style="Field.TLabel").pack(anchor="w")
+        ttk.Label(box, text=t("聲紋同步資料夾"), style="Field.TLabel").pack(anchor="w")
         self._vp_sync_path = self._wrap(
             ttk.Label(box, style="Hint.TLabel", justify="left"))
         self._vp_sync_path.pack(anchor="w", pady=(self.px(SP_XS), 0))
         row = ttk.Frame(box, style="CardBody.TFrame")
         row.pack(fill="x", pady=(self.px(SP_SM), 0))
-        self._lockable(HandButton(row, text="選擇資料夾…", style="Small.TButton",
+        self._lockable(HandButton(row, text=t("選擇資料夾…"), style="Small.TButton",
                                   command=self._vp_sync_pick)).pack(side="left")
-        self._lockable(HandButton(row, text="停用同步", style="Small.TButton",
+        self._lockable(HandButton(row, text=t("停用同步"), style="Small.TButton",
                                   command=self._vp_sync_stop)).pack(
                                       side="left", padx=(self.px(SP_SM), 0))
         self._vp_sync_state = self._wrap(
@@ -4374,25 +4424,25 @@ class App(tk.Tk):
         """同步那一塊的兩行字(資料夾、上次同步/拒收)。跟著 `_vp_refresh` 一起重畫。"""
         where = vpsync.folder()
         self._vp_sync_path.configure(
-            text=str(where) if where else "(還沒選;沒選就只用這台自己的聲紋庫)")
+            text=str(where) if where else t("(還沒選;沒選就只用這台自己的聲紋庫)"))
         self._vp_sync_state.configure(text=vpsync.status_text())
 
     def _vp_sync_pick(self) -> None:
         """選同步資料夾 → 啟用並起家(這台現有的聲紋與名單寫進自己的紀錄)。"""
         picked = srcfile.native_dialog(lambda fd, root: fd.askdirectory(
-            parent=root, title="選擇聲紋同步資料夾(OneDrive 裡專用的資料夾)"), self)
+            parent=root, title=t("選擇聲紋同步資料夾(OneDrive 裡專用的資料夾)")), self)
         if not picked:
             return
         try:
             _ok, msg = roster.enable_sync(picked)
         except OSError as e:            # 起家寫紀錄以外的落地失敗(`vpsync.enable` 自己接住那一種)
             logger.exception("啟用聲紋同步失敗")
-            msg = f"⚠ 同步沒有啟用:{e}"
+            msg = t("⚠ 同步沒有啟用:{e}", e=e)
         self._vp_after_sync(msg)
 
     def _vp_sync_stop(self) -> None:
         if not vpsync.enabled():
-            self._vp_after_sync("同步本來就沒有啟用。")
+            self._vp_after_sync(t("同步本來就沒有啟用。"))
             return
         self._vp_after_sync(roster.disable_sync())
 
@@ -4416,17 +4466,17 @@ class App(tk.Tk):
         是最難發現的一種錯——成品看起來只是少了一個人。
         ⚠️ **追問裡要有數字**:「3 個併進 2 個、共 5 個」才判斷得了,只說「名字重複,
         確定嗎?」等於沒問。"""
-        ttk.Label(card, text="修改名稱作業", style="CardH.TLabel").pack(anchor="w")
+        ttk.Label(card, text=t("修改名稱作業"), style="CardH.TLabel").pack(anchor="w")
         self._wrap(ttk.Label(
-            card, text="改掉一個人的名字(打錯字、或想補上部門時用)。"
+            card, text=t("改掉一個人的名字(打錯字、或想補上部門時用)。"
                        "聲紋庫與左邊的與會名單會一起改——只改一邊的話,"
-                       "下次開會就認不出這個人了。",
+                       "下次開會就認不出這個人了。"),
             style="Hint.TLabel", justify="left")).pack(
                 anchor="w", pady=(self.px(SP_SM), self.px(SP_LG)))
         self._vp_old = tk.StringVar(value="")
         self._vp_new = tk.StringVar(value="")
         self._vp_merge_pending: tuple[str, str] | None = None
-        ttk.Label(card, text="要改名的人", style="Field.TLabel").pack(anchor="w")
+        ttk.Label(card, text=t("要改名的人"), style="Field.TLabel").pack(anchor="w")
         self._vp_old_pick = ttk.Combobox(card, textvariable=self._vp_old,
                                          state="readonly", width=VP_FIELD_W)
         self._lockable(self._vp_old_pick).pack(fill="x", pady=(self.px(SP_XS), 0))
@@ -4436,12 +4486,12 @@ class App(tk.Tk):
         # ⚠️ 選完焦點**直接跳到新名字那格**、游標在最後(2026-09-03 使用者:「選擇完後,請直接
         # FOCUS 到輸入的下一個欄位」):`_pick_choose` 先把焦點放回下拉,這個綁定在它之後跑。
         self._vp_old_pick.bind("<<ComboboxSelected>>", lambda _e: self._vp_carry())
-        ttk.Label(card, text="改成", style="Field.TLabel").pack(
+        ttk.Label(card, text=t("改成"), style="Field.TLabel").pack(
             anchor="w", pady=(self.px(SP_MD), 0))
         self._vp_new_entry = ttk.Entry(card, textvariable=self._vp_new,
                                        width=VP_FIELD_W)
         self._lockable(self._vp_new_entry).pack(fill="x", pady=(self.px(SP_XS), 0))
-        self._lockable(HandButton(card, text="改名", style=skin.CTA_STYLE,
+        self._lockable(HandButton(card, text=t("改名"), style=skin.CTA_STYLE,
                                   command=self._vp_rename)).pack(
                                       anchor="w", pady=(self.px(SP_MD), 0))
         self._vp_move_status = self._wrap(
@@ -4481,22 +4531,20 @@ class App(tk.Tk):
         收著,按過才長出來,而長出來的那顆鈕上寫的是**數字**,不是「確定」二字。"""
         names = roster.voiceprint_names()
         if not names:
-            self._vp_status.configure(text="聲紋庫本來就是空的,沒有東西可以清。")
+            self._vp_status.configure(text=t("聲紋庫本來就是空的,沒有東西可以清。"))
             return
         total = len(voiceprints_store.load()[0])
         for w in self._vp_clear_confirm.winfo_children():
             w.destroy()
         self._wrap(ttk.Label(
             self._vp_clear_confirm,
-            text=f"確定要清掉 {len(names)} 個人、共 {total} 個聲紋樣本嗎?"
-                 "這件事收不回來,之後每個人都要重新命名一次才會再被認出來。"
-                 "只想清掉某幾個人的話,用上面的清單選取、按「刪除選取」。",
+            text=t("確定要清掉 {v} 個人、共 {total} 個聲紋樣本嗎?這件事收不回來,之後每個人都要重新命名一次才會再被認出來。只想清掉某幾個人的話,用上面的清單選取、按「刪除選取」。", v=len(names), total=total),
             style="Warn.TLabel", justify="left")).pack(anchor="w")
         row = ttk.Frame(self._vp_clear_confirm, style="CardBody.TFrame")
         row.pack(anchor="w", pady=(self.px(SP_SM), 0))
-        HandButton(row, text=f"清掉全部 {total} 個樣本", style="Small.TButton",
+        HandButton(row, text=t("清掉全部 {total} 個樣本", total=total), style="Small.TButton",
                    command=self._vp_clear_all).pack(side="left")
-        HandButton(row, text="取消", style="Small.TButton",
+        HandButton(row, text=t("取消"), style="Small.TButton",
                    command=self._vp_clear_hide).pack(
                        side="left", padx=(self.px(SP_SM), 0))
         self._vp_clear_confirm.pack(anchor="w", fill="x", pady=(self.px(SP_SM), 0),
@@ -4521,8 +4569,7 @@ class App(tk.Tk):
         self._vp_check_clear()
         self._vp_refresh()
         self._vp_status.configure(
-            text=f"已清除全部聲紋({gone} 個樣本)。與會名單沒有被動到,"
-                 "已經轉好的逐字稿也不受影響——只有「下次開會自動認人」要從頭累積。")
+            text=t("已清除全部聲紋({gone} 個樣本)。與會名單沒有被動到,已經轉好的逐字稿也不受影響——只有「下次開會自動認人」要從頭累積。", gone=gone))
 
     def _vp_summary_text(self, names: list[str], total: int) -> str:
         r"""中間欄那行摘要。**兩句安全網掛在這一行**(同網頁版 `data_tabs.vp_summary`)。
@@ -4537,26 +4584,22 @@ class App(tk.Tk):
         ⚠️ **不寫 Markdown 的粗體記號**:這是普通的 ttk.Label,`**` 會原樣畫出來
         (網頁版那一份有記號,兩邊因此不是同一個字串)。"""
         if not names:
-            return "聲紋庫是空的。替講者命名之後,他的聲紋就會被記起來。"
-        line = (f"目前 {len(names)} 個人、{total} 個聲紋樣本。"
-                "聲紋是「下次開會自動認出是誰」的依據——動它之前先想清楚。")
+            return t("聲紋庫是空的。替講者命名之後,他的聲紋就會被記起來。")
+        line = (t("目前 {v} 個人、{total} 個聲紋樣本。聲紋是「下次開會自動認出是誰」的依據——動它之前先想清楚。", v=len(names), total=total))
         orphans = roster.orphan_names()
         if orphans:
-            shown = "、".join(f"「{o}」" for o in orphans[:roster.ORPHANS_SHOWN])
+            shown = t("、").join(t("「{o}」", o=o) for o in orphans[:roster.ORPHANS_SHOWN])
             rest = len(orphans) - roster.ORPHANS_SHOWN
             if rest > 0:
-                shown += f"、等 {rest} 人"
-            line += (f"\n⚠ 有 {len(orphans)} 個名字只在聲紋庫、不在名單上:{shown}"
-                     "——多半是改名時只改了一邊,用右邊的「修改名稱作業」"
-                     "改成名單上的名字即可。")
+                shown += t("、等 {rest} 人", rest=rest)
+            line += (t("\n⚠ 有 {v} 個名字只在聲紋庫、不在名單上:{shown}——多半是改名時只改了一邊,用右邊的「修改名稱作業」改成名單上的名字即可。", v=len(orphans), shown=shown))
         try:
             found = len({s.name for s in voiceprints_store.suspects()})
         except Exception:               # noqa: BLE001 - 健檢不得連坐主要內容
             logger.debug("聲紋健檢摘要失敗", exc_info=True)
             return line
         if found:
-            line += (f"\n⚠ 健檢發現 {found} 個人的聲紋可能混到別人,"
-                     "按下面的「聲紋健檢」看看。")
+            line += (t("\n⚠ 健檢發現 {found} 個人的聲紋可能混到別人,按下面的「聲紋健檢」看看。", found=found))
         return line
 
     def _vp_selected_people(self) -> list[str]:
@@ -4570,7 +4613,7 @@ class App(tk.Tk):
         認出來,得重新命名一次才會重新累積。所以講清楚刪了誰、幾個樣本。"""
         picked = self._vp_selected_people()
         if not picked:
-            self._vp_status.configure(text="請先在上面的清單裡選要刪掉聲紋的人。")
+            self._vp_status.configure(text=t("請先在上面的清單裡選要刪掉聲紋的人。"))
             return
         counts = collections.Counter(voiceprints_store.load()[0])
         gone = sum(counts.get(name, 0) for name in picked)
@@ -4583,14 +4626,13 @@ class App(tk.Tk):
         self._vp_refresh()
         self._vp_check_clear()
         self._vp_status.configure(
-            text=f"已刪掉 {'、'.join(picked)} 的聲紋,共 {gone} 個樣本。"
-                 "⚠ 這幾位下次開會不會被自動認出來,要再命名一次才會重新累積。")
+            text=t("已刪掉 {v} 的聲紋,共 {gone} 個樣本。⚠ 這幾位下次開會不會被自動認出來,要再命名一次才會重新累積。", v=t("、").join(picked), gone=gone))
 
     def _vp_reload(self) -> None:
         """重讀聲紋庫(別的地方動過檔案、或剛轉完一場會議之後)。"""
         self._vp_refresh()
         self._vp_check_clear()
-        self._vp_status.configure(text="已重新載入聲紋庫。")
+        self._vp_status.configure(text=t("已重新載入聲紋庫。"))
 
     def _vp_check_clear(self) -> None:
         """把健檢的結果收掉(聲紋庫一動,上一輪的結果就對不上了)。"""
@@ -4610,10 +4652,10 @@ class App(tk.Tk):
         old, new = self._vp_old.get().strip(), self._vp_new.get().strip()
         if not old or not new:
             self._vp_move_status.configure(
-                text="請選一個要改名的人,並填入新名字。")
+                text=t("請選一個要改名的人,並填入新名字。"))
             return
         if old == new:
-            self._vp_move_status.configure(text="新名字與原本相同,沒有變更。")
+            self._vp_move_status.configure(text=t("新名字與原本相同,沒有變更。"))
             return
         plan = voiceprints_store.rename_plan(old, new)
         if plan.merges:
@@ -4623,9 +4665,9 @@ class App(tk.Tk):
                                     pady=(self.px(SP_SM), 0))
             for w in self._vp_merge_row.winfo_children():
                 w.destroy()
-            HandButton(self._vp_merge_row, text="確認合併", style="Small.TButton",
+            HandButton(self._vp_merge_row, text=t("確認合併"), style="Small.TButton",
                        command=self._vp_merge_go).pack(side="left")
-            HandButton(self._vp_merge_row, text="暫不修改", style="Small.TButton",
+            HandButton(self._vp_merge_row, text=t("暫不修改"), style="Small.TButton",
                        command=self._vp_merge_cancel).pack(
                            side="left", padx=(self.px(SP_SM), 0))
             self._vp_merge_row.pack(anchor="w", pady=(self.px(SP_SM), 0))
@@ -4639,20 +4681,17 @@ class App(tk.Tk):
         得了,只說「名字重複,確定嗎?」等於沒問。⚠️ **不寫 Markdown 記號**(這是
         ttk.Label,`**` 會原樣畫出來)。"""
         lines = [
-            f"⚠ 「{new}」已經有聲紋了——這個動作會把兩個名字合併。",
-            f"・「{old}」的 {plan.moving} 個樣本會併進「{new}」"
-            f"(現有 {plan.existing} 個)",
-            f"・合併後共 {plan.total} 個",
+            t("⚠ 「{new}」已經有聲紋了——這個動作會把兩個名字合併。", new=new),
+            t("・「{old}」的 {moving} 個樣本會併進「{new}」(現有 {existing} 個)", old=old, moving=plan.moving, new=new, existing=plan.existing),
+            t("・合併後共 {total} 個", total=plan.total),
         ]
         if plan.dropped:
             lines.append(
-                f"・⚠ 超過每人的上限,會淘汰 {plan.dropped} 個樣本"
-                "(挑彼此最像、等於重複的那幾個;跟其他都不像的會留著,"
-                "那種通常是別場次、別麥克風錄的,最難再取得)")
+                t("・⚠ 超過每人的上限,會淘汰 {dropped} 個樣本(挑彼此最像、等於重複的那幾個;跟其他都不像的會留著,那種通常是別場次、別麥克風錄的,最難再取得)", dropped=plan.dropped))
         lines.append(
-            "只有在它們本來就是同一個人(兩種寫法)時才該按下去。如果是兩個不同的"
+            t("只有在它們本來就是同一個人(兩種寫法)時才該按下去。如果是兩個不同的"
             "人,合併之後會變成「一個名字底下裝了兩個人」,那種錯在逐字稿裡看起來"
-            "只是「少了一個人」,很難發現。")
+            "只是「少了一個人」,很難發現。"))
         return "\n".join(lines)
 
     def _vp_merge_hide(self) -> None:
@@ -4679,7 +4718,7 @@ class App(tk.Tk):
         old, _new = self._vp_merge_pending
         self._vp_merge_hide()
         self._vp_move_status.configure(
-            text=f"沒有動任何東西:「{old}」的名字與聲紋都維持原樣。")
+            text=t("沒有動任何東西:「{old}」的名字與聲紋都維持原樣。", old=old))
 
     def _vp_rename_do(self, old: str, new: str) -> None:
         """真的改名:聲紋庫、與會名單、落地的命名草稿一起改。"""
@@ -4691,11 +4730,10 @@ class App(tk.Tk):
         if not moved:
             # 聲紋庫裡沒有他的樣本:名單那一半照樣改掉了,講清楚免得看起來像沒反應
             self._vp_move_status.configure(
-                text=f"「{old}」在聲紋庫裡沒有樣本;與會名單已改成「{new}」。")
+                text=t("「{old}」在聲紋庫裡沒有樣本;與會名單已改成「{new}」。", old=old, new=new))
         else:
             self._vp_move_status.configure(
-                text=f"已把「{old}」改名為「{new}」:{moved} 個聲紋樣本"
-                     f"(目前共 {total} 個),與會名單也一併更新。")
+                text=t("已把「{old}」改名為「{new}」:{moved} 個聲紋樣本(目前共 {total} 個),與會名單也一併更新。", old=old, new=new, moved=moved, total=total))
         self._vp_new.set("")            # ⚠️ 清空:留著上一次的字,下次改別人時很容易直接按下去
         self._vp_refresh()
         self._vp_check_clear()
@@ -4717,14 +4755,11 @@ class App(tk.Tk):
         found = voiceprints_store.suspects()
         self._vp_check_clear()
         if not found:
-            self._vp_status.configure(text="健檢沒有發現可疑的樣本。")
+            self._vp_status.configure(text=t("健檢沒有發現可疑的樣本。"))
             return
         self._wrap(ttk.Label(
             self._vp_found,
-            text=f"這 {len(found)} 個樣本聽起來比較像別人。⚠ 刪之前先想一下:留著"
-                 "頂多偶爾認錯(當場可以改),刪錯了那個人以後就再也認不出來——"
-                 "而那個症狀看起來會像「講者分不出來」。共用麥克風或遠端連線會讓"
-                 "一整群人一起變像,那種不是存錯人。",
+            text=t("這 {v} 個樣本聽起來比較像別人。⚠ 刪之前先想一下:留著頂多偶爾認錯(當場可以改),刪錯了那個人以後就再也認不出來——而那個症狀看起來會像「講者分不出來」。共用麥克風或遠端連線會讓一整群人一起變像,那種不是存錯人。", v=len(found)),
             style="Hint.TLabel", justify="left")).pack(
                 anchor="w", pady=(0, self.px(SP_SM)))
         for i, s in enumerate(found):
@@ -4735,14 +4770,13 @@ class App(tk.Tk):
             ttk.Checkbutton(row, variable=var, style="Card.TCheckbutton").pack(
                 side="left", anchor="n")
             self._wrap(ttk.Label(
-                row, text=f"{s.name} 的第 {s.index + 1} 個樣本 —— "
-                          f"比較像「{s.like_name}」",
+                row, text=t("{name} 的第 {v} 個樣本 —— 比較像「{like_name}」", name=s.name, v=s.index + 1, like_name=s.like_name),
                 style="Hint.TLabel", justify="left"),
                 minus=self.px(CHECK_W)).pack(side="left", anchor="w",
                                              padx=(self.px(SP_XS), 0))
         # ⚠️ 這一顆是**工作進行中要鎖的**(它會寫聲紋庫),而它是按了健檢才長出來的
         # ——所以只能在這裡登記,不能在建頁時一次收齊(見 `_lockable`)。
-        self._lockable(HandButton(self._vp_found, text="刪掉勾選的樣本",
+        self._lockable(HandButton(self._vp_found, text=t("刪掉勾選的樣本"),
                                   style="Small.TButton",
                                   command=self._vp_delete)).pack(
                                       anchor="w", pady=(self.px(SP_SM), 0))
@@ -4756,7 +4790,7 @@ class App(tk.Tk):
         items = [(s.name, s.index) for _i, (var, s) in self._vp_picks.items()
                  if var.get()]
         if not items:
-            self._vp_status.configure(text="一個都沒勾。")
+            self._vp_status.configure(text=t("一個都沒勾。"))
             return
         try:
             gone = voiceprints_store.delete_samples(items)
@@ -4764,10 +4798,10 @@ class App(tk.Tk):
             self._vp_status.configure(text=f"⚠ {e}")
             return
         left = [n for n, _ in items if n not in voiceprints_store.known_names()]
-        note = (f"⚠ {'、'.join(dict.fromkeys(left))} 在聲紋庫裡已經一個樣本都不剩,"
-                "下次開會不會被自動認出來。" if left else "")
+        note = (t("⚠ {v} 在聲紋庫裡已經一個樣本都不剩,下次開會不會被自動認出來。",
+                  v=t("、").join(dict.fromkeys(left))) if left else "")
         self._vp_check()
-        self._vp_status.configure(text=f"已刪掉 {gone} 個樣本。" + note)
+        self._vp_status.configure(text=t("已刪掉 {gone} 個樣本。", gone=gone) + note)
         self._vp_refresh()
 
     def _roster_load(self) -> None:
@@ -4782,7 +4816,7 @@ class App(tk.Tk):
         self._roster_box.configure(state=was)
         self._roster_hide_ask()
         self._roster_status.configure(
-            text=f"目前 {len(roster.current())} 人。")
+            text=t("目前 {v} 人。", v=len(roster.current())))
 
     def _roster_hide_ask(self) -> None:
         self._roster_plan = None
@@ -4811,13 +4845,13 @@ class App(tk.Tk):
         self._roster_ask.pack(anchor="w", pady=(self.px(SP_SM), 0))
         self._roster_confirm.pack(anchor="w", pady=(self.px(SP_SM), 0))
         if plan.rename:
-            HandButton(self._roster_confirm, text="名單與聲紋一起改",
+            HandButton(self._roster_confirm, text=t("名單與聲紋一起改"),
                        style=skin.CTA_STYLE,
                        command=lambda: self._roster_commit(True)).pack(side="left")
-        HandButton(self._roster_confirm, text="只存名單", style="Small.TButton",
+        HandButton(self._roster_confirm, text=t("只存名單"), style="Small.TButton",
                    command=lambda: self._roster_commit(False)).pack(
                        side="left", padx=(self.px(SP_SM), 0))
-        HandButton(self._roster_confirm, text="取消", style="Small.TButton",
+        HandButton(self._roster_confirm, text=t("取消"), style="Small.TButton",
                    command=self._roster_hide_ask).pack(
                        side="left", padx=(self.px(SP_SM), 0))
         self._scroll_refresh("roster")
@@ -4829,12 +4863,11 @@ class App(tk.Tk):
         parts = []
         if plan.rename:
             old, new = plan.rename
-            parts.append(f"看起來你把「{old}」改成了「{new}」。"
-                         f"要不要把「{old}」的聲紋樣本一起改掛到「{new}」?")
+            parts.append(t("看起來你把「{old}」改成了「{new}」。要不要把「{old}」的聲紋樣本一起改掛到「{new}」?", old=old, new=new))
         if plan.stranded:
-            parts.append("這幾個人會從名單上消失,但聲紋庫裡還有他們的樣本:"
-                         + "、".join(f"{n}({c} 個)" for n, c in plan.stranded)
-                         + "。")
+            parts.append(t("這幾個人會從名單上消失,但聲紋庫裡還有他們的樣本:{names}。",
+                           names=t("、").join(t("{n}({c} 個)", n=n, c=c)
+                                              for n, c in plan.stranded)))
         return "".join(parts)
 
     def _roster_commit(self, rename_voiceprints: bool) -> None:
@@ -4893,6 +4926,8 @@ class App(tk.Tk):
         self._audit_spk = None
         self._audit_src = ""
         self._naming_result = None
+        # 命名卡那一份逐字稿的固定字串(會議語言;`_naming_show` 換成那一份的)
+        self._naming_vocab = vocab.ZH_TW
         self._naming_audit: dict = {}
         self._naming_vars: dict[int, tk.StringVar] = {}
         self._naming_btns: dict[int, ttk.Button] = {}
@@ -4921,7 +4956,7 @@ class App(tk.Tk):
         self._run_card = card           # 命名區要 pack 在它前面(見 `_naming_show`)
 
         # 段一:要做什麼
-        ttk.Label(card, text="要做什麼", style="CardH.TLabel").pack(anchor="w")
+        ttk.Label(card, text=t("要做什麼"), style="CardH.TLabel").pack(anchor="w")
         # ⚠️ **說明排在控制項「上面」**(2026-09-01 照網頁版):先講這是要做什麼,
         # 再給選項。原生版原本印在下面——讀到選項的當下那句話還沒出現。
         self._mode_info = self._wrap(ttk.Label(card, style="Hint.TLabel",
@@ -4958,21 +4993,37 @@ class App(tk.Tk):
         self._relabel_box = self._relabel_build(self._mode_body)
         self._minutes_box = self._minutes_build(self._mode_body)
 
-        # 段三:講者人數(兩個模式共用,同網頁版)
+        # 段三:會議語言 ＋ 講者人數(收音與轉檔共用)。⚠️ **同一列兩欄**(使用者 2026-10-21
+        # 選 B 案):各佔一段的話卡片長約 95 點,「開始錄音」被擠出畫面
         spk = ttk.Frame(card, style="CardBody.TFrame")
+        spk.columnconfigure(0, weight=1, uniform="spk")
+        spk.columnconfigure(1, weight=1, uniform="spk")
         spk.pack(fill="x", pady=(self.px(SP_XL), 0))
         # ⚠️ **「重設講者」那條路要把它收起來**(2026-09-01,這裡與網頁版**刻意
         # 不同**):那條路不重跑分群——講者數在當初轉檔時就定了,md 的段落是那次切
         # 出來的。網頁版把這個欄位一直留在畫面上(它與收音/轉檔共用),而擺一個在
         # 這個模式下按了不會有任何作用的輸入框,跟壞掉長得一模一樣。
         self._speakers_box = spk
-        ttk.Label(spk, text="講者人數(0 = 自動偵測)",
-                  style="CardH.TLabel").pack(anchor="w")
-        self._wrap(ttk.Label(
-            spk, text="人少又確定(如 1~3 人)才填;其餘留 0 自動判斷,"
-                      f"最多 {MAX_SPEAKERS}",
-            style="Hint.TLabel", justify="left")).pack(
-                anchor="w", pady=(self.px(SP_XS), 0))
+        gap = self.px(SP_MD)
+        ttk.Label(spk, text=t("會議語言"), style="CardH.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, gap))
+        ttk.Label(spk, text=t("講者人數"), style="CardH.TLabel").grid(
+            row=0, column=1, sticky="w")
+        ttk.Label(spk, text=t("逐字稿用這種語言寫"), style="Hint.TLabel").grid(
+            row=1, column=0, sticky="w", padx=(0, gap), pady=(self.px(SP_XS), 0))
+        ttk.Label(spk, text=t("0 = 自動偵測,最多 {MAX_SPEAKERS}", MAX_SPEAKERS=MAX_SPEAKERS),
+                  style="Hint.TLabel").grid(row=1, column=1, sticky="w",
+                                            pady=(self.px(SP_XS), 0))
+        # 預設跟著介面語言、**不記進 settings**,而且**每場收工都回預設**(同講者人數;它描述的
+        # 是這一份工作,不是這台電腦;使用者 2026-10-21 選)。⚠️ 在開始那一刻讀(主執行緒),
+        # 錄音中改它不生效,所以錄音中鎖住
+        self._run_lang = tk.StringVar(value=self._meeting_language_default())
+        self._lang_pick_box = ttk.Combobox(
+            spk, textvariable=self._run_lang, values=list(MEETING_LANG_LABELS),
+            state="readonly", width=8, style="Tall.TCombobox")
+        self._lang_pick_box.grid(row=2, column=0, sticky="ew", padx=(0, gap),
+                                 pady=(self.px(SP_SM), 0))
+        self._combo_setup(self._lang_pick_box)
         self._run_speakers = tk.StringVar(value="0")
         # ⚠️ **不設 min/max**(同網頁版那條):超限的輸入一律在這一側 clamp,
         # 讓控制項自己擋會跳出英文錯誤(spec §8:使用者可見訊息一律繁中)。
@@ -4982,8 +5033,8 @@ class App(tk.Tk):
         # 保持可輸入——那是網頁版明訂的唯一例外。
         self._speakers_spin = ttk.Spinbox(
             spk, textvariable=self._run_speakers, from_=0, to=MAX_SPEAKERS,
-            style="Tall.TSpinbox")
-        self._speakers_spin.pack(fill="x", pady=(self.px(SP_SM), 0))
+            style="Tall.TSpinbox", width=5)
+        self._speakers_spin.grid(row=2, column=1, sticky="ew", pady=(self.px(SP_SM), 0))
 
         # ---- 卡外:狀態一行,主要動作鈕與「進階參數設定」並排 ------------------ #
         # 收音、轉檔、重設講者各一顆入口鈕(`_adv_button`),跟著自己那一列一起換上換下;
@@ -5175,7 +5226,7 @@ class App(tk.Tk):
         ⚠️ **選檔是累加不是取代**(同網頁版與文件分頁;2026-08-01 使用者回報:選第二
         個資料夾把第一個蓋掉,等於永遠只能處理一批),所以要有「清空」。"""
         box = ttk.Frame(parent, style="CardBody.TFrame")
-        ttk.Label(box, text="要轉哪個檔", style="CardH.TLabel").pack(anchor="w")
+        ttk.Label(box, text=t("要轉哪個檔"), style="CardH.TLabel").pack(anchor="w")
         self._wrap(ttk.Label(box, text=FILE_MODE_HINT, style="Hint.TLabel",
                              justify="left")).pack(
                                  anchor="w", pady=(self.px(SP_XS), 0))
@@ -5183,12 +5234,12 @@ class App(tk.Tk):
         row.pack(fill="x", pady=(self.px(SP_SM), self.px(SP_SM)))
         # ⚠️ 三顆都要鎖(使用說明寫著「轉檔中選檔的三顆鈕會鎖住」):選檔是**累加**
         # 的,轉檔中按下去只會把下一趟的路徑混進正在跑的這一趟的欄位裡。
-        self._lockable(HandButton(row, text="選擇檔案…", style=skin.CTA_STYLE,
+        self._lockable(HandButton(row, text=t("選擇檔案…"), style=skin.CTA_STYLE,
                                   command=self._run_pick)).pack(side="left")
-        self._lockable(HandButton(row, text="選擇資料夾…", style=skin.CTA_STYLE,
+        self._lockable(HandButton(row, text=t("選擇資料夾…"), style=skin.CTA_STYLE,
                                   command=self._run_pick_folder)).pack(
                                       side="left", padx=(self.px(SP_SM), 0))
-        self._lockable(HandButton(row, text="清空", style="Small.TButton",
+        self._lockable(HandButton(row, text=t("清空"), style="Small.TButton",
                                   command=self._run_clear)).pack(
                                       side="left", padx=(self.px(SP_SM), 0))
         wrap = ttk.Frame(box, style="Sunken.TFrame", padding=self.px(SP_XS))
@@ -5209,10 +5260,10 @@ class App(tk.Tk):
         self._run_recursive = tk.BooleanVar(value=False)
         opt = ttk.Frame(box, style="CardBody.TFrame")
         opt.pack(fill="x", pady=(self.px(SP_SM), 0))
-        ttk.Checkbutton(opt, text="包含子資料夾", variable=self._run_recursive,
+        ttk.Checkbutton(opt, text=t("包含子資料夾"), variable=self._run_recursive,
                         command=self._run_refresh_summary,
                         style="Card.TCheckbutton").pack(side="left")
-        ttk.Label(opt, text="只在選了資料夾時有作用", style="Hint.TLabel").pack(
+        ttk.Label(opt, text=t("只在選了資料夾時有作用"), style="Hint.TLabel").pack(
             side="left", padx=(self.px(SP_SM), 0))
         # 選了什麼的即時摘要(同網頁版,緊接在選檔區之下):**空的時候整行收起來**,
         # 不留一行空白(同文件分頁的 `_doc_summary`)。
@@ -5336,17 +5387,17 @@ class App(tk.Tk):
         跳過了命名。⚠️ **不重跑轉檔**——分群早在當初就做完了,md 裡有講者標籤與時間
         戳,這條路只改名字。"""
         box = ttk.Frame(parent, style="CardBody.TFrame")
-        ttk.Label(box, text="要改哪一份逐字稿", style="CardH.TLabel").pack(anchor="w")
+        ttk.Label(box, text=t("要改哪一份逐字稿"), style="CardH.TLabel").pack(anchor="w")
         self._wrap(ttk.Label(
-            box, text="挑一份轉好的 .md。同一層有同名的錄音檔時,還可以試聽原音、"
-                      "命名後記住聲紋;沒有的話就只改名字。",
+            box, text=t("挑一份轉好的 .md。同一層有同名的錄音檔時,還可以試聽原音、"
+                      "命名後記住聲紋;沒有的話就只改名字。"),
             style="Hint.TLabel", justify="left")).pack(
                 anchor="w", pady=(self.px(SP_XS), 0))
         row = ttk.Frame(box, style="CardBody.TFrame")
         row.pack(fill="x", pady=(self.px(SP_SM), self.px(SP_SM)))
-        self._lockable(HandButton(row, text="選擇逐字稿…", style=skin.CTA_STYLE,
+        self._lockable(HandButton(row, text=t("選擇逐字稿…"), style=skin.CTA_STYLE,
                                   command=self._relabel_pick)).pack(side="left")
-        self._lockable(HandButton(row, text="清空", style="Small.TButton",
+        self._lockable(HandButton(row, text=t("清空"), style="Small.TButton",
                                   command=lambda: self._relabel_set_path(""))).pack(
                                       side="left", padx=(self.px(SP_SM), 0))
         wrap = ttk.Frame(box, style="Sunken.TFrame", padding=self.px(SP_XS))
@@ -5414,7 +5465,7 @@ class App(tk.Tk):
         # 「輸出資料夾…」就開到一個**沒有那份檔案**的資料夾去——比按了沒反應更糟。
         # ⚠️ 要設在 `_run_lock(True)` **之後**:它每一趟開頭把 `_run_dirs` 歸零。
         self._run_dirs = [str(md_path.parent)]
-        self._stage(f"{md_path.name}:讀取中…")
+        self._stage(t("{name}:讀取中…", name=md_path.name))
         self._run_set_preview("")
         cores = self._run_cores.get()
         self._run_job(lambda say: self._relabel_work(md_path, say, cores),
@@ -5437,9 +5488,9 @@ class App(tk.Tk):
         # 「未知」不佔講者編號:命名框那邊它是獨立的一塊,而且**絕不登記聲紋**
         # (多人零碎語音的混合,登記會污染聲紋庫)。改鍵成哨兵,`_naming_show`
         # 那一整套就原封不動地認得它。
-        named = [n for n in transcript.order if n != "未知"]
+        named = [n for n in transcript.order if not vocab.is_unknown(n)]
         hints = {
-            (UNKNOWN_SPEAKER if transcript.order[i] == "未知"
+            (UNKNOWN_SPEAKER if vocab.is_unknown(transcript.order[i])
              else named.index(transcript.order[i])): h
             for i, h in transcript.hints().items()
         }
@@ -5451,8 +5502,8 @@ class App(tk.Tk):
         if features is not None:
             try:
                 feat = diarize.load_features(features)
-                origin = ("自動判斷" if feat.num_speakers == 0
-                          else f"當初指定 {feat.num_speakers} 位")
+                origin = (t("自動判斷") if feat.num_speakers == 0
+                          else t("當初指定 {num_speakers} 位", num_speakers=feat.num_speakers))
             except UserFacingError as e:
                 features = None
                 feat_note = f"\n{e}"
@@ -5481,21 +5532,18 @@ class App(tk.Tk):
         have_media = media is not None and bool(voiceprints)
         # 三種狀態各講一句(同網頁版;Tk 不渲染 Markdown,粗體記號拿掉)
         if not have_media:
-            tail = ("同一層沒有同名的錄音檔——這次只能改名字:沒有試聽、"
-                    "不會記住聲紋,也不能改人數。名字照樣寫得回逐字稿。")
+            tail = (t("同一層沒有同名的錄音檔——這次只能改名字:沒有試聽、"
+                    "不會記住聲紋,也不能改人數。名字照樣寫得回逐字稿。"))
         elif features is None:
-            tail = (f"同一層找到「{media.name}」:可以試聽原音,命名後也會記住"
-                    "聲紋、下次開會自動認人。"
+            tail = (t("同一層找到「{name}」:可以試聽原音,命名後也會記住"
+                      "聲紋、下次開會自動認人。", name=media.name)
                     + (feat_note or
-                       f"\n沒有找到分群檔「{diarize.features_path(md_path).name}」,"
-                       "所以這份改不了講者人數——分群檔是新版轉檔才會留下的,"
-                       "舊的逐字稿沒有。要改人數只能重轉一次。"))
+                       t("\n沒有找到分群檔「{name}」,所以這份改不了講者人數——分群檔是新版轉檔才會留下的,舊的逐字稿沒有。要改人數只能重轉一次。", name=diarize.features_path(md_path).name)))
         else:
-            tail = (f"同一層找到「{media.name}」與分群檔「{features.name}」:"
-                    "可以試聽、命名後記住聲紋,而且可以直接改講者人數重新分群,"
-                    "幾秒鐘就好、不必重轉。")
-        note = (f"已讀取「{md_path.name}」,共 {len(named)} 位講者"
-                + (f"(當初是{origin}分出來的)" if origin else "") + "。" + tail)
+            tail = (t("同一層找到「{name}」與分群檔「{name2}」:可以試聽、命名後記住聲紋,而且可以直接改講者人數重新分群,幾秒鐘就好、不必重轉。", name=media.name, name2=features.name))
+        note = (t("已讀取「{name}」,共 {n} 位講者", name=md_path.name, n=len(named))
+                + (t("(當初是{origin}分出來的)", origin=origin) if origin else "")
+                + t("。") + tail)
         say(("run_preview", f"{note}\n\n{md_text}"))
         # ⚠️ **缺檔要再講一次在進度條上方那一行**(2026-10-12 使用者指定):上面那句
         # 夾在預覽區、排在整份逐字稿前面,實際上沒人看到——而缺錄音檔的下場是試聽鈕
@@ -5525,12 +5573,12 @@ class App(tk.Tk):
             self._stage(self._relabel_stage or relabel_stage(True, True))
             self._run_open.configure(state="normal")
         elif isinstance(error, Cancelled):
-            self._stage("已依要求停止。")
+            self._stage(t("已依要求停止。"))
         else:
             self._stage("")
             self._run_set_preview(
                 error.args[0] if isinstance(error, UserFacingError)
-                else f"未預期的錯誤,{LOG_HINT}。")
+                else t("未預期的錯誤,{LOG_HINT}。", LOG_HINT=LOG_HINT))
 
     # ---- 會議紀錄草稿(地端語言模型:Mac 是 Apple、Windows 是 Qwen3.5)--------- #
     def _minutes_build(self, parent) -> ttk.Frame:
@@ -5539,7 +5587,7 @@ class App(tk.Tk):
         (2026-10-11 使用者:照手機版的「手機 AI 產生會議紀錄(草稿)」做 Mac 版;邏輯在
         `minutes.py`,規格 `docs/spec/mac/05` §5.4b。)"""
         box = ttk.Frame(parent, style="CardBody.TFrame")
-        ttk.Label(box, text="要整理哪一份逐字稿", style="CardH.TLabel").pack(anchor="w")
+        ttk.Label(box, text=t("要整理哪一份逐字稿"), style="CardH.TLabel").pack(anchor="w")
         self._wrap(ttk.Label(box, text=MINUTES_HINT, style="Hint.TLabel",
                              justify="left")).pack(anchor="w", pady=(self.px(SP_XS), 0))
         # 選模型那一排(Mac 兩個都列得出來時才放出來,見 `_minutes_tab_sync`;建好先不 pack)
@@ -5554,9 +5602,9 @@ class App(tk.Tk):
         row = ttk.Frame(box, style="CardBody.TFrame")
         row.pack(fill="x", pady=(self.px(SP_SM), self.px(SP_SM)))
         self._minutes_pick_row = row
-        self._lockable(HandButton(row, text="選擇逐字稿…", style=skin.CTA_STYLE,
+        self._lockable(HandButton(row, text=t("選擇逐字稿…"), style=skin.CTA_STYLE,
                                   command=self._minutes_pick)).pack(side="left")
-        self._lockable(HandButton(row, text="清空", style="Small.TButton",
+        self._lockable(HandButton(row, text=t("清空"), style="Small.TButton",
                                   command=lambda: self._minutes_set_path(""))).pack(
                                       side="left", padx=(self.px(SP_SM), 0))
         wrap = ttk.Frame(box, style="Sunken.TFrame", padding=self.px(SP_XS))
@@ -5595,7 +5643,7 @@ class App(tk.Tk):
     def _minutes_pick(self) -> None:
         """「選擇逐字稿…」(同 `_relabel_pick`,起始位置一樣是 `OUTPUT_DIR`)。"""
         picked = relabel.pick_md(self, initialdir=OUTPUT_DIR,
-                                 title="選擇要整理成會議紀錄草稿的逐字稿(.md)")
+                                 title=t("選擇要整理成會議紀錄草稿的逐字稿(.md)"))
         if picked:
             self._minutes_set_path(picked)
 
@@ -5733,7 +5781,8 @@ class App(tk.Tk):
         self._run_dirs = [str(minutes.drafts_dir())]   # 要在 `_run_lock(True)` 之後,它會歸零
         # (Windows 的等待提示要問有沒有內顯,`minutes._ov_plan`:背景偵測上面已經等過了)
         hint = minutes.wait_hint(minutes.duration_sec(md_text), engine)
-        first = f"{md_path.name}:整理中…" + (f"({hint})" if hint else "")
+        first = (t("{name}:整理中…", name=md_path.name)
+                 + (t("({hint})", hint=hint) if hint else ""))
         self._stage(first)
         self._run_set_preview("")
         self._run_job(lambda say: self._minutes_work(md_path, md_text, first, say, engine),
@@ -5748,7 +5797,7 @@ class App(tk.Tk):
         text = minutes.render(md_path, body)
         out = minutes.save(md_path, text)
         say(("run_preview", text))
-        say(("run_stage", (f"完成。草稿存在:{out}", 1.0)))
+        say(("run_stage", (t("完成。草稿存在:{out}", out=out), 1.0)))
 
     def _minutes_done(self, error) -> None:
         """「地端 AI」收尾。成功時階段那一行已經由工作執行緒寫好了。"""
@@ -5762,12 +5811,12 @@ class App(tk.Tk):
             return
         self._run_bar.configure(value=0)
         if isinstance(error, Cancelled):
-            self._stage("已依要求停止。")
+            self._stage(t("已依要求停止。"))
         else:
             self._stage("")
             self._run_set_preview(
                 error.args[0] if isinstance(error, UserFacingError)
-                else f"未預期的錯誤,{LOG_HINT}。")
+                else t("未預期的錯誤,{LOG_HINT}。", LOG_HINT=LOG_HINT))
 
     # ---- 現場收音 -------------------------------------------------------- #
     def _rec_build(self, parent) -> ttk.Frame:
@@ -5779,7 +5828,7 @@ class App(tk.Tk):
         ⚠️ **2026-09-01 從下拉選單改成 segmented**(照網頁版):三個選項藏在下拉裡,
         使用者要點開才知道有幾種——而選錯的代價是一整場會議。"""
         box = ttk.Frame(parent, style="CardBody.TFrame")
-        ttk.Label(box, text="收音情境", style="CardH.TLabel").pack(anchor="w")
+        ttk.Label(box, text=t("收音情境"), style="CardH.TLabel").pack(anchor="w")
         self._scene_info = self._wrap(ttk.Label(box, style="Hint.TLabel",
                                                 justify="left"))
         self._scene_info.pack(anchor="w", pady=(self.px(SP_XS), 0))
@@ -6310,7 +6359,7 @@ class App(tk.Tk):
         # 說明的第一個字正是它的結果(「走 GPU…」／「走 CPU…」)——因跟果排反了的話,
         # 讀到模型那句時還不知道它憑什麼這樣講。
         self._device_hint = section(
-            0, "運算裝置", "",
+            0, t("運算裝置"), "",
             lambda p: setattr(self, "_device_cells",
                               seg_row(p, DEVICE_OPTIONS, self._device_show)))
         self._segment_show(self._device_cells, default_device_key())
@@ -6318,7 +6367,7 @@ class App(tk.Tk):
         # ---- 模型 ---------------------------------------------------------- #
         # ⚠️ **這個選擇必須保留**(2026-07-26 曾移除、同日裁定還原)。
         self._model_hint = section(
-            1, "模型", "",
+            1, t("模型"), "",
             lambda p: setattr(self, "_model_cells",
                               seg_row(p, model_options(), self._model_show)))
         # (顯示哪一格由 `_adv_sync` 在下面一次決定)
@@ -6337,7 +6386,7 @@ class App(tk.Tk):
             # 撐滿那一欄,灰底跟上面兩排 segmented 一樣長(見 `section`)
             self._cores_spin.pack(fill="x")
 
-        self._cores_hint = section(2, "CPU 核心數", cores_info(), cores)
+        self._cores_hint = section(2, t("CPU 核心數"), cores_info(), cores)
 
         # ---- 地端 AI 模型(Mac 的 Qwen 4B:看大小、刪除) --------------------------- #
         # (2026-10-14 使用者選放這裡:刪模型是很少做的維護動作。)⚠️ **它不是這一趟工作的
@@ -6369,7 +6418,7 @@ class App(tk.Tk):
 
         bar = ttk.Frame(pad, style="Page.TFrame")
         bar.pack(fill="x", pady=(self.px(CARD_GAP), 0))
-        HandButton(bar, text="關閉", style=skin.SKIP_PAGE_STYLE,
+        HandButton(bar, text=t("關閉"), style=skin.SKIP_PAGE_STYLE,
                    command=self._adv_close).pack(side="right")
         self._adv_sync()
         self._adv_place(win)
@@ -6526,7 +6575,7 @@ class App(tk.Tk):
         if self._params_busy() or not models.mlx_llm_size():
             return
         if not self._ask_close(QWEN_DELETE_ASK.format(gb=models.mlx_llm_size() / 1e9),
-                               ok_text="刪除"):
+                               ok_text=t("刪除")):
             return
         try:
             models.delete_mlx_llm()
@@ -6645,6 +6694,17 @@ class App(tk.Tk):
         # 講者人數:只有「錄音中」放行,收尾(`run`)與檔案轉檔一起鎖
         self._speakers_spin.configure(
             state="disabled" if self._busy["run"] else "normal")
+        # 會議語言:錄音中也鎖(轉錄在錄音中就照它跑了,同 iOS 開錄後不能改)
+        self._lang_pick_box.configure(state="disabled" if own else "readonly")
+
+    @staticmethod
+    def _meeting_language_default() -> str:
+        """下拉的預設:跟介面語言(畫面上的字,不是引擎鍵)。"""
+        return MEETING_LANG_NAMES[meetlang.from_ui(i18n.current())]
+
+    def _meeting_language(self) -> str:
+        """畫面上選的會議語言(引擎鍵)。⚠️ 只在主執行緒、按下開始的那一刻讀。"""
+        return MEETING_LANG_LABELS.get(self._run_lang.get(), meetlang.ZH_TW)
 
     def _model_show(self, key: str) -> None:
         """切模型。⚠️ **轉檔中不准切**:引擎的參數在開始那一刻就定死了。"""
@@ -6677,19 +6737,20 @@ class App(tk.Tk):
             # ⚠️ 拿沒讓開的那條路算一次「本來會變成什麼」,不要在這裡重寫一份判準
             base_model, base_cores = live_scribe.recording_plan(
                 want_model, want_cores)
-            bits = [f"模型「{MODEL_KEYS[want_model]}」"] \
+            bits = [t("模型「{v}」", v=MODEL_KEYS[want_model])] \
                 if base_model != want_model else []
             if base_cores != want_cores:
-                bits.append(f"核心數 {want_cores}")
-            line = ("照你的設定跑:" + "、".join(bits)
-                    + "(護欄已讓開,可能追不上、會積壓)") if bits else ""
+                bits.append(t("核心數 {want_cores}", want_cores=want_cores))
+            line = t("照你的設定跑:{bits}(護欄已讓開,可能追不上、會積壓)",
+                     bits=t("、").join(bits)) if bits else ""
         else:
             bits = []
             if model_key != want_model:
-                bits.append(f"模型用「{MODEL_KEYS[model_key]}」")
+                bits.append(t("模型用「{v}」", v=MODEL_KEYS[model_key]))
             if cores != want_cores:
-                bits.append(f"核心數 {cores}")
-            line = "、".join(bits) + "(這樣才來得及邊錄邊分析講者)" if bits else ""
+                bits.append(t("核心數 {cores}", cores=cores))
+            line = t("{bits}(這樣才來得及邊錄邊分析講者)",
+                     bits=t("、").join(bits)) if bits else ""
         # ⚠️ 低耗電那一句兩條路都要接(它講的是另一件事,見上面):**只有一份**
         if live_scribe.low_power_blocks_diarize():
             line = f"{line}\n{live_scribe.LOW_POWER_NOTE}" if line \
@@ -6730,20 +6791,17 @@ class App(tk.Tk):
         # ⚠️ **時間一律走 `pipeline.mmss`,不准自己 `// 60`**(2026-09-16 使用者回報):
         # 移植網頁版時把它寫成就地的「分:秒」,分鐘不進位,錄到三小時就顯示「已錄 187:44」。
         # 網頁版三處都是叫 `pipeline.mmss`——只有這裡漏了。
-        tail = (f"背景轉錄:已完成至 {pipeline.mmss(done)}"
-                if done > 0 else "背景轉錄暖機中…")
+        tail = (t("背景轉錄:已完成至 {v}", v=pipeline.mmss(done))
+                if done > 0 else t("背景轉錄暖機中…"))
         if rec.paused:
             # ⚠️ **琥珀色、不是紅的**:紅點的意思是「正在錄」。⚠️ 行首同樣不放記號
             # (見 `REC_CLAMSHELL`);要講清楚兩顆鈕各做什麼——暫停中最常見的問題
             # 是「停止會不會把剛剛錄的丟掉」
             self._rec_say(
-                f"已暫停({self._rec.get('scene')})・已錄 {pipeline.mmss(secs)},"
-                f"這次暫停了 {pipeline.mmss(rec.pause_seconds())}。{tail}\n"
-                f"{REC_PAUSED_HINT}", "warn")
+                t("已暫停({v})・已錄 {v2},這次暫停了 {v3}。{tail}\n{REC_PAUSED_HINT}", v=SCENARIO_LABELS.get(self._rec.get('scene'), ''), v2=pipeline.mmss(secs), v3=pipeline.mmss(rec.pause_seconds()), tail=tail, REC_PAUSED_HINT=REC_PAUSED_HINT), "warn")
             return
         # 開頭不再放「●」:前面那顆紅色的色點就是它(2026-09-17 選案 D)
-        line = (f"錄音中({self._rec.get('scene')})・已錄 "
-                f"{pipeline.mmss(secs)}。{tail}\n{REC_CLAMSHELL}")
+        line = (t("錄音中({v} · {lang})・已錄 {v2}。{tail}\n{REC_CLAMSHELL}", v=SCENARIO_LABELS.get(self._rec.get('scene'), ''), lang=MEETING_LANG_NAMES.get(self._rec.get('language'), ''), v2=pipeline.mmss(secs), tail=tail, REC_CLAMSHELL=REC_CLAMSHELL))
         # ⚠️ **裝置中途沒聲音了也要講**(2026-09-25 使用者選案 C):藍牙耳機被
         # 收起來、別的視訊程式把麥克風搶走,症狀都是「檔案照長、內容全是零」,
         # 而那是散會才會發現的那一種。開錄前那一關擋不到這些。
@@ -6754,8 +6812,7 @@ class App(tk.Tk):
         # Label**,放了就只有它往右縮,而它出現的時機正是使用者盯著這一塊看的
         # 時候。要吸引注意的是那顆紅色色點,不是行首多一個字。
         if quiet >= record.SILENT_WARN_SEC:
-            line += (f"\n已經 {pipeline.mmss(quiet)} 沒有收到任何聲音"
-                     "——麥克風可能被拔掉、靜音,或被別的程式佔用了。")
+            line += (t("\n已經 {v} 沒有收到任何聲音——麥克風可能被拔掉、靜音,或被別的程式佔用了。", v=pipeline.mmss(quiet)))
         self._rec_say(line, "err")
 
     def _rec_silent_seconds(self) -> float:
@@ -6803,23 +6860,14 @@ class App(tk.Tk):
             #    兩顆鍵都不開始錄音——「開啟權限設定」只是順手帶他過去。
             logger.warning("開錄前擋下:沒有麥克風授權(%s)", perm.reason)
             if self._ask_close(
-                    f"{perm.reason},所以錄不到聲音。\n\n"
-                    f"試錄的 {record.SILENT_PROBE_SEC:g} 秒裡,一個有聲音的樣本"
-                    "都沒有。這種情況繼續錄下去**一定**是一整場靜音,而且中途"
-                    "完全看不出來。\n\n"
-                    "請在打開的設定頁裡把這個工具的麥克風打開,然後**把工具關掉"
-                    "再開一次**(權限是啟動時讀的,執行中改不會生效)。",
-                    ok_text="🔓 開啟權限設定", cancel_text="知道了"):
+                    t("{reason},所以錄不到聲音。\n\n試錄的 {SILENT_PROBE_SEC:g} 秒裡,一個有聲音的樣本都沒有。這種情況繼續錄下去**一定**是一整場靜音,而且中途完全看不出來。\n\n請在打開的設定頁裡把這個工具的麥克風打開,然後**把工具關掉再開一次**(權限是啟動時讀的,執行中改不會生效)。", reason=perm.reason, SILENT_PROBE_SEC=record.SILENT_PROBE_SEC),
+                    ok_text=t("🔓 開啟權限設定"), cancel_text=t("知道了")):
                 plat.open_microphone_settings()
             return False
 
         go = self._ask_close(
-            f"「{mic}」沒有送出任何聲音。\n\n"
-            f"試錄的 {record.SILENT_PROBE_SEC:g} 秒裡,一個有聲音的樣本都沒有。"
-            "藍牙耳機沒戴上、或麥克風被別的程式佔著時常常會這樣——"
-            "這種情況錄起來會是一整場靜音,而且中途看不出來。\n\n"
-            "請先到系統的聲音設定換一個輸入裝置,或戴上耳機再按一次。",
-            ok_text="仍要錄", cancel_text="知道了")
+            t("「{mic}」沒有送出任何聲音。\n\n試錄的 {SILENT_PROBE_SEC:g} 秒裡,一個有聲音的樣本都沒有。藍牙耳機沒戴上、或麥克風被別的程式佔著時常常會這樣——這種情況錄起來會是一整場靜音,而且中途看不出來。\n\n請先到系統的聲音設定換一個輸入裝置,或戴上耳機再按一次。", mic=mic, SILENT_PROBE_SEC=record.SILENT_PROBE_SEC),
+            ok_text=t("仍要錄"), cancel_text=t("知道了"))
         # ⚠️ **按了「仍要錄」一定要留一行**(2026-09-25 使用者指定):不留的話
         #    事後看記錄檔,一場靜音的錄音與正常的長得一模一樣——今天就是因為
         #    這樣才判不出守衛到底有沒有跳過。
@@ -6881,7 +6929,7 @@ class App(tk.Tk):
             return
         except Exception as e:
             logger.exception("開始錄音失敗")
-            self._rec_say(f"無法開始錄音:發生未預期的錯誤,{LOG_HINT}。",
+            self._rec_say(t("無法開始錄音:發生未預期的錯誤,{LOG_HINT}。", LOG_HINT=LOG_HINT),
                           "err")
             return
         # ⚠️ **增量轉錄起不來也要收乾淨再回報**:`LiveTranscriber` 一 `__init__` 就開
@@ -6892,8 +6940,9 @@ class App(tk.Tk):
         # ⚠️ **旗標要帶進去**:第二道閘門(`LiveDiarizer._why_not_active` 的「精準不
         # 放行」)住在這裡面,漏帶就是勾了開關、選了精準,錄音中的講者分析照舊整場
         # 被推到停止之後——而那正是使用者要量的那個組合(2026-09-28 選「兩道一起」)。
+        language = self._meeting_language()
         live = live_scribe.LiveTranscriber(model_key=model_key,
-                                          honor_choice=honor)
+                                          honor_choice=honor, language=language)
         try:
             for kind, path in recorder.track_files().items():
                 live.add_track(kind, path)
@@ -6905,12 +6954,12 @@ class App(tk.Tk):
                 recorder.stop()       # 收音已經開始了,不收就是一直錄下去
             except Exception:
                 logger.debug("收拾失敗的錄音時出錯", exc_info=True)
-            self._rec_say(f"無法開始錄音:發生未預期的錯誤,{LOG_HINT}。",
+            self._rec_say(t("無法開始錄音:發生未預期的錯誤,{LOG_HINT}。", LOG_HINT=LOG_HINT),
                           "err")
             return
         power.stay_awake_begin()      # ⚠️ 錄音中不得睡眠(收尾時解除)
         self._rec.update(recorder=recorder, live=live, dir=rec_dir, stem=stem,
-                         scene=scene_label)
+                         scene=scene_label, language=language)
         self._busy["rec"] = True
         # ⚠️ **錄音是唯一不經 `_run_lock` 的工作**,所以它的跑馬燈要自己點起來(清掉
         # 的那一側則共用:按下「停止錄音」會 `_run_lock(True)`,收尾結束時
@@ -6949,7 +6998,7 @@ class App(tk.Tk):
         self._rec_abort_armed = False
         self._action_refresh("rec")
         self.after(REC_FINISH_ARM_DELAY_MS, self._rec_finish_arm)
-        self._rec_say("正在停止收音…", "busy")
+        self._rec_say(t("正在停止收音…"), "busy")
         self.update_idletasks()      # `stop()` 會擋住主執行緒(補零/修剪),先把這句畫出來
         tracks = self._rec["recorder"].stop()
         # 逐字稿上的〔錄音在此暫停…〕靠它(`live.mark_pauses`);暫停中直接按停止的
@@ -6977,7 +7026,7 @@ class App(tk.Tk):
         def work(say) -> None:
             try:
                 if not tracks or max((t.duration for t in tracks), default=0.0) < 2.0:
-                    raise UserFacingError("錄音太短(不到 2 秒),沒有可轉的內容")
+                    raise UserFacingError(t("錄音太短(不到 2 秒),沒有可轉的內容"))
                 try:
                     finish(say)
                 except BaseException:
@@ -7023,8 +7072,7 @@ class App(tk.Tk):
             # 收尾不是一次跑完整條管線,`run_live_finish` 給的 device 是空字串——
             # 先前照抄檔案轉檔那句,畫面上就是「執行裝置:・」(2026-09-02 使用者
             # 截圖對照網頁版抓到的)。
-            preview = (f"(錄音檔已存於 output 資料夾:"
-                       f"{'、'.join(p.name for p in wavs)})\n\n{result.preview}")
+            preview = (t("(錄音檔已存於 output 資料夾:{v})\n\n{preview}", v=t("、").join(p.name for p in wavs), preview=result.preview))
             # ⚠️ **全靜音要單獨講,而且排在最前面**(2026-09-26):它與「沒聽到
             #    有人說話」是兩件事——前者是位元級的全零(去開權限),後者可能
             #    只是一場安靜的會議(確認有沒有人在講話)。兩句都出現時,先講
@@ -7079,15 +7127,15 @@ class App(tk.Tk):
         self._run_lock(False, flag)     # 這一支順手清 `_stopping` 並更新四顆鈕
         self._run_bar.configure(value=0)
         if error is None:
-            self._rec_say("收尾完成,逐字稿在下面。", "ok")
-            self._stage("完成。")
+            self._rec_say(t("收尾完成,逐字稿在下面。"), "ok")
+            self._stage(t("完成。"))
             self._run_open.configure(state="normal")
         elif isinstance(error, Cancelled):
             # ⚠️ **自己按的「中止收尾」不是出錯**(2026-09-15 補):先前這裡沒有這一支,
             # `Cancelled` 落到最後的兜底——畫面寫「收尾時出錯」、記錄檔多一段堆疊,而
             # 按下去那一刻 `_work_abort` 才剛講過錄音檔會留著。
             self._rec_say(REC_ABORTED + note, "warn")
-            self._stage("已依要求停止。")
+            self._stage(t("已依要求停止。"))
         elif isinstance(error, UserFacingError):
             # 自家的錯誤照原話講。「錄音太短」在保音軌之前就擋下,`note` 是空的
             self._rec_say(f"{error}。{note}", "err")
@@ -7129,7 +7177,7 @@ class App(tk.Tk):
         # 真的有分群檔時才 pack(第三種狀態,見 `_naming_show`)。
         rc = ttk.Frame(box, style="CardBody.TFrame")
         self._recluster_box = rc
-        ttk.Label(rc, text="改成幾位講者", style="Field.TLabel").pack(anchor="w")
+        ttk.Label(rc, text=t("改成幾位講者"), style="Field.TLabel").pack(anchor="w")
         self._wrap(ttk.Label(rc, text=RECLUSTER_HINT, style="Hint.TLabel",
                              justify="left")).pack(anchor="w", pady=(self.px(SP_XS), 0))
         row = ttk.Frame(rc, style="CardBody.TFrame")
@@ -7144,7 +7192,7 @@ class App(tk.Tk):
         self._recluster_n = tk.StringVar(value="2")
         ttk.Spinbox(row, textvariable=self._recluster_n, from_=2, to=MAX_SPEAKERS,
                     style="Tall.TSpinbox").grid(row=0, column=0, sticky="ew")
-        self._recluster_btn = HandButton(row, text="🔀 重新分群", style="Small.TButton",
+        self._recluster_btn = HandButton(row, text=t("🔀 重新分群"), style="Small.TButton",
                                          command=self._naming_recluster)
         self._recluster_btn.grid(row=0, column=1, sticky="ew", padx=(self.px(SP_MD), 0))
         tk.Frame(rc, bg=self.pal["line_off"], height=max(1, self.px(1))).pack(
@@ -7175,10 +7223,10 @@ class App(tk.Tk):
         self._naming_foot = foot
         foot.columnconfigure(0, weight=3, uniform="apply")
         foot.columnconfigure(1, weight=1, uniform="apply")
-        self._apply_btn = HandButton(foot, text="套用名字到逐字稿", style=skin.RUN_STYLE,
+        self._apply_btn = HandButton(foot, text=t("套用名字到逐字稿"), style=skin.RUN_STYLE,
                                      command=self._naming_apply)
         self._apply_btn.grid(row=0, column=0, sticky="ew", padx=(0, self.px(SP_SM)))
-        self._skip_btn = HandButton(foot, text="跳過命名", style=skin.SKIP_STYLE,
+        self._skip_btn = HandButton(foot, text=t("跳過命名"), style=skin.SKIP_STYLE,
                                     command=self._naming_skip)
         self._skip_btn.grid(row=0, column=1, sticky="ew")
         # ⚠️ **3:1 只是寬裕時的比例,「跳過命名」的字一定要放得下**(2026-09-24 使用者截圖:
@@ -7219,6 +7267,9 @@ class App(tk.Tk):
         錄了一段沒有人聲的電腦聲音踩到的):長一張空卡、寫「辨識到 0 位講者」再給一顆
         套用鈕,比什麼都不長更糟。那一段的話由呼叫端寫進預覽(`NO_SPEECH_NOTE`)。"""
         self._naming_stop()
+        # 這一份逐字稿是哪一套固定字串(會議語言):命名卡與核對視窗上的「講者 N」要跟 md 裡
+        # 寫的一字不差(英文會議是「Speaker N」),否則使用者對不回逐字稿、改掛也找不到那一行
+        self._naming_vocab = vocab.detect(getattr(result, "preview", "") or "")
         # ⚠️ **卡片的內容在這裡才建**(第一次而已,見 `_naming_ensure`):底下每一行都
         # 碰得到卡片裡的東西,所以要排在最前面——連「一位講者都沒有就收起來」那條
         # 提早 return 的路也在它後面(那條會叫 `_naming_hide`,而它自己擋得住沒建過)。
@@ -7290,7 +7341,7 @@ class App(tk.Tk):
             near = [] if mine else (nearest.get(spk) or [])
             choices, n_rivals = naming_core.rival_order(known, mine, near)
             self._naming_block(
-                spk, f"{export.speaker_label(spk)} 的名字",
+                spk, t("{v} 的名字", v=self._naming_vocab.speaker_label(spk)),
                 naming_core._hint_text(hints.get(spk), mine, near),
                 prefill.get(spk, ""), choices, n_rivals,
                 play=(clips is None or spk in clips),
@@ -7304,13 +7355,13 @@ class App(tk.Tk):
         if unknown is not None:
             if has_audit:
                 self._naming_block(
-                    UNKNOWN_SPEAKER, export.speaker_label(UNKNOWN_SPEAKER),
+                    UNKNOWN_SPEAKER, self._naming_vocab.speaker_label(UNKNOWN_SPEAKER),
                     naming_core._hint_text(unknown), None, [], 0,
                     play=False, audit_btn=True)
             else:
                 self._naming_block(
                     UNKNOWN_SPEAKER,
-                    f"「{export.speaker_label(UNKNOWN_SPEAKER)}」的名字",
+                    t("「{v}」的名字", v=self._naming_vocab.speaker_label(UNKNOWN_SPEAKER)),
                     f"{UNKNOWN_NO_ENROLL}・{naming_core._hint_text(unknown)}",
                     prefill.get(UNKNOWN_SPEAKER, ""), known, 0,
                     play=(clips is None or UNKNOWN_SPEAKER in clips), audit_btn=False)
@@ -7378,13 +7429,13 @@ class App(tk.Tk):
             col.grid(row=start, column=1, rowspan=r - start, sticky="ew",
                      padx=(self.px(SP_MD), 0), pady=(top, 0))
             if play:
-                btn = HandButton(col, text=f"{naming_core._ROW_PLAY} 試聽",
+                btn = HandButton(col, text=t("{ROW_PLAY} 試聽", ROW_PLAY=naming_core._ROW_PLAY),
                                  style="Small.TButton",
                                  command=lambda s=spk: self._naming_play(s))
                 btn.pack(fill="x")
                 self._naming_btns[spk] = btn
             if audit_btn:
-                btn = HandButton(col, text="🔍 核對", style="Small.TButton",
+                btn = HandButton(col, text=t("🔍 核對"), style="Small.TButton",
                                  command=lambda s=spk: self._audit_open(s))
                 btn.pack(fill="x", pady=(self.px(SP_XS) if play else 0, 0))
                 self._naming_audit_btns[spk] = btn
@@ -7518,7 +7569,7 @@ class App(tk.Tk):
         if not items:
             return
         self._hlrev, self._hlrev_mds = h, mds
-        ttk.Label(box, text="現場標記的重點", style="Field.TLabel").pack(anchor="w")
+        ttk.Label(box, text=t("現場標記的重點"), style="Field.TLabel").pack(anchor="w")
         self._wrap(ttk.Label(box, text=HLREV_HINT, style="Hint.TLabel",
                              justify="left")).pack(anchor="w", pady=(self.px(SP_XS), 0))
         for it in items:
@@ -7527,7 +7578,7 @@ class App(tk.Tk):
             row.columnconfigure(1, weight=1)
             ttk.Label(row, text=f"★ {pipeline.mmss(it.group[0])}",
                       style="Field.TLabel").grid(row=0, column=0, sticky="w")
-            said = f"{it.name}:{it.excerpt}" if it.name else "(沒有標到發言)"
+            said = f"{it.name}:{it.excerpt}" if it.name else t("(沒有標到發言)")
             ttk.Label(row, text=said, style="Hint.TLabel").grid(
                 row=0, column=1, sticky="w", padx=(self.px(SP_SM), 0))
             x = ttk.Label(row, text="✕", style="Hint.TLabel", cursor="hand2")
@@ -7549,14 +7600,14 @@ class App(tk.Tk):
         if h is None or (h.note_of(group) or "") == (highlights.clean(text) or ""):
             return
         h.set_note(text, group)
-        self._hlrev_commit("備註已寫進逐字稿。")
+        self._hlrev_commit(t("備註已寫進逐字稿。"))
 
     def _hlrev_remove(self, group: list[float]) -> None:
         """✕:刪掉一組(標到同一段的那幾下一起),備註一起刪;逐字稿上的〔重點〕跟著拿掉。"""
         if self._hlrev is None:
             return
         self._hlrev.remove_group(group)
-        self._hlrev_commit("已刪掉那個重點。")
+        self._hlrev_commit(t("已刪掉那個重點。"))
         if self._naming_result is not None:
             # 在 ✕ 自己的事件裡拆掉整區不安全,閒置時再重建
             self.after_idle(lambda: self._naming_result is not None
@@ -7572,7 +7623,7 @@ class App(tk.Tk):
                 highlights.save(highlights.sidecar_path(md), h)
         except OSError:
             logger.exception("重點寫不回逐字稿")
-            self._naming_say(f"重點沒有寫進逐字稿(檔案可能被別的程式開著),{LOG_HINT}。")
+            self._naming_say(t("重點沒有寫進逐字稿(檔案可能被別的程式開著),{LOG_HINT}。", LOG_HINT=LOG_HINT))
             return
         self._run_set_preview(highlights.rewrite_md(self._preview_md, h))
         self._naming_say(note)
@@ -7616,6 +7667,9 @@ class App(tk.Tk):
         self._run_set_path("")
         self._relabel_set_path("")
         self._run_speakers.set("0")
+        # 會議語言同一個理由回預設(使用者 2026-10-21 選「每場收工都回預設」):上一場的英文
+        # 留到下一場中文會議,就是整場用錯語言辨識
+        self._run_lang.set(self._meeting_language_default())
         self._stage("")
         if not self._busy["rec"]:
             self._rec_say(REC_IDLE, "wait")
@@ -7655,18 +7709,18 @@ class App(tk.Tk):
         md_path = next((Path(p) for p in result.outputs
                         if str(p).lower().endswith(".md")), None)
         if features is None or md_path is None:
-            self._naming_say("找不到這份逐字稿的分群檔,不能改人數。")
+            self._naming_say(t("找不到這份逐字稿的分群檔,不能改人數。"))
             return
         n = self._normalize_speakers(self._recluster_n.get())
         if n <= 1:
             # 0 是自動偵測——而自動判斷正是要改掉的那個結果;1 則是把整份逐字稿
             # 都掛到同一位名下,那不是「分講者」而是「取消分講者」
-            self._naming_say("請填 2 以上的講者人數。0 是自動偵測(那正是你要改掉的"
-                             "結果);1 等於把整份逐字稿都算成同一個人,不必經過重新分群。")
+            self._naming_say(t("請填 2 以上的講者人數。0 是自動偵測(那正是你要改掉的"
+                             "結果);1 等於把整份逐字稿都算成同一個人,不必經過重新分群。"))
             return
         try:
             md_text = relabel.read(md_path)
-            now = len([x for x in relabel.parse(md_text).order if x != "未知"])
+            now = len([x for x in relabel.parse(md_text).order if not vocab.is_unknown(x)])
             feat = diarize.load_features(features)
             turns, _vps, quality = diarize.recluster(feat, n)
         except UserFacingError as e:
@@ -7674,14 +7728,10 @@ class App(tk.Tk):
             return
         if relabel.count_after_recluster(md_text, turns) == now:
             if n == now:
-                self._naming_say(f"這份逐字稿現在就是 {now} 位講者,不必重新分群。"
-                                 "要改成別的位數再按一次。")
+                self._naming_say(t("這份逐字稿現在就是 {now} 位講者,不必重新分群。要改成別的位數再按一次。", now=now))
             else:
                 self._naming_say(
-                    f"填 {n} 位,在這份逐字稿上分出來還是 {now} 位——跟現在一樣,所以"
-                    "沒有重跑,已經填好的名字都還在。逐字稿的段落是當初那次分群切出來"
-                    "的,一個段落只能歸一位;多分出來的都是一兩秒的碎段,會被併回鄰近"
-                    "的講者。要再分出更多人只能重轉一次。")
+                    t("填 {n} 位,在這份逐字稿上分出來還是 {now} 位——跟現在一樣,所以沒有重跑,已經填好的名字都還在。逐字稿的段落是當初那次分群切出來的,一個段落只能歸一位;多分出來的都是一兩秒的碎段,會被併回鄰近的講者。要再分出更多人只能重轉一次。", n=n, now=now))
             return
         # 重點照新的分群重算(沒有重點檔就從 md 自己的標記推回來,見 `relabel.recluster_md`)
         side = highlights.sidecar_path(md_path)
@@ -7696,7 +7746,7 @@ class App(tk.Tk):
         # ⚠️ 同 `_relabel_start`:`_run_lock(True)` 把 `_run_dirs` 歸零成 `output`,而
         # 重設講者那份 md 在使用者自己的資料夾(轉檔來的那份在 output,結果一樣)
         self._run_dirs = [str(md_path.parent)]
-        self._stage(f"{md_path.name}:重新分群…")
+        self._stage(t("{name}:重新分群…", name=md_path.name))
         cores = self._run_cores.get()
         self._run_job(lambda say: self._relabel_work(md_path, say, cores),
                       self._relabel_done)
@@ -7723,9 +7773,9 @@ class App(tk.Tk):
         result, _src = self._naming_result
         src = self._naming_src
         if src is None:
-            self._naming_say("這一段沒有可以試聽的片段。")
+            self._naming_say(t("這一段沒有可以試聽的片段。"))
             return
-        self._naming_say("正在剪試聽片段…")
+        self._naming_say(t("正在剪試聽片段…"))
 
         def work(say) -> None:
             say(("clips",
@@ -7737,7 +7787,7 @@ class App(tk.Tk):
         if error is not None:
             logger.exception("試聽片段剪不出來", exc_info=error)
             self._naming_clips = {}
-            self._naming_say("這一段剪不出來,可以改看摘錄認人。")
+            self._naming_say(t("這一段剪不出來,可以改看摘錄認人。"))
             return
         self._naming_say("")
         self._naming_sound(spk)
@@ -7756,20 +7806,20 @@ class App(tk.Tk):
         那顆鈕的字提早改回去。"""
         path = (self._naming_clips or {}).get(spk)
         if not path:
-            self._naming_say("這一段沒有可以試聽的片段。")
+            self._naming_say(t("這一段沒有可以試聽的片段。"))
             return
         outcome, token = plat.play_sound(path)
         if not outcome.ok:
             logger.warning("試聽播不出來:%s", outcome.reason)
-            self._naming_say("這台電腦放不出聲音,可以改看摘錄認人。"
+            self._naming_say(t("這台電腦放不出聲音,可以改看摘錄認人。")
                              if outcome.state == "unsupported"
-                             else "這一段播不出來,可以改看摘錄認人。")
+                             else t("這一段播不出來,可以改看摘錄認人。"))
             return
         self._play_token = token
         self._playing = spk
         btn = self._naming_btns.get(spk)
         if btn is not None:
-            btn.configure(text="⏹ 停止")
+            btn.configure(text=t("⏹ 停止"))
         if isinstance(spk, tuple) and spk[0] == "audit":
             # 核對表的一列:播放中那一格換成 ■,而且**排程要照那一輪的長度**——先前這裡
             # 對核對列拿不到 hint 就退回 5 秒,40 秒的一輪放到第 5.3 秒就被 `_naming_stop`
@@ -7801,7 +7851,7 @@ class App(tk.Tk):
                   for b in payload.get("blocks", ())]
         mine = audit.blocks_of(blocks, spk)
         if not mine:
-            self._naming_say("這一位沒有可以核對的段落。")
+            self._naming_say(t("這一位沒有可以核對的段落。"))
             return
         src = (payload.get("sources") or {}).get(str(spk)) or payload.get("src") or ""
         try:
@@ -7870,13 +7920,13 @@ class App(tk.Tk):
         card = self._audit_body
         for child in card.winfo_children():
             child.destroy()
-        label = export.speaker_label(self._audit_spk)
-        title = f"核對「{label}」的 {len(self._audit_rows)} 輪發言"
+        label = self._naming_vocab.speaker_label(self._audit_spk)
+        title = t("核對「{label}」的 {v} 輪發言", label=label, v=len(self._audit_rows))
         win.title(title)
         head = ttk.Frame(card, style="CardBody.TFrame")
         head.pack(fill="x")
         ttk.Label(head, text=title, style="CardH.TLabel").pack(side="left")
-        HandButton(head, text="關閉", style="Small.TButton",
+        HandButton(head, text=t("關閉"), style="Small.TButton",
                    command=self._audit_close).pack(side="right")
         ttk.Label(card, text=AUDIT_HINT, style="Hint.TLabel", justify="left",
                   wraplength=self._audit_inner).pack(
@@ -7900,7 +7950,7 @@ class App(tk.Tk):
             # 時間走 `pipeline.mmss`:自己 `divmod(…, 60)` 的話一小時之後會寫成「75:12」
             tree.insert("", "end", iid=str(i), tags=("odd",) if i % 2 else (),
                         values=(AUDIT_UNPICKED, naming_core._ROW_PLAY,
-                                pipeline.mmss(row.start), f"{row.seconds:.0f} 秒", row.text))
+                                pipeline.mmss(row.start), t("{seconds:.0f} 秒", seconds=row.seconds), row.text))
             var = tk.BooleanVar(value=False)
             var.trace_add("write", lambda *_a, n=i: self._audit_paint_pick(n))
             self._audit_picks[i] = var
@@ -7918,7 +7968,7 @@ class App(tk.Tk):
         # ⚠️ 傳的是**照講者編號排**的名字清單(那支照位置對講者),「未知」那一格不在裡面。
         move = ttk.Frame(card, style="CardBody.TFrame")
         move.pack(fill="x", pady=(self.px(SP_MD), 0))
-        self._audit_move_label = ttk.Label(move, text="把勾選的改掛給", style="Hint.TLabel")
+        self._audit_move_label = ttk.Label(move, text=t("把勾選的改掛給"), style="Hint.TLabel")
         self._audit_move_label.pack(side="left")
         self._audit_to = tk.StringVar(value="")
         count = int(getattr(self._naming_result[0], "speakers", 0) or 0)
@@ -7936,7 +7986,7 @@ class App(tk.Tk):
         # 出自同一次計算(`reassign_order`),否則底色會落在別人身上。
         self._mark_rivals(to, n_head)
         self._audit_to_combo = to
-        HandButton(move, text="改掛", style=skin.CTA_STYLE,
+        HandButton(move, text=t("改掛"), style=skin.CTA_STYLE,
                    command=self._audit_reassign).pack(
                        side="left", padx=(self.px(SP_SM), 0))
         # 視窗自己的狀態行(勾都沒勾就按改掛、片段剪不出來):寫在命名卡底下的話,
@@ -7984,7 +8034,7 @@ class App(tk.Tk):
         n = sum(1 for v in self._audit_picks.values() if v.get())
         lab = getattr(self, "_audit_move_label", None)
         if lab is not None and lab.winfo_exists():
-            lab.configure(text=f"把勾選的 {n} 輪改掛給" if n else "把勾選的改掛給")
+            lab.configure(text=t("把勾選的 {n} 輪改掛給", n=n) if n else t("把勾選的改掛給"))
 
     def _audit_paint_play(self, playing: int | None) -> None:
         """播放中那一列的 ▶ 換成 ■(`None` = 全部換回 ▶);與試聽鈕的字同一個狀態機。"""
@@ -8026,12 +8076,12 @@ class App(tk.Tk):
         name = self._audit_to.get().strip()
         picked = [i for i, var in self._audit_picks.items() if var.get()]
         if not name or not picked:
-            self._audit_say("請先勾選要改掛的那幾輪,並選一個要改掛給誰。")
+            self._audit_say(t("請先勾選要改掛的那幾輪,並選一個要改掛給誰。"))
             return
         chosen = [self._audit_picked_blocks[i] for i in picked]
         # 加註用的是**顯示名稱**(「講者 3」／「未知」),不是內部編號:先前這裡傳的是
         # 0-based 的整數,出貨的 md 就寫著「「2」的 13 段已改掛給…」。
-        label = export.speaker_label(self._audit_spk)
+        label = self._naming_vocab.speaker_label(self._audit_spk)
         moved_total = 0
         for path in [Path(p) for p in (self._naming_result[0].outputs or ())]:
             if path.suffix.lower() != ".md":
@@ -8046,7 +8096,7 @@ class App(tk.Tk):
             # 改不到就要出聲:錨定的是 md 的講者行格式,改不到多半是格式對不上——
             # 那是工具的 bug,不是使用者的(同 `_naming_apply` 的同一條規矩)
             logger.warning("改掛沒有改到任何一行(%d 段、名字「%s」)", len(chosen), name)
-            self._naming_say("沒有改到任何一行,請把記錄檔提供給維護者。")
+            self._naming_say(t("沒有改到任何一行,請把記錄檔提供給維護者。"))
             self._audit_close()
             return
         done = set(int(i) for i in self._naming_audit.get("reassigned") or ())
@@ -8055,8 +8105,7 @@ class App(tk.Tk):
         preview, n = audit.reassign(self._preview_md, chosen, name)
         if n:
             self._run_set_preview(audit.note_reassigned(preview, [label], name, n))
-        self._naming_say(f"已把 {moved_total} 輪發言改掛給「{name}」。"
-                         "⚠ 這一位這次不會被登記進聲紋庫——你改掛過,表示這一群不只一個人。")
+        self._naming_say(t("已把 {moved_total} 輪發言改掛給「{name}」。⚠ 這一位這次不會被登記進聲紋庫——你改掛過,表示這一群不只一個人。", moved_total=moved_total, name=name))
         self._audit_close()
 
     def _audit_close(self) -> None:
@@ -8098,7 +8147,7 @@ class App(tk.Tk):
     def _audit_played(self, error) -> None:
         if error is not None:
             logger.exception("核對片段剪不出來", exc_info=error)
-            self._audit_say("這一段剪不出來。")
+            self._audit_say(t("這一段剪不出來。"))
 
     def _audit_sound(self, index: int, path: str) -> None:
         """核對那一列剪好了,放出來。⚠️ 與試聽共用同一組停止/切換的狀態。"""
@@ -8118,7 +8167,7 @@ class App(tk.Tk):
         self._play_token = None
         btn = self._naming_btns.get(self._playing)
         if btn is not None:
-            btn.configure(text=f"{naming_core._ROW_PLAY} 試聽")
+            btn.configure(text=t("{ROW_PLAY} 試聽", ROW_PLAY=naming_core._ROW_PLAY))
         if isinstance(self._playing, tuple):
             self._audit_paint_play(None)
         self._playing = None
@@ -8231,13 +8280,13 @@ class App(tk.Tk):
         # 文案是「填了名字就一定有聲紋」。謊報的代價不是文案不準——使用者會以為下次
         # 開會認得出這個人,於是不再回來補登記。
         total = len(picked) + (1 if unknown_name else 0)
-        note = f"已套用 {total} 個名字到 {changed} 份逐字稿。"
+        note = t("已套用 {total} 個名字到 {changed} 份逐字稿。", total=total, changed=changed)
         if enrolled:
-            note += f"其中 {enrolled} 位的聲紋也記起來了——下次開會會自動認出來。"
+            note += t("其中 {enrolled} 位的聲紋也記起來了——下次開會會自動認出來。", enrolled=enrolled)
         if held:
-            note += ("\n" + "、".join(held)
-                     + ":核對時改掛過段落(表示那一群不只一個人),這次不登記聲紋。")
-        note += "\n改好的逐字稿:" + "、".join(str(p) for p in mds)
+            note += "\n" + t("{names}:核對時改掛過段落(表示那一群不只一個人),這次不登記聲紋。",
+                              names=t("、").join(held))
+        note += "\n" + t("改好的逐字稿:{paths}", paths=t("、").join(str(p) for p in mds))
         self._naming_finish(note)
 
     def _run_paths(self) -> str:
@@ -8345,11 +8394,12 @@ class App(tk.Tk):
             return
         cancel.reset()
         self._run_lock(True)
-        self._stage(f"{src.name}:準備中…")
+        self._stage(t("{name}:準備中…", name=src.name))
         self._run_set_preview("")
         # ⚠️ 值要在主執行緒先讀好(同文件分頁那條:Tk 不是執行緒安全的)
         model_key = MODEL_LABELS[self._run_model.get()]
         speakers = self._normalize_speakers(self._run_speakers.get())
+        language = self._meeting_language()
         cores = self._run_cores.get()
 
         def work(say) -> None:
@@ -8358,11 +8408,12 @@ class App(tk.Tk):
             pipeline.apply_worker_count(cores)
             result = run_pipeline(
                 src, OUTPUT_DIR, model_key=model_key, num_speakers=speakers,
+                language=language,
                 on_stage=lambda stage, frac: say(
                     ("run_stage", (f"{src.name}:{stage}", frac))),
             )
             device = DEVICE_NAMES.get(result.device, result.device)
-            preview = f"(執行裝置:{device})\n\n{result.preview}"
+            preview = t("(執行裝置:{device})\n\n{preview}", device=device, preview=result.preview)
             # 有成品、卻連一位講者都沒有 = 整段沒聽到人說話。**一定要明講**(同網頁版
             # `_present_result`):命名卡這時不會出現,不講的話畫面上只有一份空稿子。
             if not pending.anyone_to_name(result.speakers, result.speaker_hints or {}):
@@ -8390,22 +8441,23 @@ class App(tk.Tk):
         try:
             files, skipped = docsrc.validate_batch(
                 text, recursive=recursive, types=srcfile.SUPPORTED_TYPES,
-                what="錄音或錄影檔", hint=srcfile.supported_hint(),
+                what=t("錄音或錄影檔"), hint=srcfile.supported_hint(),
             )
         except UserFacingError as e:
             self._run_set_preview(str(e))
             return
         cancel.reset()
         self._run_lock(True)
-        self._stage(f"{len(files)} 個檔案:準備中…")
+        self._stage(t("{v} 個檔案:準備中…", v=len(files)))
         # 先乾跑再動手(同文件分頁):批次一次動使用者資料夾裡數十個檔,開跑前讓人
         # 看得到「將寫出/將略過」比事後報告有用得多
         plan = docpipe.plan_outputs(files)
-        self._run_set_preview("即將轉換以下檔案(輸出會放在原始檔案旁邊):\n\n"
+        self._run_set_preview(t("即將轉換以下檔案(輸出會放在原始檔案旁邊):") + "\n\n"
                               + "\n".join(docpipe.dry_run_lines(plan)))
         # ⚠️ 值要在主執行緒先讀好(Tk 不是執行緒安全的)
         model_key = MODEL_LABELS[self._run_model.get()]
         speakers = self._normalize_speakers(self._run_speakers.get())
+        language = self._meeting_language()
         cores = self._run_cores.get()
 
         def work(say) -> None:
@@ -8415,7 +8467,8 @@ class App(tk.Tk):
             report = docpipe.convert_batch(
                 files, skipped,
                 on_stage=lambda stage, frac: say(("run_stage", (stage, frac))),
-                options={"model_key": model_key, "num_speakers": speakers},
+                options={"model_key": model_key, "num_speakers": speakers,
+                         "language": language},
             )
             say(("run_preview", docpipe.report_markdown(report)))
             say(("run_dirs", [str(d) for d in report.out_dirs]))
@@ -8444,13 +8497,13 @@ class App(tk.Tk):
         self._run_lock(False, flag)
         self._run_bar.configure(value=0)
         if error is None:
-            self._stage("完成。")
+            self._stage(t("完成。"))
             # 批次一個都沒轉出來(全部略過)就沒有資料夾可開;None 是單檔那條 = output
             self._run_open.configure(
                 state="disabled" if self._run_dirs == [] else "normal")
         elif isinstance(error, Cancelled):
             # 半成品已由 pipeline 自己清掉(批次那條:已完成的檔案留著,報告在預覽裡)
-            self._stage("已依要求停止,本檔案尚未轉完。")
+            self._stage(t("已依要求停止,本檔案尚未轉完。"))
         elif isinstance(error, UserFacingError):
             self._stage("")
             self._run_set_preview(str(error))
@@ -8458,8 +8511,7 @@ class App(tk.Tk):
             logger.exception("處理失敗", exc_info=error)
             self._stage("")
             self._run_set_preview(
-                f"發生未預期的錯誤,{LOG_HINT};"
-                "若為記憶體不足,請改選「快速」模型再試。")
+                t("發生未預期的錯誤,{LOG_HINT};若為記憶體不足,請改選「快速」模型再試。", LOG_HINT=LOG_HINT))
         # ⚠️ **閃工作列、但絕不把視窗搶到前景**(使用者 2026-09-05 選定,同
         # `MP4-2-SRT`):切走兩小時的人需要有人叫他一聲,而搶焦點會把他正在打的字吃掉。
         # `winui.flash_taskbar` 自己擋掉「視窗本來就在前景」那一種(人就坐在畫面前,
@@ -8515,7 +8567,7 @@ class App(tk.Tk):
         # ---- 左:檔案卡 ----
         src = ttk.Frame(inner, style="Card.TFrame", padding=self.px(CARD_PAD))
         src.pack(fill="x")
-        ttk.Label(src, text="要轉換的檔案或資料夾(一行一個)",
+        ttk.Label(src, text=t("要轉換的檔案或資料夾(一行一個)"),
                   style="CardH.TLabel").pack(anchor="w")
         wrap = ttk.Frame(src, style="Sunken.TFrame", padding=self.px(SP_XS))
         wrap.pack(fill="x", pady=(self.px(SP_SM), 0))
@@ -8538,11 +8590,11 @@ class App(tk.Tk):
         row = ttk.Frame(inner, style="Page.TFrame")
         row.pack(fill="x", pady=(gap, 0))
         self._doc_pick_btns = (
-            HandButton(row, text="選擇檔案…", style=skin.CTA_PAGE_STYLE,
+            HandButton(row, text=t("選擇檔案…"), style=skin.CTA_PAGE_STYLE,
                        command=self._doc_pick_files),
-            HandButton(row, text="選擇資料夾…", style=skin.CTA_PAGE_STYLE,
+            HandButton(row, text=t("選擇資料夾…"), style=skin.CTA_PAGE_STYLE,
                        command=self._doc_pick_folder),
-            HandButton(row, text="清空", style=skin.SMALL_PAGE_STYLE,
+            HandButton(row, text=t("清空"), style=skin.SMALL_PAGE_STYLE,
                        command=self._doc_clear),
         )
         for _btn in self._doc_pick_btns:        # 轉檔中一併鎖住(見 `_data_lock`)
@@ -8577,13 +8629,13 @@ class App(tk.Tk):
         # ⚠️ **三個預設都是開的**,而且每一個都要有說明:關掉的後果不對稱(OCR 關掉
         # 圖裡的字就整片不見),而使用者看不到那件事發生。
         for n, (key, label, note) in enumerate((
-            ("recursive", "包含子資料夾",
-             "選整個資料夾時,連裡面的子資料夾一起找;關掉只轉最上層那一層"),
-            ("ocr", "辨識圖片裡的文字(OCR)",
-             "掃描檔、照片,以及文件裡的內嵌圖都會辨識;關掉會快很多,但那些圖只會留下連結"),
-            ("mail", "郵件附件一併轉檔",
-             "Outlook 郵件(msg/eml)的附件會一起轉成 Markdown 並在信件本文連結;"
-             "關掉只轉信件本身"),
+            ("recursive", t("包含子資料夾"),
+             t("選整個資料夾時,連裡面的子資料夾一起找;關掉只轉最上層那一層")),
+            ("ocr", t("辨識圖片裡的文字(OCR)"),
+             t("掃描檔、照片,以及文件裡的內嵌圖都會辨識;關掉會快很多,但那些圖只會留下連結")),
+            ("mail", t("郵件附件一併轉檔"),
+             t("Outlook 郵件(msg/eml)的附件會一起轉成 Markdown 並在信件本文連結;"
+             "關掉只轉信件本身")),
         )):
             var = tk.BooleanVar(value=True)
             self._doc_opts[key] = var
@@ -8604,7 +8656,7 @@ class App(tk.Tk):
         run.pack(fill="both", expand=True)
         head = ttk.Frame(run, style="CardBody.TFrame")
         head.pack(fill="x")
-        ttk.Label(head, text="轉檔進度與結果", style="CardH.TLabel").pack(side="left")
+        ttk.Label(head, text=t("轉檔進度與結果"), style="CardH.TLabel").pack(side="left")
         # 網頁版的結果框右上角有一顆複製鈕(`buttons=["copy"]`):**只有圖示、沒有字**
         self._doc_copy_btn = self._copy_button(head, self._doc_copy_result)
         self._doc_copy_btn.pack(side="right")
@@ -8676,7 +8728,7 @@ class App(tk.Tk):
             normal, hover = self._copy_icon(self.pal["btn"]), self._copy_icon(self.pal["btn_hi"])
         except Exception:
             logger.debug("複製鈕的圖示畫不出來,退回文字鈕", exc_info=True)
-            return HandButton(parent, text="複製", style="Small.TButton", command=command)
+            return HandButton(parent, text=t("複製"), style="Small.TButton", command=command)
         lab = ttk.Label(parent, image=normal, style="Hint.TLabel", cursor="hand2")
         lab.bind("<Enter>", lambda _e: lab.configure(image=hover))
         lab.bind("<Leave>", lambda _e: lab.configure(image=normal))
@@ -8813,9 +8865,9 @@ class App(tk.Tk):
             return
         cancel.reset()
         self._doc_lock(True)
-        self._doc_say("準備中…")
+        self._doc_say(t("準備中…"))
         plan = docpipe.plan_outputs(files)
-        self._doc_set_result("即將轉換以下檔案(輸出會放在原始文件旁邊):\n\n"
+        self._doc_set_result(t("即將轉換以下檔案(輸出會放在原始文件旁邊):") + "\n\n"
                              + "\n".join(docpipe.dry_run_lines(plan)))
 
         # ⚠️ **選項要在主執行緒先讀好再進工作執行緒**:`BooleanVar.get()` 是一次 Tk
@@ -8851,16 +8903,16 @@ class App(tk.Tk):
         self._doc_lock(False, self._work_outcome(error))
         self._doc_bar.configure(value=0)
         if error is None:
-            self._doc_say("完成。")
+            self._doc_say(t("完成。"))
         elif isinstance(error, Cancelled):
-            self._doc_say("已停止。")
+            self._doc_say(t("已停止。"))
         elif isinstance(error, UserFacingError):
             self._doc_say("")
             self._doc_set_result(str(error))
         else:
             logger.exception("文件轉檔失敗(未預期)", exc_info=error)
             self._doc_say("")
-            self._doc_set_result(f"發生未預期的錯誤,{LOG_HINT}。")
+            self._doc_set_result(t("發生未預期的錯誤,{LOG_HINT}。", LOG_HINT=LOG_HINT))
         self._doc_open.configure(state="normal" if self._doc_dirs else "disabled")
         winui.flash_taskbar(self)       # 理由見 `_run_done` 最後那一行
 
@@ -8873,7 +8925,7 @@ class App(tk.Tk):
         「順手」合併。
         ⚠️ **原生版沒有「全部內容(可搜尋)」那一篇**(2026-09-03 使用者:網頁版有那一篇
         是因為它沒有別的搜尋辦法)——這裡整本是**一份連續的內容**,目錄只負責捲到那一章,
-        搜尋列搜的本來就是整本。詳見底下濾掉 `help_text.EVERYTHING` 那一段。"""
+        搜尋列搜的本來就是整本。詳見底下濾掉最後一篇那一段。"""
         page = ttk.Frame(self._body, style="Page.TFrame")
         card = ttk.Frame(page, style="Card.TFrame", padding=self.px(CARD_PAD))
         card.pack(fill="both", expand=True)
@@ -8892,9 +8944,10 @@ class App(tk.Tk):
         # 就是同一份內容出現兩次。網頁版仍然是一篇一篇的,那一篇留給它用。
         # 「本機目前會用」要問 GPU:背景偵測還沒跑完就先等它(見 `_probe_wait`)
         self._probe_wait()
-        pages = [page_ for page_ in help_text.help_pages(
-                     DEVICE_NAMES[transcribe.predicted_device()], MAX_SPEAKERS)
-                 if page_.label != help_text.EVERYTHING]
+        # 濾掉最後一篇「全部內容」:照**位置**,不比篇名(篇名跟著介面語言換,繁中的常數在
+        # 英文介面裡一篇都比不到,見 `help_text.help_pages`)
+        pages = help_text.help_pages(
+            DEVICE_NAMES[transcribe.predicted_device()], MAX_SPEAKERS)[:-1]
         # 灰槽:寬高都釘死、關掉傳播(同 segmented 那條規矩)。高度由**篇數**算,不量 widget
         # (`_wrap_width` 那條回授的規矩);槽的左右內距扣掉 `TOC_INSET`——那一圈畫在每一條
         # 的圖裡,加起來才是網頁版的 4。
@@ -8951,17 +9004,17 @@ class App(tk.Tk):
         find = ttk.Frame(card, style="CardBody.TFrame")
         find.grid(row=0, column=1, sticky="ew", pady=(0, self.px(SP_SM)))
         find.columnconfigure(1, weight=1)
-        ttk.Label(find, text="搜尋內文", style="Field.TLabel").grid(
+        ttk.Label(find, text=t("搜尋內文"), style="Field.TLabel").grid(
             row=0, column=0, padx=(0, self.px(SP_SM)))
         self._help_query = tk.StringVar()
         self._help_pos: int | None = None       # 目前跳到第幾筆(None = 還沒跳)
         entry = ttk.Entry(find, textvariable=self._help_query, style="Tall.TEntry")
         entry.grid(row=0, column=1, sticky="ew")
         self._help_entry = entry
-        HandButton(find, text="上一個", style="Small.TButton",
+        HandButton(find, text=t("上一個"), style="Small.TButton",
                    command=lambda: self._help_find(-1)).grid(
             row=0, column=2, padx=(self.px(SP_SM), 0))
-        HandButton(find, text="下一個", style="Small.TButton",
+        HandButton(find, text=t("下一個"), style="Small.TButton",
                    command=lambda: self._help_find(+1)).grid(
             row=0, column=3, padx=(self.px(SP_XS), 0))
         self._help_hits = ttk.Label(find, text="", style="Hint.TLabel")
@@ -9205,7 +9258,7 @@ class App(tk.Tk):
                 body.tag_add("find", idx, end)
                 idx = end
                 n += 1
-        self._help_hits.configure(text=("" if not query else f"共 {n} 筆" if n else "找不到"))
+        self._help_hits.configure(text=("" if not query else t("共 {n} 筆", n=n) if n else t("找不到")))
 
     def _help_find(self, step: int) -> None:
         """Enter／「下一個」:跳到下一筆(`step=-1` 上一筆),捲到看得見、標成深黃;到底就繞回。"""
@@ -9223,7 +9276,7 @@ class App(tk.Tk):
         body.tag_remove("find_now", "1.0", "end")
         body.tag_add("find_now", start, end)
         body.see(start)
-        self._help_hits.configure(text=f"第 {pos + 1} / {len(hits)} 筆")
+        self._help_hits.configure(text=t("第 {v} / {v2} 筆", v=pos + 1, v2=len(hits)))
 
     def _help_focus_find(self, _event=None) -> None:
         """Ctrl+F:只在說明頁上有作用,把游標送進搜尋框、全選,直接打字就取代。"""
@@ -9318,7 +9371,7 @@ class App(tk.Tk):
         foot.grid(row=2, column=1, sticky="ew", pady=(self.px(SP_SM), 0))
         foot.columnconfigure(3, weight=1)
         mine = update.current_version()
-        ttk.Label(foot, text=f"目前版本 v{mine}" if mine else "目前版本 不明",
+        ttk.Label(foot, text=t("目前版本 v{mine}", mine=mine) if mine else t("目前版本 不明"),
                   style="Field.TLabel").grid(row=0, column=0, padx=(0, self.px(SP_MD)))
         # ⚠️ **刻意不登記 `_lockable()`**(同「📂 記錄檔…」):檢查本身不碰任何工作;
         # 真的要換版時 `_update_go` 自己問 `_busy_reason`
@@ -9362,7 +9415,7 @@ class App(tk.Tk):
         if manual:
             self._update_status.set(
                 UPDATE_FAILED if error else
-                f"有新版 v{rel.version}" if rel else UPDATE_LATEST)
+                t("有新版 v{version}", version=rel.version) if rel else UPDATE_LATEST)
         if rel is None:
             return
         # ⚠️ 啟動那一趟碰上工作進行中就不打擾(那時多半是馬上開始錄音)
@@ -9407,9 +9460,9 @@ class App(tk.Tk):
         ⚠️ **不能直接換版的電腦(開發用的資料夾、沒簽章或不在「應用程式」裡的 Mac App)主按鈕
         改成「前往下載頁」**,不要假裝會自動更新。"""
         win, body = self._update_toplevel(UPDATE_TITLE)
-        ttk.Label(body, text=f"有新版本 v{rel.version}", style="CardH.TLabel").pack(anchor="w")
-        mine = update.current_version() or "不明"
-        ttk.Label(body, text=f"你目前用的是 v{mine}。新版的變更:",
+        ttk.Label(body, text=t("有新版本 v{version}", version=rel.version), style="CardH.TLabel").pack(anchor="w")
+        mine = update.current_version() or t("不明")
+        ttk.Label(body, text=t("你目前用的是 v{mine}。新版的變更:", mine=mine),
                   style="Status.TLabel").pack(anchor="w", pady=(self.px(SP_SM), self.px(SP_XS)))
         wrap = ttk.Frame(body, style="Sunken.TFrame", padding=self.px(SP_XS))
         wrap.pack(fill="x")
@@ -9483,7 +9536,7 @@ class App(tk.Tk):
     def _update_notes_text(notes: str) -> str:
         """更新說明在純文字框裡的樣子:清單記號換成「•」,條與條之間空一行(一條常是一整段)。"""
         if not notes:
-            return "(這一版沒有附上更新說明)"
+            return t("(這一版沒有附上更新說明)")
         items = [("• " + ln[2:]) if ln.startswith("- ") else ln
                  for ln in notes.split("\n") if ln.strip()]
         return "\n\n".join(items)
@@ -9496,31 +9549,31 @@ class App(tk.Tk):
         busy = self._busy_reason("update")
         if busy:
             self._update_status.set(busy)
-            self._update_notice(f"現在不能更新:{busy}", rel)
+            self._update_notice(t("現在不能更新:{busy}", busy=busy), rel)
             return
         if not rel.asset_url:
-            self._update_notice("這一版還沒附上這台電腦用的更新檔,請稍後再試或到下載頁看看。", rel)
+            self._update_notice(t("這一版還沒附上這台電腦用的更新檔,請稍後再試或到下載頁看看。"), rel)
             return
         denied = update.writable(repo_root())
         if denied:
             logger.info("無法自動更新:%s", denied)
-            self._update_notice(f"沒辦法自動更新:{denied}。" + self._update_manual(), rel)
+            self._update_notice(t("沒辦法自動更新:{why}。", why=denied) + self._update_manual(), rel)
             return
         import threading
 
-        win, body = self._update_toplevel("更新中")
-        ttk.Label(body, text=f"正在下載 v{rel.version}…", style="CardH.TLabel").pack(anchor="w")
+        win, body = self._update_toplevel(t("更新中"))
+        ttk.Label(body, text=t("正在下載 v{version}…", version=rel.version), style="CardH.TLabel").pack(anchor="w")
         bar = ttk.Progressbar(body, mode="determinate", maximum=100, length=self.px(420))
         bar.pack(fill="x", pady=(self.px(SP_MD), self.px(SP_XS)))
         amount = ttk.Label(body, text="", style="Hint.TLabel")
         amount.pack(anchor="w")
-        ttk.Label(body, text="下載完會關閉本程式、換上新版,再自動重新開啟(約一分鐘)。",
+        ttk.Label(body, text=t("下載完會關閉本程式、換上新版,再自動重新開啟(約一分鐘)。"),
                   style="Status.TLabel", wraplength=self.px(420), justify="left").pack(
             anchor="w", pady=(self.px(SP_MD), 0))
         row = ttk.Frame(body, style="CardBody.TFrame")
         row.pack(fill="x", pady=(self.px(SP_LG), 0))
         stop = threading.Event()
-        HandButton(row, text="取消", style="Small.TButton",
+        HandButton(row, text=t("取消"), style="Small.TButton",
                    command=stop.set).pack(side="right")
         win.protocol("WM_DELETE_WINDOW", stop.set)
         self._update_center(win)
@@ -9548,8 +9601,7 @@ class App(tk.Tk):
             total = out["total"] or 0
             if total:
                 bar["value"] = min(out["done"] * 100 / total, 100)
-                amount.configure(text=f"已下載 {out['done'] / 1048576:.0f} / "
-                                      f"{total / 1048576:.0f} MB")
+                amount.configure(text=t("已下載 {v:.0f} / {v2:.0f} MB", v=out['done'] / 1048576, v2=total / 1048576))
             if self._update_job.is_alive():
                 self.after(PROBE_POLL_MS, poll)
                 return
@@ -9560,10 +9612,10 @@ class App(tk.Tk):
                 # ⚠️ 驗包/驗簽沒過(`ValueError`,訊息是繁中)要照實講:那不是網路的問題,
                 # 叫人「確認網路再試」只會讓他白試幾次
                 err = out["error"]
-                why = (f"新版沒有通過檢查({err}),這次不更新,原本的版本不受影響。"
+                why = (t("新版沒有通過檢查({err}),這次不更新,原本的版本不受影響。", err=err)
                        if isinstance(err, ValueError) else
-                       "下載新版沒有成功,請確認網路連線後再試一次。")
-                self._update_notice(why + "仍然不行的話,可以到下載頁手動更新。", rel)
+                       t("下載新版沒有成功,請確認網路連線後再試一次。"))
+                self._update_notice(why + t("仍然不行的話,可以到下載頁手動更新。"), rel)
                 return
             self._update_handoff(rel, out["staged"])
 
@@ -9577,12 +9629,12 @@ class App(tk.Tk):
         ⚠️ **走一般的收尾(`_shutdown`)**:命名進度、子行程、工作列都照常收乾淨。"""
         busy = self._busy_reason("update")
         if busy:
-            self._update_notice(f"現在不能更新:{busy}", rel)
+            self._update_notice(t("現在不能更新:{busy}", busy=busy), rel)
             return
         outcome = plat.apply_update(staged, repo_root(), rel.version)
         if not outcome.ok:
             logger.warning("無法啟動換版小程式:%s", outcome.reason)
-            self._update_notice(f"沒辦法自動更新:{outcome.reason}。" + self._update_manual(), rel)
+            self._update_notice(t("沒辦法自動更新:{why}。", why=outcome.reason) + self._update_manual(), rel)
             return
         logger.info("換版小程式已啟動,關閉本程式以換上 v%s", rel.version)
         self._shutdown()
@@ -9595,7 +9647,7 @@ class App(tk.Tk):
                   justify="left").pack(anchor="w")
         row = ttk.Frame(body, style="CardBody.TFrame")
         row.pack(fill="x", pady=(self.px(SP_LG), 0))
-        close_btn = HandButton(row, text="關閉", style="Small.TButton", command=win.destroy)
+        close_btn = HandButton(row, text=t("關閉"), style="Small.TButton", command=win.destroy)
         close_btn.pack(side="right")
 
         def page() -> None:
@@ -9773,23 +9825,17 @@ class App(tk.Tk):
             # ⚠️ **講 output 不講 recordings**(2026-09-15):關閉時會先把音軌搬進 output
             # (`_close_salvage`),而 recordings 在 `%LOCALAPPDATA%` 底下,同仁找不到。
             if self._rec_t1:
-                return (f"錄音已經停止(共 {clock}),正在轉成逐字稿。\n\n"
-                        "現在關閉會中斷,這一趟的逐字稿不會產生。聲音檔會存進 output "
-                        "資料夾,之後要用「轉錄音檔」自己轉一次。\n\n"
-                        "確定要關閉嗎?")
+                return (t("錄音已經停止(共 {clock}),正在轉成逐字稿。\n\n現在關閉會中斷,這一趟的逐字稿不會產生。聲音檔會存進 output 資料夾,之後要用「轉錄音檔」自己轉一次。\n\n確定要關閉嗎?", clock=clock))
             rec = self._rec.get("recorder")
-            state = "錄音暫停中" if rec is not None and rec.paused else "還在錄音中"
-            return (f"{state}(已錄 {clock})。\n\n"
-                    "現在關閉會停止收音。已經錄到的聲音會存進 output 資料夾,"
-                    "但不會轉成逐字稿——之後要用「轉錄音檔」自己轉一次。\n\n"
-                    "確定要關閉嗎?")
+            state = t("錄音暫停中") if rec is not None and rec.paused else t("還在錄音中")
+            return (t("{state}(已錄 {clock})。\n\n現在關閉會停止收音。已經錄到的聲音會存進 output 資料夾,但不會轉成逐字稿——之後要用「轉錄音檔」自己轉一次。\n\n確定要關閉嗎?", state=state, clock=clock))
         if self._busy["run"] or self._busy["doc"]:
-            return ("還在轉檔中,現在關閉會中斷,已經跑掉的時間拿不回來。\n\n"
-                    "確定要關閉嗎?")
+            return (t("還在轉檔中,現在關閉會中斷,已經跑掉的時間拿不回來。\n\n"
+                    "確定要關閉嗎?"))
         return ""
 
-    def _ask_close(self, question: str, ok_text: str = "關閉",
-                   cancel_text: str = "取消") -> bool:
+    def _ask_close(self, question: str, ok_text: str = t("關閉"),
+                   cancel_text: str | None = t("取消")) -> bool:
         r"""關閉前的確認框。按「關閉」回 True,其餘一律 False。
 
         ⚠️ **自己畫一個,不用 `tkinter.messagebox`**:原生對話框的按鈕字走
@@ -9802,7 +9848,7 @@ class App(tk.Tk):
         ⚠️ **預設焦點在「取消」**:Enter 是最容易被順手按下去的鍵,而這個對話框問
         的是一件不能反悔的事。"""
         win = tk.Toplevel(self)
-        win.title(APP_TITLE)
+        win.title(WINDOW_TITLE)
         win.configure(background=self.pal["page"])
         win.resizable(False, False)
         win.transient(self)          # 跟著主視窗,不在工作列另外佔一格
@@ -9818,11 +9864,13 @@ class App(tk.Tk):
                   wraplength=self.px(360)).pack(anchor="w")
         row = ttk.Frame(body, style="CardBody.TFrame")
         row.pack(anchor="e", pady=(self.px(SP_LG), 0))
-        HandButton(row, text=ok_text, style=skin.CTA_STYLE,
-                   command=close_now).pack(side="left")
-        cancel_btn = HandButton(row, text=cancel_text, style="Small.TButton",
-                                command=win.destroy)
-        cancel_btn.pack(side="left", padx=(self.px(SP_SM), 0))
+        focus = HandButton(row, text=ok_text, style=skin.CTA_STYLE, command=close_now)
+        focus.pack(side="left")
+        # 只是告知(`cancel_text=None`,例如換介面語言)就只有一顆鈕,焦點放在它身上
+        if cancel_text is not None:
+            focus = HandButton(row, text=cancel_text, style="Small.TButton",
+                               command=win.destroy)
+            focus.pack(side="left", padx=(self.px(SP_SM), 0))
 
         # 對話框自己的 X 與 Esc 都當成「取消」——它們的意思是「我不要做這件事」
         win.protocol("WM_DELETE_WINDOW", win.destroy)
@@ -9831,7 +9879,7 @@ class App(tk.Tk):
         x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
         y = self.winfo_rooty() + (self.winfo_height() - win.winfo_height()) // 3
         win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
-        cancel_btn.focus_set()
+        focus.focus_set()
         win.grab_set()               # ⚠️ 沒有 grab 的話主視窗還點得動
         win.wait_window()
         return answer["go"]
@@ -9908,7 +9956,7 @@ class App(tk.Tk):
     def _show(self, key: str) -> None:
         self.tab = key
         for (k, _icon, _text), entry in zip(
-                [(t[0], t[1], t[2]) for t in TABS], self._nav.values()):
+                [(t[0], t[1], t[2]) for t in nav_tabs()], self._nav.values()):
             self._paint_tab(entry, _icon, 11, k == key,
                             "NavOn.TLabel", "Nav.TLabel")
         if key == "audio":

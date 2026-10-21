@@ -27,6 +27,8 @@ from pathlib import Path
 from meeting_scribe import diarize, export, highlights, srcfile
 from meeting_scribe.errors import UserFacingError
 from meeting_scribe.types import UNKNOWN_SPEAKER, SpokenSegment
+from meeting_scribe.i18n import t
+from meeting_scribe import vocab
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +148,8 @@ def parse(md_text: str) -> Transcript:
             order.append(name)
     if not blocks:
         raise UserFacingError(
-            "這份 md 裡找不到講者標籤,可能不是本工具產生的逐字稿"
-            "(講者行的格式是「**講者 1** (00:00:00)」)"
+            t("這份 md 裡找不到講者標籤,可能不是本工具產生的逐字稿"
+            "(講者行的格式是「**講者 1** (00:00:00)」)")
         )
     blocks[-1] = Block(
         blocks[-1].name, blocks[-1].start, " ".join(p for p in pending if p),
@@ -215,7 +217,7 @@ def count_after_recluster(md_text: str, turns: list) -> int:
     quality 傳空的。
     """
     return len([
-        n for n in parse(recluster_md(md_text, turns, [])).order if n != "未知"
+        n for n in parse(recluster_md(md_text, turns, [])).order if not vocab.is_unknown(n)
     ])
 
 
@@ -270,6 +272,8 @@ def recluster_md(md_text: str, turns: list, quality: list,
     就跟著換,所以〔重點〕與備註要照新的分群重算(`highlights.rewrite_md`)。⚠️ 跟
     〔身分存疑〕那兩個不同:重點講的是**這場會議**,不是上一次的分群,不能丟。"""
     t = parse(md_text)
+    # ⚠️ 新標籤照**這份 md 的**會議語言寫(英文逐字稿重新分群之後仍是「Speaker N」)
+    v = vocab.detect(md_text)
     labels = _labels_for_blocks(t, turns)
     # 依「在檔案裡第一次出現」重編號,讀者看到的順序才與編號一致
     order: dict[int, int] = {}
@@ -280,8 +284,7 @@ def recluster_md(md_text: str, turns: list, quality: list,
     def label_name(lab: int) -> str:
         # 顯示規則(含「未知」)全 repo 只有 export.speaker_label 一份,
         # 這裡只負責把新分群的標籤換算成顯示用的編號
-        return export.speaker_label(
-            UNKNOWN_SPEAKER if lab == UNKNOWN_SPEAKER else order[lab])
+        return v.speaker_label(UNKNOWN_SPEAKER if lab == UNKNOWN_SPEAKER else order[lab])
 
     bounds = _block_bounds(t)
     out: list[str] = []
@@ -315,7 +318,7 @@ def recluster_md(md_text: str, turns: list, quality: list,
     text = highlights.rewrite_md(
         text, marks if marks is not None else highlights.from_md(md_text))
     diag = export.speaker_diagnostics(
-        _renumber_quality(quality, order), spoken)
+        _renumber_quality(quality, order), spoken, v.language)
     return text + ("\n\n" + "\n".join(diag) if diag else "\n")
 
 
@@ -358,6 +361,8 @@ def rename(md_text: str, name_map: dict[str, str],
     (使用者講的話裡剛好出現某個名字是很正常的事)。"""
     rename_prose = export.diag_prose_renamer(name_map)
     auto = set(auto_named or ())
+    # 〔機器辨識〕與「名字來源」照**這份 md 的**會議語言寫(英文逐字稿是〔auto-named〕)
+    v = vocab.detect(md_text)
     out = []
     in_diagnostics = False
     for line in md_text.splitlines():
@@ -370,8 +375,8 @@ def rename(md_text: str, name_map: dict[str, str],
             # 〔身分存疑〕或〔多人交錯〕(轉檔當下標的),整段換掉就把它們弄丟了。
             # 順序照 export 那邊定的「名字來源 → 標籤可疑 → 這一輪交錯」
             marks = [x for x in (m.group("marks") or "").split(export.MARK_SEP) if x]
-            if old in auto and export.MARK_AUTO_NAME not in marks:
-                marks.insert(0, export.MARK_AUTO_NAME)
+            if old in auto and v.mark_auto_name not in marks:
+                marks.insert(0, v.mark_auto_name)
             out.append(export.speaker_line(
                 name_map[old],
                 int(m.group("h")) * 3600 + int(m.group("m")) * 60 + int(m.group("s")),
@@ -384,8 +389,8 @@ def rename(md_text: str, name_map: dict[str, str],
                 f"| {d.group('name')} |", f"| {name_map[d.group('name')]} |", 1)
             out.append(_set_name_source(
                 renamed,
-                export.NAME_SOURCE_AUTO if d.group("name") in auto
-                else export.NAME_SOURCE_CONFIRMED,
+                v.name_source_auto if d.group("name") in auto
+                else v.name_source_confirmed,
             ))
             continue
         out.append(rename_prose(line) if in_diagnostics else line)
@@ -414,31 +419,31 @@ def read(md_path: Path) -> str:
         return md_path.read_text(encoding="utf-8")
     except UnicodeDecodeError as e:
         raise UserFacingError(
-            f"「{md_path.name}」不是 UTF-8 文字檔,無法當成逐字稿讀取"
+            t("「{name}」不是 UTF-8 文字檔,無法當成逐字稿讀取", name=md_path.name)
         ) from e
     except OSError as e:
         logger.debug("讀取逐字稿失敗", exc_info=True)
-        raise UserFacingError(f"讀不到「{md_path.name}」:{e.strerror}") from e
+        raise UserFacingError(t("讀不到「{name}」:{strerror}", name=md_path.name, strerror=e.strerror)) from e
 
 
 def validate(text) -> Path:
     """「重設講者」的路徑把關:必須是存在的單一 `.md` 檔。"""
     cleaned = srcfile.clean_path(text)
     if not cleaned:
-        raise UserFacingError("請先按「選擇逐字稿…」挑一份 md,或貼上它的路徑")
+        raise UserFacingError(t("請先按「選擇逐字稿…」挑一份 md,或貼上它的路徑"))
     p = Path(cleaned)
     if p.is_dir():
-        raise UserFacingError(f"這是資料夾,請選擇單一逐字稿檔:{cleaned}")
+        raise UserFacingError(t("這是資料夾,請選擇單一逐字稿檔:{cleaned}", cleaned=cleaned))
     if not p.is_file():
-        raise UserFacingError(f"找不到檔案,請確認路徑是否正確:{cleaned}")
+        raise UserFacingError(t("找不到檔案,請確認路徑是否正確:{cleaned}", cleaned=cleaned))
     if p.suffix.lower() != ".md":
         raise UserFacingError(
-            f"「重設講者」只吃逐字稿 md 檔,這是「{p.suffix or '(無副檔名)'}」"
+            t("「重設講者」只吃逐字稿 md 檔,這是「{v}」", v=p.suffix or t("(無副檔名)"))
         )
     return p
 
 
-def pick_md(parent=None, initialdir=None, title="選擇要重設講者的逐字稿(.md)") -> str:
+def pick_md(parent=None, initialdir=None, title=t("選擇要重設講者的逐字稿(.md)")) -> str:
     """「選擇逐字稿…」:原生對話框,只挑一份 md。取消回空字串。
 
     ⚠️ **`parent` 要把主視窗交進來**:macOS 的原生面板貼著 parent 定位,
@@ -457,6 +462,6 @@ def pick_md(parent=None, initialdir=None, title="選擇要重設講者的逐字�
         extra["initialdir"] = str(initialdir)
     picked = srcfile.native_dialog(lambda fd, root: fd.askopenfilename(
         parent=root, title=title,
-        filetypes=[("逐字稿", "*.md"), ("所有檔案", "*.*")], **extra,
+        filetypes=[(t("逐字稿"), "*.md"), (t("所有檔案"), "*.*")], **extra,
     ), parent)
     return str(Path(picked)) if picked else ""

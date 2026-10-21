@@ -33,7 +33,8 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from meeting_scribe import brand, paths
+from meeting_scribe import brand, i18n, paths
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,9 @@ REPO = "VincentLiang1/scribe2md"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 #: 使用者手動更新時要去的頁面(Mac 版、或自動更新走不了的時候)
 DOWNLOAD_PAGE = f"https://github.com/{REPO}/releases/latest"
+#: Release 內文裡英文更新說明的小標(⚠️ 與 `scripts/release.py` 的 `EN_HEADING` 是同一個字,
+#: 測試釘著):`---` 之前,它前面是中文、後面是英文
+EN_HEADING = "### English"
 #: ⚠️ 與 `scripts/release.py` 的 `WIN_ASSET` 是同一個名字(測試釘著)
 WIN_ASSET = "scribe2md-win.zip"
 #: ⚠️ 與 `scripts/release.py` 的 `MAC_ASSET` 是同一個名字(測試釘著)
@@ -113,14 +117,18 @@ def is_dev_tree(root: Path | None = None) -> bool:
     return (root / ".git").exists()
 
 
-def notes_from_body(body: str | None) -> str:
+def notes_from_body(body: str | None, lang: str | None = None) -> str:
     r"""從 Release 內文取出「這一版改了什麼」。
 
     內文的形狀由 `release.build_notes` 決定:`## v1.2.0 更新內容`、空行、本次更新、
-    `---`、固定不變的產品介紹。只要前一半,標題也拿掉(對話框自己會寫版號);
-    `**粗體**` 的星號在 Tk 的純文字框裡只會是雜訊,一併拿掉。"""
+    (有英文時)`### English` 與英文的本次更新、`---`、固定不變的產品介紹。只要前一半,
+    標題也拿掉(對話框自己會寫版號);`**粗體**` 的星號在 Tk 的純文字框裡只會是雜訊,一併拿掉。
+    英文介面只列英文那段、其他介面只列中文那段(`lang` 不給就問介面語言);沒有英文那段的
+    舊 Release 一律列中文。"""
     text = (body or "").replace("\r\n", "\n")
     text = text.split("\n---\n", 1)[0]
+    zh, sep, en = text.partition(f"\n{EN_HEADING}\n")
+    text = en if sep and (lang or i18n.current()) == "en" else zh
     lines = [ln for ln in text.split("\n") if not ln.startswith("## ")]
     return "\n".join(lines).replace("**", "").strip()
 
@@ -147,10 +155,10 @@ def fetch_latest(timeout: float = CHECK_TIMEOUT_SEC, asset_name: str | None = No
 
     if asset_name is None:
         asset_name = plat.update_asset()
-    data = models.with_tls_rescue(lambda: _get_json(LATEST_API, timeout), "檢查新版")
+    data = models.with_tls_rescue(lambda: _get_json(LATEST_API, timeout), t("檢查新版"))
     tag = str(data.get("tag_name") or "")
     if parse_version(tag) is None:
-        raise ValueError(f"GitHub 回的版號認不得:{tag!r}")
+        raise ValueError(t("GitHub 回的版號認不得:{tag!r}", tag=tag))
     asset = next((a for a in data.get("assets") or []
                   if asset_name and a.get("name") == asset_name), None)
     digest = (asset or {}).get("digest") or ""
@@ -206,7 +214,7 @@ def writable(root: Path) -> str | None:
             probe.write_bytes(b"")
             probe.unlink()
         except OSError:
-            return f"工具資料夾沒有寫入權限({d})"
+            return t("工具資料夾沒有寫入權限({d})", d=d)
     return None
 
 
@@ -220,7 +228,7 @@ def download(rel: Release, dest: Path, progress=None,
     from meeting_scribe import models
 
     if not rel.asset_url:
-        raise ValueError("這一版沒有附這台電腦用的壓縮包")
+        raise ValueError(t("這一版沒有附這台電腦用的壓縮包"))
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
 
@@ -247,12 +255,12 @@ def download(rel: Release, dest: Path, progress=None,
                     except Exception:  # noqa: BLE001 - 進度是 best-effort
                         logger.debug("更新下載的進度回報失敗", exc_info=True)
         if rel.asset_size and done != rel.asset_size:
-            raise ValueError(f"下載不完整({done} / {rel.asset_size} 位元組)")
+            raise ValueError(t("下載不完整({done} / {asset_size} 位元組)", done=done, asset_size=rel.asset_size))
         if rel.asset_sha256 and sha.hexdigest() != rel.asset_sha256:
-            raise ValueError("下載的檔案摘要對不上,可能在傳輸中損毀")
+            raise ValueError(t("下載的檔案摘要對不上,可能在傳輸中損毀"))
 
     try:
-        models.with_tls_rescue(fetch, "新版程式")
+        models.with_tls_rescue(fetch, t("新版程式"))
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
@@ -270,23 +278,23 @@ def verify_zip(path: Path, version: str) -> None:
     with zipfile.ZipFile(path) as z:
         bad = z.testzip()
         if bad is not None:
-            raise ValueError(f"壓縮包損毀({bad})")
+            raise ValueError(t("壓縮包損毀({bad})", bad=bad))
         names = z.namelist()
         prefix = TOP + "/"
         for n in names:
             parts = n.split("/")
             if (not n.startswith(prefix) or ".." in parts or ":" in n
                     or n.startswith("/") or "\\" in n):
-                raise ValueError(f"壓縮包裡有不該出現的路徑:{n}")
+                raise ValueError(t("壓縮包裡有不該出現的路徑:{n}", n=n))
             if len(parts) > 2 and parts[1] in NEVER_TOUCH:
-                raise ValueError(f"壓縮包裡帶著 {parts[1]} 資料夾,拒絕安裝")
+                raise ValueError(t("壓縮包裡帶著 {v} 資料夾,拒絕安裝", v=parts[1]))
         for need in ("pyproject.toml", "VERSION", "src/meeting_scribe/desktop.py"):
             if prefix + need not in names:
-                raise ValueError(f"壓縮包裡少了 {need}")
+                raise ValueError(t("壓縮包裡少了 {need}", need=need))
         pyproject = z.read(prefix + "pyproject.toml").decode("utf-8")
     got = _pyproject_version(pyproject)
     if parse_version(got or "") != parse_version(version):
-        raise ValueError(f"壓縮包裡的版號是 {got},不是 {version}")
+        raise ValueError(t("壓縮包裡的版號是 {got},不是 {version}", got=got, version=version))
 
 
 def _zip_name(info: zipfile.ZipInfo) -> str:
@@ -313,7 +321,7 @@ def verify_mac_zip(path: Path, version: str) -> None:
     with zipfile.ZipFile(path) as z:
         bad = z.testzip()
         if bad is not None:
-            raise ValueError(f"壓縮包損毀({bad})")
+            raise ValueError(t("壓縮包損毀({bad})", bad=bad))
         infos = {_zip_name(i): i for i in z.infolist()}
         prefix = MAC_APP + "/"
         payload = MAC_PAYLOAD + "/"
@@ -321,21 +329,21 @@ def verify_mac_zip(path: Path, version: str) -> None:
             outside = (not n.startswith(prefix) or n.startswith("/")
                        or "\\" in n or ":" in n)
             if outside or ".." in n.split("/"):
-                raise ValueError(f"壓縮包裡有不該出現的路徑:{n}")
+                raise ValueError(t("壓縮包裡有不該出現的路徑:{n}", n=n))
             if n.startswith(payload):
                 inner = n[len(payload):].split("/")
                 if len(inner) > 1 and inner[0] in NEVER_TOUCH:
-                    raise ValueError(f"壓縮包裡帶著 {inner[0]} 資料夾,拒絕安裝")
+                    raise ValueError(t("壓縮包裡帶著 {v} 資料夾,拒絕安裝", v=inner[0]))
         for need in ("Contents/Info.plist", "Contents/MacOS/"):
             if not any(n.startswith(prefix + need) for n in infos):
-                raise ValueError(f"壓縮包裡少了 {need}")
+                raise ValueError(t("壓縮包裡少了 {need}", need=need))
         for need in ("pyproject.toml", "VERSION", "src/meeting_scribe/desktop.py"):
             if payload + need not in infos:
-                raise ValueError(f"壓縮包裡少了 {need}")
+                raise ValueError(t("壓縮包裡少了 {need}", need=need))
         pyproject = z.read(infos[payload + "pyproject.toml"]).decode("utf-8")
     got = _pyproject_version(pyproject)
     if got is None or parse_version(got) != parse_version(version):
-        raise ValueError(f"壓縮包裡的版號是 {got},不是 {version}")
+        raise ValueError(t("壓縮包裡的版號是 {got},不是 {version}", got=got, version=version))
 
 
 def _pyproject_version(text: str) -> str | None:

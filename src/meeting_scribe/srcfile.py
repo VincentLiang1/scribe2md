@@ -17,6 +17,7 @@ import threading
 from pathlib import Path
 
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 # 支援的來源格式(單一出處):副檔名白名單、選檔對話框的篩選器、
 # 錯誤訊息裡給使用者看的清單都由此推導——手寫第二份必定漏改
@@ -81,16 +82,15 @@ def validate(text) -> Path:
     """
     cleaned = clean_path(text)
     if not cleaned:
-        raise UserFacingError("請先按「選擇檔案…」挑選檔案,或貼上檔案路徑")
+        raise UserFacingError(t("請先按「選擇檔案…」挑選檔案,或貼上檔案路徑"))
     p = Path(cleaned)
     if p.is_dir():
-        raise UserFacingError(f"這是資料夾,請選擇單一檔案:{cleaned}")
+        raise UserFacingError(t("這是資料夾,請選擇單一檔案:{cleaned}", cleaned=cleaned))
     if not p.is_file():
-        raise UserFacingError(f"找不到檔案,請確認路徑是否正確:{cleaned}")
+        raise UserFacingError(t("找不到檔案,請確認路徑是否正確:{cleaned}", cleaned=cleaned))
     if p.suffix.lower() not in SUPPORTED_TYPES:
         raise UserFacingError(
-            f"不支援的檔案格式「{p.suffix or '(無副檔名)'}」,"
-            f"支援:{supported_hint()}"
+            t("不支援的檔案格式「{v}」,支援:{v2}", v=p.suffix or t("(無副檔名)"), v2=supported_hint())
         )
     return p
 
@@ -162,10 +162,10 @@ def pick_files(parent=None) -> str:
     見 looks_like_batch)。回傳一行一個路徑;**取消回空字串**——保不保留
     現值是呼叫端的決策,不該埋在對話框函式裡。"""
     picked = native_dialog(lambda fd, root: fd.askopenfilenames(
-        parent=root, title="選擇會議錄音或錄影檔(可多選)",
+        parent=root, title=t("選擇會議錄音或錄影檔(可多選)"),
         filetypes=[
-            ("會議錄音/錄影", " ".join("*" + ext for ext in SUPPORTED_TYPES)),
-            ("所有檔案", "*.*"),
+            (t("會議錄音/錄影"), " ".join("*" + ext for ext in SUPPORTED_TYPES)),
+            (t("所有檔案"), "*.*"),
         ],
     ), parent)
     if not picked:
@@ -178,6 +178,6 @@ def pick_folder(parent=None) -> str:
     """「選擇資料夾…」:整個資料夾的錄音一次轉完(= 批次模式)。
     取消回空字串(同 pick_files)。"""
     picked = native_dialog(lambda fd, root: fd.askdirectory(
-        parent=root, title="選擇要轉逐字稿的資料夾",
+        parent=root, title=t("選擇要轉逐字稿的資料夾"),
     ), parent)
     return str(Path(picked)) if picked else ""

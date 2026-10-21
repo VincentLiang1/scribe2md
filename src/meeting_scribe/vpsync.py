@@ -36,6 +36,7 @@ from pathlib import Path
 import numpy as np
 
 from meeting_scribe import paths, plat, settings
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +128,8 @@ def _label(head) -> str:
 
 def _reject_reason(head) -> str:
     if head.get("model") != MODEL_ID or head.get("dim") != DIM:
-        return "用的是別的聲紋模型"
-    return "紀錄格式的版本不認得"
+        return t("用的是別的聲紋模型")
+    return t("紀錄格式的版本不認得")
 
 
 def materialize(texts) -> Library:
@@ -303,29 +304,29 @@ def check_folder(path) -> str | None:
     try:
         p = Path(path).expanduser().resolve()
     except (OSError, RuntimeError, TypeError, ValueError):
-        return "這個路徑讀不懂,請重新選一次。"
+        return t("這個路徑讀不懂,請重新選一次。")
     if not p.is_dir():
-        return f"找不到這個資料夾:{p}"
+        return t("找不到這個資料夾:{p}", p=p)
     if any(part.casefold() == SEND_FOLDER_NAME for part in p.parts):
-        return ("不能選送出資料夾(_WikiBox)或它底下的資料夾:那裡的檔會被送進知識庫,"
-                "聲紋與真名就跟著進去了。請在 OneDrive 另開一個資料夾。")
+        return (t("不能選送出資料夾(_WikiBox)或它底下的資料夾:那裡的檔會被送進知識庫,"
+                "聲紋與真名就跟著進去了。請在 OneDrive 另開一個資料夾。"))
     try:
         if (p / "_WikiBox").exists() or any(
                 c.is_dir() and c.name.casefold() == SEND_FOLDER_NAME for c in p.iterdir()):
-            return ("這個資料夾裡面就是送出資料夾(_WikiBox),兩者不能互相包含。"
-                    "請在 OneDrive 另開一個專用的資料夾。")
+            return (t("這個資料夾裡面就是送出資料夾(_WikiBox),兩者不能互相包含。"
+                    "請在 OneDrive 另開一個專用的資料夾。"))
     except OSError:
         pass
     for up in (p, *p.parents):
         if (up / ".git").exists():
-            return ("這個資料夾在程式碼的版本控管(git)底下,紀錄會被一起提交出去。"
-                    "請改選 OneDrive 裡的資料夾。")
+            return (t("這個資料夾在程式碼的版本控管(git)底下,紀錄會被一起提交出去。"
+                    "請改選 OneDrive 裡的資料夾。"))
     probe = p / f".write-test-{uuid.uuid4().hex}"
     try:
         probe.write_text("", encoding="utf-8")
         probe.unlink()
     except OSError:
-        return f"這個資料夾寫不進去:{p}"
+        return t("這個資料夾寫不進去:{p}", p=p)
     return None
 
 
@@ -518,7 +519,7 @@ def enable(path, names, vecs, attendees) -> tuple[str | None, int]:
         before = settings.get(KEY_FOLDER)
         settings.set(KEY_FOLDER, str(Path(path).expanduser().resolve()))
         if folder() is None:
-            return "設定寫不進去,同步沒有啟用(詳見記錄檔)。", 0
+            return t("設定寫不進去,同步沒有啟用(詳見記錄檔)。"), 0
         _forget()
         # ⚠️ 失敗的每一條路都要把設定還原:回一句「沒有啟用」而設定還留著的話,畫面說沒啟用、
         # 程式卻已經改讀那個資料夾
@@ -527,14 +528,14 @@ def enable(path, names, vecs, attendees) -> tuple[str | None, int]:
             if lib is None:
                 settings.set(KEY_FOLDER, before)
                 _forget()
-                return "同步資料夾讀不到,同步沒有啟用(詳見記錄檔)。", 0
+                return t("同步資料夾讀不到,同步沒有啟用(詳見記錄檔)。"), 0
             events = bootstrap_events(lib, names, vecs, attendees)
             append(events)
         except OSError:
             settings.set(KEY_FOLDER, before)
             _forget()
             logger.exception("聲紋同步:起家時寫不進這台的紀錄,同步沒有啟用")
-            return "這台的同步紀錄寫不進去,同步沒有啟用(詳見記錄檔)。", 0
+            return t("這台的同步紀錄寫不進去,同步沒有啟用(詳見記錄檔)。"), 0
         return None, len(events)
 
 
@@ -557,21 +558,22 @@ def status_text() -> str:
     """畫面上那幾行:上次同步(每一台最後一筆的時間)、整份沒收的那幾台。"""
     d = folder()
     if d is None:
-        return ("還沒啟用。選一個 OneDrive 裡的資料夾,手機、Windows、Mac 就會共用同一份"
-                "聲紋庫與與會名單。")
+        return (t("還沒啟用。選一個 OneDrive 裡的資料夾,手機、Windows、Mac 就會共用同一份"
+                "聲紋庫與與會名單。"))
     if not d.is_dir():
-        return f"⚠ 找不到同步資料夾({d});先用這台上次的聲紋庫,資料夾回來之後會自動補上。"
+        return t("⚠ 找不到同步資料夾({d});先用這台上次的聲紋庫,資料夾回來之後會自動補上。", d=d)
     lib = library()
     if lib is None:
-        return "⚠ 同步資料夾讀不出來,先用這台上次的聲紋庫(詳見記錄檔)。"
+        return t("⚠ 同步資料夾讀不出來,先用這台上次的聲紋庫(詳見記錄檔)。")
     mine = device_id()
     others = [(label, _local_time(at)) for label, dev, at in lib.devices
               if dev != mine and at]
     lines = []
     if others:
-        lines.append("上次同步:" + "、".join(f"{label} {t}" for label, t in others))
+        lines.append(t("上次同步:{devices}",
+                       devices=t("、").join(f"{label} {when}" for label, when in others)))
     else:
-        lines.append("同步資料夾裡還沒有其他裝置的紀錄。")
+        lines.append(t("同步資料夾裡還沒有其他裝置的紀錄。"))
     for label, why in lib.rejected:
-        lines.append(f"⚠ 「{label}」的紀錄{why},那一份整份沒收(避免認錯人)。")
+        lines.append(t("⚠ 「{label}」的紀錄{why},那一份整份沒收(避免認錯人)。", label=label, why=why))
     return "\n".join(lines)

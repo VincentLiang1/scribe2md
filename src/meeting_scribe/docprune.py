@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from meeting_scribe import docmd
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -213,21 +214,17 @@ def summary_lines(
     包括「沒有東西要清」——那正是他跑乾跑想確認的事。"""
     if not report.count and not dry_run:
         return [] if not report.failed else [
-            f"有 {report.failed} 個過期的快取刪不掉(檔案可能正被其他程式開著)。"
+            t("有 {n} 個過期的快取刪不掉(檔案可能正被其他程式開著)。", n=report.failed)
         ]
     if dry_run:
         if not report.count:
-            return [f"快取裡沒有超過 {days} 天的舊產出,這次不會清任何東西。"]
-        lines = [
-            f"會清掉 {report.count} 個超過 {days} 天的舊快取"
-            f"(約 {_mb(report.freed)}):"
-        ]
+            return [t("快取裡沒有超過 {days} 天的舊產出,這次不會清任何東西。", days=days)]
+        lines = [t("會清掉 {n} 個超過 {days} 天的舊快取(約 {size}):",
+                   n=report.count, days=days, size=_mb(report.freed))]
         lines += [f"  {p.name}" for p in report.md + report.assets]
         return lines
-    line = (
-        f"已清掉 {report.count} 個超過 {days} 天的舊快取,"
-        f"釋出約 {_mb(report.freed)}。"
-    )
+    line = t("已清掉 {n} 個超過 {days} 天的舊快取,釋出約 {size}。",
+             n=report.count, days=days, size=_mb(report.freed))
     if report.failed:
-        line += f"另有 {report.failed} 個刪不掉(檔案可能正被其他程式開著)。"
+        line += t("另有 {n} 個刪不掉(檔案可能正被其他程式開著)。", n=report.failed)
     return [line]

@@ -8,7 +8,7 @@ r"""會議紀錄草稿的語言模型子行程(Qwen3.5;父端是 `minutes_ov`)�
 指令:
   啟動:-m meeting_scribe.minutes_worker <模型資料夾> <CPU|GPU|MLX>
       → {"ready":true,"load_sec":5.5}   或 {"ready":false,"error":"…"}
-  {"kind":"llm-notes"|"llm-ask","instructions":"…","prompt":"…"}
+  {"kind":"llm-notes"|"llm-ask","instructions":"…","prompt":"…","language":"zh_TW"|"zh_CN"|"en"}
       → {"ok":true,"points":[…],"todo":{…}|null}   /   {"ok":true,"text":"…"}
       → {"ok":false,"error":"decodingFailure"|"other","detail":"…"}
   EOF → 退出
@@ -22,7 +22,7 @@ import re
 import sys
 import time
 
-from meeting_scribe import plat, stdio
+from meeting_scribe import draftvocab, plat, stdio
 
 # 跟 apple_asr.swift 的 `ChunkNotes` / `Todo` 同一個形狀;JSON schema 由 OpenVINO 的
 # 結構化輸出硬性約束(2026-10-11 實測:明講「不要用 JSON」照樣只吐 JSON)
@@ -39,13 +39,13 @@ NOTES_SCHEMA = {
     },
     "required": ["points", "todo"],
 }
-# 同 apple_asr.swift 那幾個 @Guide 的字
-NOTES_FORMAT = (
-    "\n\n只回一個 JSON 物件,欄位:\n"
-    "- points:這一段討論的重點,每點一句,最多 4 點\n"
-    "- todo:這一段最明確的一件交辦或有人承諾要做的事;沒有就填 null,不要湊數。"
-    "有的話是 {\"task\": 要做的事,一句話, \"quote\": 逐字稿裡作為依據的那一句,一字不改照抄,10 到 40 字}"
-)
+# 同 apple_asr.swift 那幾個 @Guide 的字;跟著會議語言換(`draftvocab.notes_format`),這個名字是繁中那份
+NOTES_FORMAT = draftvocab.ZH_TW.notes_format
+
+
+def _notes_format(msg: dict) -> str:
+    """`llm-notes` 接在說明後面的那段欄位說明,照指令帶來的會議語言(沒帶就是繁中:舊的父端)。"""
+    return draftvocab.of(msg.get("language") or "").notes_format
 MAX_NEW_TOKENS = 700
 REPETITION_PENALTY = 1.05
 # Qwen3 系列預設會先「想」;關掉的模板會留一對空的 think 標籤,保險起見再剝一次
@@ -97,7 +97,7 @@ def answer(pipe, tok, g, msg: dict) -> dict:
     cfg.apply_chat_template = False   # 模板上面自己套了(要關掉 thinking)
     if notes:
         cfg.structured_output_config = g.StructuredOutputConfig(json_schema=json.dumps(NOTES_SCHEMA))
-    text = _prompt(tok, msg["instructions"] + (NOTES_FORMAT if notes else ""), msg["prompt"])
+    text = _prompt(tok, msg["instructions"] + (_notes_format(msg) if notes else ""), msg["prompt"])
     out = _THINK.sub("", pipe.generate(text, images=[], generation_config=cfg).texts[0]).strip()
     if not notes:
         return {"ok": True, "text": out}
@@ -112,7 +112,7 @@ def answer_mlx(model, tok, mlx_lm, msg: dict) -> dict:
     notes = msg["kind"] == "llm-notes"
     # ⚠️ 不能共用 `_prompt`:那是 OpenVINO tokenizer 的參數形狀(`extra_context`),
     # HF 的模板參數直接當關鍵字傳——傳錯不會報錯,只會讓 Qwen 先「想」一大段再回答
-    msgs = [{"role": "system", "content": msg["instructions"] + (NOTES_FORMAT if notes else "")},
+    msgs = [{"role": "system", "content": msg["instructions"] + (_notes_format(msg) if notes else "")},
             {"role": "user", "content": msg["prompt"]}]
     text = tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False,
                                    enable_thinking=False)

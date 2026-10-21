@@ -14,10 +14,18 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from meeting_scribe import loopdetect
-from meeting_scribe.types import (NAME_SOURCE_AUTO, NAME_SOURCE_CONFIRMED,
-                                  NAME_SOURCE_NONE, UNKNOWN_SPEAKER,
-                                  SpeechBlock, SpokenSegment)
+from meeting_scribe import vocab
+from meeting_scribe.types import UNKNOWN_SPEAKER, SpeechBlock, SpokenSegment
+
+# ⚠️ **逐字稿裡的字跟著會議語言**(2026-10-21,`vocab.py`):下面這些常數是**繁中那一套的別名**,
+# 留著給「只寫繁中」的舊呼叫端;**寫**的時候一律照會議語言取 `vocab.of(language)`,**讀**的時候一律
+# 三套都認(`vocab.ALL`、`starts_diagnostics`、`is_pause_line`……)——拿這幾個常數去比對讀進來的
+# md,英文與簡中的逐字稿就會安靜地對不上。
+_TW = vocab.ZH_TW
+# 診斷表「名字來源」那一欄的三個值(`relabel.rename` 套用名字時改它)。繁中別名,理由同上
+NAME_SOURCE_AUTO = _TW.name_source_auto
+NAME_SOURCE_CONFIRMED = _TW.name_source_confirmed
+NAME_SOURCE_NONE = _TW.name_source_none
 
 
 # ---- 講者行的行內標記(2026-09-18 使用者選定 A 案:標記緊跟名字)----
@@ -37,18 +45,18 @@ from meeting_scribe.types import (NAME_SOURCE_AUTO, NAME_SOURCE_CONFIRMED,
 # 接〔不會破壞 CommonMark 的粗體——這是拿 markdown-it 真的渲染過的
 # (10 種寫法全數通過),不是推理出來的。改這個字元前請重跑那個驗證,
 # flanking 規則踩過四次。
-MARK_AUTO_NAME = "機器辨識"      # 名字是聲紋自動填的,使用者沒動過
-MARK_CROSSTALK = "多人交錯"      # 這一輪落在多人快速交錯討論的區間裡
-MARK_UNCERTAIN = "身分存疑"      # 這個標籤的群內一致性明顯低於本場中位數
+MARK_AUTO_NAME = _TW.mark_auto_name      # 名字是聲紋自動填的,使用者沒動過
+MARK_CROSSTALK = _TW.mark_crosstalk      # 這一輪落在多人快速交錯討論的區間裡
+MARK_UNCERTAIN = _TW.mark_uncertain      # 這個標籤的群內一致性明顯低於本場中位數
 # 現場按了「重點」的那一輪(2026-10-17 從手機版搬過來,`highlights.py`)。⚠️ 它與上面三個
 # 不同類:講的是「現場有人覺得重要」,不是歸屬可靠度。⚠️ **下面四個字串逐字照手機版的
 # `Export.swift`**(跨專案契約,`docs/spec/09` §9.3d):同一個知識庫裡兩種寫法,下游的
 # 攝入規則就要各寫一份
-MARK_HIGHLIGHT = "重點"
-HIGHLIGHT_LEGEND = "> 〔重點〕= 開會時有人在現場按了「重點」的發言，整理時請優先處理。"
+MARK_HIGHLIGHT = _TW.mark_highlight
+HIGHLIGHT_LEGEND = _TW.highlight_legend
 # 重點的備註:接在那一輪的內文下面,一則一行。有備註才多一行說明
-NOTE_PREFIX = "> 備註："
-NOTE_LEGEND = "> 「備註：」= 現場標重點時與會者打的補充，不是發言內容。"
+NOTE_PREFIX = _TW.note_prefix
+NOTE_LEGEND = _TW.note_legend
 # 多個標記之間的分隔。用全形頓號的變體「・」而不是「、」:後者在中文
 # 句子裡到處都是,標記串起來會看起來像內文的一部分
 MARK_SEP = "・"
@@ -90,14 +98,17 @@ def speaker_line(name: str, seconds: float, marks: list[str] | None = None) -> s
     return f"**{name}**{suffix or ' '}({_hms(seconds)})"
 
 
-def speaker_label(speaker: int) -> str:
+def speaker_label(speaker: int, language: str = "zh_TW") -> str:
     """講者顯示名稱:未知(哨兵 <0)顯示「未知」,其餘為「講者 N」(1-based)。
 
     ⚠️ **全 repo 只有這一份**(2026-08-15 起):先前 `audit` 與 `app` 各抄了
     一行,而 audit 那份的註解寫著「測試盯著它們一致」——`grep tests/` 是
     0 命中,也就是三份實作沒有任何東西守著。抄的理由(怕 import 繞回來)
-    也不成立:`audit` 本來就已經 import export,而 export 只相依 types。"""
-    return "未知" if speaker == UNKNOWN_SPEAKER else f"講者 {speaker + 1}"
+    也不成立:`audit` 本來就已經 import export,而 export 只相依 types。
+
+    ⚠️ **跟著會議語言**(「Speaker 1」「讲者 1」):要跟逐字稿裡實際寫的那一個比對的地方,
+    傳**那一份 md 的**語言(`vocab.detect`),不是介面語言。"""
+    return vocab.of(language).speaker_label(speaker)
 
 
 def _hms(seconds: float) -> str:
@@ -117,7 +128,7 @@ def speech_blocks(spoken: list[SpokenSegment]) -> list[SpeechBlock]:
     沒有人在講話的空白(而使用者會以為是漏聽了)。"""
     blocks: list[list] = []
     for seg in spoken:
-        is_marker = seg.text.startswith(loopdetect.MARKER_PREFIX)
+        is_marker = vocab.is_marker(seg.text)
         if (
             blocks
             and blocks[-1][0] == seg.speaker
@@ -151,20 +162,18 @@ def speech_blocks(spoken: list[SpokenSegment]) -> list[SpeechBlock]:
 # 了,不講的話「上一句 10:02、下一句 10:03」讀起來就是連著講的,而中間其實隔了
 # 一段沒錄的討論。⚠️ 解析端(`relabel.parse`)要認得它、不把它當成前一輪的內文,
 # 所以字樣與判斷擺在一起
-_PAUSE_HEAD = "〔錄音在此暫停 "
-
-
-def pause_line(seconds: float) -> str:
+def pause_line(seconds: float, language: str = "zh_TW") -> str:
     """逐字稿上標示暫停的那一行。"""
     s = int(round(max(seconds, 0.0)))
     span = (f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600
             else f"{s // 60}:{s % 60:02d}")
-    return f"{_PAUSE_HEAD}{span},這段時間的發言沒有錄進來〕"
+    v = vocab.of(language)
+    return f"{v.pause_head}{span}{v.pause_tail}"
 
 
 def is_pause_line(line: str) -> bool:
     s = line.strip()
-    return s.startswith(_PAUSE_HEAD) and s.endswith("〕")
+    return any(s.startswith(v.pause_head) and s.endswith("〕") for v in vocab.ALL)
 
 
 def _group_by_speaker(
@@ -181,7 +190,7 @@ def _group_by_speaker(
 # 講者診斷區塊的標題。**公開常數**:relabel 解析逐字稿時要在這裡收手
 # (診斷表不是某位講者的發言,被當成內文會污染命名摘錄),套用新名字時
 # 也要靠它找到表格去同步改名——兩邊各寫一次字串,改標題就會有一邊失聯
-DIAGNOSTIC_HEADING = "## 講者辨識診斷"
+DIAGNOSTIC_HEADING = _TW.diagnostic_heading
 
 
 def starts_diagnostics(line: str) -> bool:
@@ -191,8 +200,10 @@ def starts_diagnostics(line: str) -> bool:
     relabel.rename 從這裡開始改敘述句、audit.reassign 在這裡停止改掛——
     三處各寫一次 `.strip().startswith(...)` 的話,標題格式哪天放寬就會有
     人沒跟上,而症狀是「有些路徑吃得到診斷區塊、有些吃不到」,測試不會全紅。
+    ⚠️ **三種語言的標題都認**(英文「## Speaker diagnostics」)。
     """
-    return line.strip().startswith(DIAGNOSTIC_HEADING)
+    s = line.strip()
+    return any(s.startswith(v.diagnostic_heading) for v in vocab.ALL)
 
 
 # 診斷表裡「一位講者」那一列的第一欄。改名時它要跟著逐字稿一起換
@@ -257,17 +268,19 @@ def check_first(quality: list) -> list:
     return sorted(low, key=lambda q: q.cohesion)[:_CHECK_FIRST_MAX]
 
 
-def speaker_diagnostics(quality: list, spoken: list[SpokenSegment]) -> list[str]:
+def speaker_diagnostics(quality: list, spoken: list[SpokenSegment],
+                        language: str = "zh_TW") -> list[str]:
     """公開入口(重設講者的重新分群要重建這一塊)。
 
     **開一個公開名字而不是讓呼叫端去拿私有的**:上游一改名就會安靜壞掉
     (同 diarize.voiceprints_for_spans 的理由),而診斷區塊的格式必須與
     轉檔當下產生的那一份完全一致——兩邊各寫一套的話,重新分群過的逐字稿
     檔尾會長得跟別人不一樣。"""
-    return _speaker_diagnostics(quality, spoken)
+    return _speaker_diagnostics(quality, spoken, language)
 
 
-def _speaker_diagnostics(quality: list, spoken: list[SpokenSegment]) -> list[str]:
+def _speaker_diagnostics(quality: list, spoken: list[SpokenSegment],
+                         language: str = "zh_TW") -> list[str]:
     """講者標籤的診斷區塊(md 行清單;無資料回空清單)。
 
     **為什麼要寫進成品**:講者分離把好幾個人塌成同一群時,逐字稿裡看起來
@@ -281,29 +294,21 @@ def _speaker_diagnostics(quality: list, spoken: list[SpokenSegment]) -> list[str
     切在標題上,獨立一節反而更容易被整段取用。"""
     if not quality:
         return []
+    v = vocab.of(language)
     blocks = _group_by_speaker(spoken)
     lines = [
-        DIAGNOSTIC_HEADING, "",
-        f"這份逐字稿的講者是**機器分出來的**,共 {len(quality)} 位。"
-        "以下數字供下游(知識庫/RAG)判斷哪些標籤該先人工核對。",
+        v.diagnostic_heading, "",
+        v.diag_intro.format(n=len(quality)),
         "",
-        "⚠️ **已知限制**:同一個標籤底下有可能其實是好幾個人"
-        "(發言少、或透過視訊/電話加入的與會者最容易被併在一起)。"
-        "程式**無法自動判定**某個標籤是不是混了多人——真的混了四個人的"
-        "標籤,各項一致性指標都可能比單人的還漂亮。所以下面只給數字與"
-        "排序,不下判定。",
+        v.diag_limits,
         "",
     ]
     first = check_first(quality)
     if first:
-        names = "、".join(f"**{speaker_label(q.speaker)}**" for q in first)
-        lines += [
-            f"**建議優先核對**:{names}——這幾個標籤的群內一致性明顯低於"
-            "本場其他人,是最可能混進別人的。",
-            "",
-        ]
+        names = v.list_sep.join(f"**{v.speaker_label(q.speaker)}**" for q in first)
+        lines += [v.diag_check_first.format(names=names), ""]
     lines += [
-        "| 講者 | 發言輪次 | 總時長 | 群內一致性 | 名字來源 |",
+        v.diag_table_header,
         "| --- | ---: | ---: | ---: | --- |",
     ]
     for q in sorted(quality, key=lambda x: x.speaker):
@@ -313,38 +318,18 @@ def _speaker_diagnostics(quality: list, spoken: list[SpokenSegment]) -> list[str
         # (doc2md)那條路沒有命名步驟,所以那份會一直停在「未命名」——那是
         # 對的,不是漏改
         lines.append(
-            f"| {speaker_label(q.speaker)} | {n_blocks} | {_hms(q.seconds)} "
-            f"| {q.cohesion:.2f} | {NAME_SOURCE_NONE} |"
+            f"| {v.speaker_label(q.speaker)} | {n_blocks} | {_hms(q.seconds)} "
+            f"| {q.cohesion:.2f} | {v.name_source_none} |"
         )
-    lines += [
-        "",
-        "- **發言輪次**:這個標籤在逐字稿裡出現幾次(連續發言算一次)。",
-        "- **群內一致性**:各段聲紋與該標籤平均聲紋的相似度。"
-        "**只能在同一份逐字稿之內互相比**,不同錄音的數字沒有可比性。",
-        f"- **名字來源**:「{NAME_SOURCE_CONFIRMED}」= 由人親自填上或改過;"
-        f"「{NAME_SOURCE_AUTO}」= 聲紋比對自動填的、**沒有人確認過**"
-        f"(這種會認錯人,正文那幾行也標了〔{MARK_AUTO_NAME}〕);"
-        f"「{NAME_SOURCE_NONE}」= 仍是「講者 N」,表示這個人沒有聲紋建檔。",
-        "- 「未知」不列入本表:那是與任何講者都不夠像的零碎語音,"
-        "本來就不代表某一個人。",
-        "",
-        # ⚠️ **這一段是寫給下游的 AI 看的**(2026-09-18 使用者指定):他的
-        # 流程是請 Claude Code 讀整份 md、寫進 FWIKI 的主題知識頁。而標記
-        # 只有在「讀的人知道它代表什麼」時才有用——不解釋的話,下游最可能
-        # 的反應是把〔〕當成逐字稿的雜訊忽略掉
-        f"⚠️ **正文的行內標記**:〔{MARK_AUTO_NAME}〕= 這個名字是機器猜的;"
-        f"〔{MARK_UNCERTAIN}〕= 這個標籤的一致性明顯低於本場中位數,"
-        "底下可能不只一個人;"
-        f"〔{MARK_CROSSTALK}〕= **那一輪落在多人快速交錯討論的區間**,"
-        "當時好幾個人搶著講、機器分不開,所以那一行的講者歸屬是猜的。"
-        "**引用帶標記的發言時不要斷言是誰說的。**",
-        "",
-    ]
-    lines += _unknown_note(spoken)
+    # ⚠️ 圖例最後一段(行內標記的意思)是**寫給下游的 AI 看的**(2026-09-18 使用者指定):他的
+    # 流程是請 Claude Code 讀整份 md、寫進 FWIKI 的主題知識頁。而標記只有在「讀的人知道它代表
+    # 什麼」時才有用——不解釋的話,下游最可能的反應是把〔〕當成逐字稿的雜訊忽略掉
+    lines += ["", *v.diag_legend, ""]
+    lines += _unknown_note(spoken, language)
     return lines
 
 
-def _unknown_note(spoken: list[SpokenSegment]) -> list[str]:
+def _unknown_note(spoken: list[SpokenSegment], language: str = "zh_TW") -> list[str]:
     """「未知」那一批到底是什麼(md 行清單;沒有未知段落回空清單)。
 
     **為什麼要主動講**(2026-08-13,0812 那場會議):以前這批零碎語音會自成
@@ -360,21 +345,12 @@ def _unknown_note(spoken: list[SpokenSegment]) -> list[str]:
         return []
     durations = sorted(s.end - s.start for s in unknown)
     median = durations[len(durations) // 2]
-    return [
-        f"「**未知**」這一批共 {len(unknown)} 段、{_hms(sum(durations))}"
-        f",單段中位長度 {median:.1f} 秒。這些語音太短或太模糊,"
-        "聲紋不足以判斷是誰——多半是「對」「好」「瞭解」這類應答與插話,"
-        "**它們很可能分屬好幾個不同的人**。",
-        "",
-        "⚠️ 所以工具**不把這一批當成一位講者**,也不會拿它登記聲紋。"
-        "在介面上替「未知」命名只會改逐字稿上的文字;"
-        "**不要整批給同一個名字**,除非你已經逐段聽過確認都是同一個人。",
-        "",
-    ]
+    fill = {"n": len(unknown), "total": _hms(sum(durations)), "median": f"{median:.1f}"}
+    return [x.format(**fill) for x in vocab.of(language).unknown_note] + [""]
 
 
 # 逐字稿本文的標題(`docaudio` 要拿掉它、`highlights.rewrite_md` 要找到它)
-TRANSCRIPT_HEADING = "## 會議逐字稿 — "
+TRANSCRIPT_HEADING = _TW.transcript_heading
 
 
 def to_markdown(
@@ -382,6 +358,7 @@ def to_markdown(
     title: str,
     punctuate: Callable[[list[str]], list[str]] | None = None,
     quality: list | None = None,
+    language: str = "zh_TW",
 ) -> str:
     """punctuate:對「合併後的講者區塊」補標點的函式(長文脈絡標點
     品質最好);None 表示原樣輸出。跳針標記區塊不補標點:標記自帶
@@ -394,22 +371,23 @@ def to_markdown(
 
     quality:每位講者的分群品質(types.SpeakerQuality),有給就在檔尾附
     診斷區塊(見 _speaker_diagnostics)。"""
+    v = vocab.of(language)
     groups = speech_blocks(spoken)
     todo = [i for i, g in enumerate(groups) if not g.is_marker] if punctuate else []
     done = (dict(zip(todo, punctuate([groups[i].text for i in todo]), strict=True))
             if todo else {})
     # 一致性明顯低於本場中位數的那幾位:行內也標一次(見 mark_suffix 那段)
     uncertain = {q.speaker for q in check_first(quality or [])}
-    lines = [f"{TRANSCRIPT_HEADING}{title}", ""]
+    lines = [f"{v.transcript_heading}{title}", ""]
     # 兩行說明寫給下游的 AI 看(沒按就不出現,md 與按鈕出現之前逐字相同)
     if any(g.highlight for g in groups):
-        lines += [HIGHLIGHT_LEGEND, ""]
+        lines += [v.highlight_legend, ""]
     if any(g.notes for g in groups):
-        lines += [NOTE_LEGEND, ""]
+        lines += [v.note_legend, ""]
     for i, b in enumerate(groups):
         speaker, start, text, crosstalk = b.speaker, b.start, b.text, b.crosstalk
         if b.pause_before:
-            lines += [pause_line(b.pause_before), ""]
+            lines += [pause_line(b.pause_before, language), ""]
         # ⚠️ **這裡只標「轉檔當下就知道的」兩種**:名字要等使用者命名之後
         # 才存在,`MARK_AUTO_NAME` 因此由 `relabel.rename` 在套用名字那一刻
         # 補上(見該處)。⚠️ 順序固定「標籤可疑 → 這一輪交錯」,由範圍大小
@@ -417,21 +395,21 @@ def to_markdown(
         # 某一種標記就得寫出所有排列
         marks = []
         if speaker in uncertain:
-            marks.append(MARK_UNCERTAIN)
+            marks.append(v.mark_uncertain)
         if crosstalk:
-            marks.append(MARK_CROSSTALK)
+            marks.append(v.mark_crosstalk)
         if b.highlight:
-            marks.append(MARK_HIGHLIGHT)
-        lines.append(speaker_line(speaker_label(speaker), start, marks))
+            marks.append(v.mark_highlight)
+        lines.append(speaker_line(v.speaker_label(speaker), start, marks))
         lines.append(done.get(i, text))
-        lines += [NOTE_PREFIX + n for n in b.notes]
+        lines += [v.note_prefix + n for n in b.notes]
         lines.append("")
-    lines += _speaker_diagnostics(quality or [], spoken)
+    lines += _speaker_diagnostics(quality or [], spoken, language)
     return "\n".join(lines)
 
 
 def transcript_frontmatter(
-    spoken: list[SpokenSegment], quality: list | None = None,
+    spoken: list[SpokenSegment], quality: list | None = None, language: str = "zh_TW",
 ) -> list[str]:
     """逐字稿的 frontmatter(md 行清單)。
 
@@ -461,6 +439,9 @@ def transcript_frontmatter(
         "speaker_labels: machine",
         f"crosstalk_share: {cross / total:.3f}",
         f"unknown_share: {unknown / total:.3f}",
+        # 會議語言(同 iOS 的 `language:`,2026-10-21):讀回 md 的程式靠它知道正文是哪一套字串,
+        # 不必猜標題。⚠️ **沒有這欄 = 繁體中文**(2026-10-21 以前的全部)
+        f'language: "{language}"',
         "---",
         # ⚠️ **兩個空字串 = frontmatter 與正文之間真的空一行**:`write_md`
         # 是 `"\n".join(...) + md_text`,少一個的話 `---` 會和 `## 會議逐字稿`

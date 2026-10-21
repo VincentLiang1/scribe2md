@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from meeting_scribe import attendees, pending, vpsync
+from meeting_scribe.i18n import t
 from meeting_scribe import voiceprints as voiceprints_store
 
 
@@ -181,15 +182,15 @@ def save(plan_: Plan, rename_voiceprints: bool = False) -> str:
         old, new = plan_.rename
         moved = voiceprints_store.rename(old, new)
     attendees.save_all(list(plan_.names))
-    msg = f"已儲存與會名單({len(plan_.names)} 人)。"
+    msg = t("已儲存與會名單({v} 人)。", v=len(plan_.names))
     if moved:
-        msg += f"「{plan_.rename[0]}」的 {moved} 個聲紋樣本已改掛到「{plan_.rename[1]}」。"
+        msg += t("「{v}」的 {moved} 個聲紋樣本已改掛到「{v2}」。", v=plan_.rename[0], moved=moved, v2=plan_.rename[1])
     elif rename_voiceprints and plan_.rename:
-        msg += f"「{plan_.rename[0]}」在聲紋庫裡沒有樣本,只改了名單。"
+        msg += t("「{v}」在聲紋庫裡沒有樣本,只改了名單。", v=plan_.rename[0])
     if plan_.stranded:
-        msg += ("⚠ 這幾個人不在新名單上,但聲紋庫裡還有他們的樣本:"
-                + "、".join(f"{n}({c} 個)" for n, c in plan_.stranded)
-                + "。下次開會他們會被填成名單上沒有的名字。")
+        msg += t("⚠ 這幾個人不在新名單上,但聲紋庫裡還有他們的樣本:{names}。"
+                 "下次開會他們會被填成名單上沒有的名字。",
+                 names=t("、").join(t("{n}({c} 個)", n=n, c=c) for n, c in plan_.stranded))
     return msg
 
 
@@ -210,11 +211,11 @@ def enable_sync(path) -> tuple[bool, str]:
     voiceprints_store.load()
     attendees.load()
     if wrote:
-        return True, f"已啟用同步:這台的聲紋庫與名單寫進了 {wrote} 筆紀錄(別台已經有的自動略過)。"
-    return True, "已啟用同步:這台的聲紋庫與名單別台都已經有了,沒有新增任何紀錄。"
+        return True, t("已啟用同步:這台的聲紋庫與名單寫進了 {wrote} 筆紀錄(別台已經有的自動略過)。", wrote=wrote)
+    return True, t("已啟用同步:這台的聲紋庫與名單別台都已經有了,沒有新增任何紀錄。")
 
 
 def disable_sync() -> str:
     """停用同步。這台改回用自己的聲紋庫(= 停用前最後一次重組的結果)。"""
     vpsync.disable()
-    return "已停用同步:這台改回用自己的聲紋庫與名單(停用前最後一次同步的內容)。"
+    return t("已停用同步:這台改回用自己的聲紋庫與名單(停用前最後一次同步的內容)。")

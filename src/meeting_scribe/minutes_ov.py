@@ -70,13 +70,18 @@ class Session:
             raise WorkerGone(str(reply.get("error", "(無訊息)")))
         return float(reply.get("load_sec", 0.0))
 
-    def ask(self, kind: str, instructions: str, prompt: str, timeout: float) -> dict:
-        """問一次,回子行程的回覆(`ok` 為假的也照樣回,由呼叫端判斷)。"""
+    def ask(self, kind: str, instructions: str, prompt: str, timeout: float,
+            language: str = "zh_TW") -> dict:
+        """問一次,回子行程的回覆(`ok` 為假的也照樣回,由呼叫端判斷)。
+
+        `language` 是這一場的會議語言:`llm-notes` 那段「只回一個 JSON 物件,欄位…」要用同一種語言
+        寫(`draftvocab.notes_format`),中文欄位說明配英文指示,模型照樣回中文。"""
         if self._proc is None or self._proc.poll() is not None:
             self.start()   # 上一段超時被收掉了:重開一支
         try:
             self._proc.stdin.write(json.dumps(
-                {"kind": kind, "instructions": instructions, "prompt": prompt},
+                {"kind": kind, "instructions": instructions, "prompt": prompt,
+                 "language": language},
                 ensure_ascii=False) + "\n")
             self._proc.stdin.flush()
         except Exception as e:

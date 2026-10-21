@@ -31,6 +31,7 @@ from typing import NamedTuple
 import numpy as np
 
 from meeting_scribe import errors, models, vpsync
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -240,8 +241,8 @@ def _sync_lib():
     lib = vpsync.library()
     if lib is None:
         raise errors.UserFacingError(
-            "找不到聲紋同步資料夾,這個動作先不做(同步資料夾回來之後再試一次)。"
-            "要改用這台自己的聲紋庫,先在「聲紋資料管理」停用同步。")
+            t("找不到聲紋同步資料夾,這個動作先不做(同步資料夾回來之後再試一次)。"
+            "要改用這台自己的聲紋庫,先在「聲紋資料管理」停用同步。"))
     return lib
 
 

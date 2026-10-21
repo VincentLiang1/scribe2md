@@ -37,6 +37,7 @@ from typing import Callable
 
 from meeting_scribe import cancel, hotwords, loopdetect, models, plat
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 from meeting_scribe.plat import Outcome
 from meeting_scribe.types import TranscriptSegment
 
@@ -113,29 +114,38 @@ def _probe() -> Outcome:
     }.get(state, "這台 Mac 沒有 Apple 的語音辨識功能"))
 
 
-def transcribe(wav_path: str | Path, progress: ProgressFn | None = None) -> list[TranscriptSegment]:
-    """整檔交給小程式轉;進度 0~1;停止鈕在等輸出的空檔檢查。"""
+def transcribe(wav_path: str | Path, progress: ProgressFn | None = None,
+               language: str = "zh_TW") -> list[TranscriptSegment]:
+    """整檔交給小程式轉;進度 0~1;停止鈕在等輸出的空檔檢查。
+
+    ⚠️ **t2s 只對中文**(模組 docstring 第 1 點的修正是針對 zh_TW 的選字錯;簡中本來就是簡體、
+    做了也無害,英文沒有字可轉)。語言資料沒裝時由 macOS 下載,進度照「首次下載」那一套回報。"""
     can = capability()
     if not can.ok:
-        raise UserFacingError(f"無法使用 Apple 轉錄:{can.reason}")
+        raise UserFacingError(t("無法使用 Apple 轉錄:{reason}", reason=can.reason))
+    from meeting_scribe import meetlang
+
+    # ⚠️ 只在「換成 Whisper 就會注入」時講(繁中會議):簡中、英文會議本來就不注入,講了是誤導
     global _hotwords_noted
-    if hotwords.load() and not _hotwords_noted:
+    if meetlang.inject_hotwords(language) and hotwords.load() and not _hotwords_noted:
         _hotwords_noted = True
         logger.info("Apple 轉錄不吃領域詞表(詞表照常留著,改選「快速」或「精準」時才生效)")
     _, exe = plat.apple_speech_helper()
-    results = _run(exe, str(wav_path), progress)
+
+    results = _run(exe, str(wav_path), progress, meetlang.apple_locale(language))
     out: list[TranscriptSegment] = []
-    cc = _t2s()
+    cc = _t2s() if language != meetlang.EN else None
     for r in results:
         for start, end, text in _split(r):
-            text = cc.convert(text).strip()
+            text = (cc.convert(text) if cc else text).strip()
             if text:  # 空字串不輸出(與 transcribe / transcribe_ov 的契約一致)
                 out.append(TranscriptSegment(start, end, text))
     return out
 
 
-def _run(exe, wav: str, progress: ProgressFn | None) -> list[dict]:
-    proc = subprocess.Popen([*_helper_argv(exe), "transcribe", wav], stdout=subprocess.PIPE,
+def _run(exe, wav: str, progress: ProgressFn | None, locale: str = "zh_TW") -> list[dict]:
+    # ⚠️ locale 一律帶:小程式沒收到就當 zh-TW(相容舊的呼叫),帶了才不會一個語言轉成另一個
+    proc = subprocess.Popen([*_helper_argv(exe), "transcribe", wav, locale], stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, encoding="utf-8",
                             **plat.spawn_kwargs(low_priority=False))
     lines: queue.Queue = queue.Queue()
@@ -175,10 +185,10 @@ def _run(exe, wav: str, progress: ProgressFn | None) -> list[dict]:
             elif "download" in msg:
                 frac = float(msg["download"])
                 if first_download and frac < 1:
-                    logger.info("首次使用 Apple 轉錄,由 macOS 下載繁體中文語音資料")
+                    logger.info("首次使用 Apple 轉錄(%s),由 macOS 下載語音資料", locale)
                 first_download = False
                 if frac < 1:
-                    models.report_progress("首次使用,下載 Apple 繁體中文語音資料", frac)
+                    models.report_progress(t("首次使用,由 macOS 下載這個語言的 Apple 語音資料"), frac)
             elif "error" in msg:
                 error = msg["error"]
             elif msg.get("done"):

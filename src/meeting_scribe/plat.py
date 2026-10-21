@@ -244,12 +244,12 @@ def reinstall_hint() -> str:
     ⚠️ **Mac 不是「再雙擊一次 App」**:啟動器只在版本戳記對不上、或整個
     site-packages 不見時才重跑安裝,少一個套件時雙擊只會照常開、照樣壞
     (`make_mac_app.LAUNCHER_C`)。刪掉 `VERSION` 才會讓它重跑。"""
-    return _impl().REINSTALL_HINT
+    return _impl().reinstall_hint()
 
 
 def heic_workaround() -> str:
     """HEIC 解不開時的替代做法(用系統內建的程式另存成 JPG),以「或」開頭。"""
-    return _impl().HEIC_WORKAROUND
+    return _impl().heic_workaround()
 
 
 # --- 機器能力 -------------------------------------------------------------
@@ -670,6 +670,20 @@ def strip_default_menubar(window) -> None:
     ⚠️ **Windows 不受影響**:那邊 Tk 根本不掛選單列(`plat_win` 什麼都不做)。
     ⚠️ **純外觀,失敗不得有任何後果**,而且要**安靜**(同 `round_window_corners`)。"""
     return _impl().strip_default_menubar(window)
+
+
+# --- 介面語言 ----------------------------------------------------------------
+
+
+def preferred_languages() -> list[str]:
+    r"""使用者在系統設定裡排的語言偏好,依序(BCP 47,例:`zh-Hant-TW`、`en-US`)。
+
+    給 `i18n.system_language` 挑介面語言用(docs/dev/i18n.md)。⚠️ **要的是「偏好清單」
+    不是「目前地區」**:地區(格式、貨幣)與介面語言是兩個設定,台灣地區配英文介面
+    的人不少;iOS 挑語言也是走這份清單(第一個 App 有支援的勝出)。
+    ⚠️ **問不到回空清單**:呼叫端退回英文(同 iOS「沒有支援的語言時顯示英文」),
+    不是壞掉,所以三份實作都安靜。"""
+    return _impl().preferred_languages()
 
 
 # --- 機器與本行程的記憶體 --------------------------------------------------

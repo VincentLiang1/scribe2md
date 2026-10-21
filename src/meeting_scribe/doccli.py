@@ -41,11 +41,14 @@ from meeting_scribe import (
     filelog,
     models,
     pipeline,
+    i18n,
+    meetlang,
     srcfile,
     stdio,
     transcribe,
 )
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +67,9 @@ def _blame(log_path: Path | None) -> None:
     已經印出去了,再疊一句「記錄檔也寫不了」只會蓋掉真正的成因。"""
     if log_path is None:
         return
-    print(f"完整過程記在記錄檔:{log_path}", file=sys.stderr)
+    print(t("完整過程記在記錄檔:{log_path}", log_path=log_path), file=sys.stderr)
     print(
-        "要查原因就把那個檔交給 AI 分析"
-        "(裡面有程式版本、機器資訊、逐檔的失敗原因與 traceback)。",
+        t("要查原因就把那個檔交給 AI 分析(裡面有程式版本、機器資訊、逐檔的失敗原因與 traceback)。"),
         file=sys.stderr,
     )
 
@@ -116,82 +118,83 @@ def _summary(report: docpipe.BatchReport) -> str:
     成功的檔名(stdout 已經有完整路徑了),但**失敗一定要點名**。"""
     parts = []
     if report.cancelled:
-        parts.append(f"已中止。完成 {len(report.ok)} 個,其餘未處理。")
+        parts.append(t("已中止。完成 {n} 個,其餘未處理。", n=len(report.ok)))
     elif not report.ok and not report.failed:
         # 全部跳過時不能說「成功 0 個」——那看起來像出了什麼事,
         # 實情是「本來就沒有需要做的」(通常是 md 都已經存在)
-        parts.append(f"沒有需要轉換的檔案({len(report.skipped)} 個都略過了)。")
+        parts.append(t("沒有需要轉換的檔案({n} 個都略過了)。", n=len(report.skipped)))
     else:
-        line = f"轉換完成:成功 {len(report.ok)} 個"
+        line = t("轉換完成:成功 {n} 個", n=len(report.ok))
         if report.failed:
-            line += f",失敗 {len(report.failed)} 個"
+            line += t(",失敗 {n} 個", n=len(report.failed))
         if report.skipped:
-            line += f",略過 {len(report.skipped)} 個"
-        parts.append(line + "。")
+            line += t(",略過 {n} 個", n=len(report.skipped))
+        parts.append(line + t("。"))
     for r in report.failed:
-        parts.append(f"  失敗:「{r.src.name}」:{r.error}")
+        parts.append(t("  失敗:「{name}」:{error}", name=r.src.name, error=r.error))
     for src, reason in report.skipped:
-        parts.append(f"  略過:「{src.name}」:{reason}")
+        parts.append(t("  略過:「{name}」:{reason}", name=src.name, reason=reason))
     return "\n".join(parts)
 
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="doc2md",
-        description=(
+        description=t(
             "把 Office / PDF / 網頁 / 影像 / 郵件 / 錄音錄影轉成 Markdown。"
             "音訊與影片會轉成逐字稿(標「講者 1/2/3」,但不做講者命名"
             "——命名要一檔一檔當場做,命令列沒有「當場」可言)。"
-            f"支援的格式:{docsrc.cli_supported_hint()}"
-        ),
+            "支援的格式:{hint}", hint=docsrc.cli_supported_hint()),
     )
-    p.add_argument("paths", nargs="+", metavar="路徑", help="檔案或資料夾,可以給多個")
+    p.add_argument("paths", nargs="+", metavar=t("路徑"), help=t("檔案或資料夾,可以給多個"))
     p.add_argument(
-        "--out-dir", metavar="資料夾",
-        help="把整批產出集中到這個資料夾(預設放在原始文件旁邊)",
+        "--out-dir", metavar=t("目的資料夾"),
+        help=t("把整批產出集中到這個資料夾(預設放在原始文件旁邊)"),
     )
     p.add_argument(
-        "--prune-days", type=int, default=docprune.DEFAULT_PRUNE_DAYS, metavar="天數",
-        help=(
-            "--out-dir 的快取裡超過幾天的舊產出自動清掉"
-            f"(預設 {docprune.DEFAULT_PRUNE_DAYS} 天;0 = 都不清)。"
-            "只清本工具自己產生的檔案,而且只在有 --out-dir 時才做"
-        ),
+        "--prune-days", type=int, default=docprune.DEFAULT_PRUNE_DAYS, metavar=t("天數"),
+        help=t("--out-dir 的快取裡超過幾天的舊產出自動清掉(預設 {days} 天;0 = 都不清)。"
+               "只清本工具自己產生的檔案,而且只在有 --out-dir 時才做",
+               days=docprune.DEFAULT_PRUNE_DAYS),
     )
     p.add_argument(
         "--no-ocr", action="store_true",
-        help="不做文字辨識。掃描頁與圖片會只留標記,但快得多",
+        help=t("不做文字辨識。掃描頁與圖片會只留標記,但快得多"),
     )
     p.add_argument(
         "--force-ocr", action="store_true",
-        help=(
-            "PDF 不管既有的文字層,每一頁都改用文字辨識。給「轉出來是亂碼、"
-            "工具卻沒認出來」時用;很慢(每頁 1~3 秒),不能與 --no-ocr 同時用"
-        ),
+        help=t("PDF 不管既有的文字層,每一頁都改用文字辨識。給「轉出來是亂碼、"
+               "工具卻沒認出來」時用;很慢(每頁 1~3 秒),不能與 --no-ocr 同時用"),
     )
     p.add_argument(
         "--no-recursive", action="store_true",
-        help="給資料夾時不要往子資料夾找",
+        help=t("給資料夾時不要往子資料夾找"),
     )
     p.add_argument(
         "--no-attachments", action="store_true",
-        help="郵件(.msg/.eml)不遞迴轉換附件",
+        help=t("郵件(.msg/.eml)不遞迴轉換附件"),
     )
     p.add_argument(
         "--model", choices=("fast", "accurate", "apple"),
-        help="錄音錄影用哪個轉錄模型(預設依本機自動挑;apple 只在 macOS 26 以上的 Mac 能用)",
+        help=t("錄音錄影用哪個轉錄模型(預設依本機自動挑;apple 只在 macOS 26 以上的 Mac 能用)"),
     )
     p.add_argument(
-        "--speakers", type=int, default=0, metavar="人數",
-        help="錄音錄影的講者人數;0(預設)= 自動偵測。填了會套用到整批",
+        "--speakers", type=int, default=0, metavar=t("人數"),
+        help=t("錄音錄影的講者人數;0(預設)= 自動偵測。填了會套用到整批"),
+    )
+    # 會議語言(docs/dev/i18n.md):不給就跟介面語言(同「文字、圖像→MD」頁);整批套用
+    p.add_argument(
+        "--language", choices=(meetlang.ZH_TW, meetlang.ZH_CN, meetlang.EN),
+        help=t("錄音錄影的會議語言:zh_TW 繁體中文、zh_CN 簡體中文、en 英文"
+               "(預設跟介面語言)。逐字稿照它辨識與書寫,整批套用"),
     )
     p.add_argument(
         "--dry-run", action="store_true",
-        help="只列出「會轉哪些、會跳過哪些」,不實際寫檔",
+        help=t("只列出「會轉哪些、會跳過哪些」,不實際寫檔"),
     )
     p.add_argument(
         "--verbose", action="store_true",
-        help="即使輸出被接走也印出進度(預設只在終端機印)",
+        help=t("即使輸出被接走也印出進度(預設只在終端機印)"),
     )
     return p
 
@@ -214,8 +217,8 @@ def main(argv: list[str] | None = None) -> int:
     # 兩個開關互相矛盾:「每頁都辨識」與「都不辨識」。不挑一個默默贏——
     # 靜靜忽略 --force-ocr 的話,使用者會以為重轉過了、亂碼卻原封不動
     if args.force_ocr and args.no_ocr:
-        print("--force-ocr 與 --no-ocr 不能同時使用:前者每一頁都要文字辨識,"
-              "後者關掉文字辨識。請擇一", file=sys.stderr)
+        print(t("--force-ocr 與 --no-ocr 不能同時使用:前者每一頁都要文字辨識,"
+                "後者關掉文字辨識。請擇一"), file=sys.stderr)
         return 2
 
     # 出廠預設補檔:網頁介面那條在 app.main,命令列這條同樣要有——
@@ -233,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError as e:
             logger.error("無法建立輸出資料夾 %s:%s", out_dir, e)
-            print(f"無法建立輸出資料夾「{out_dir}」:{e}", file=sys.stderr)
+            print(t("無法建立輸出資料夾「{out_dir}」:{e}", out_dir=out_dir, e=e), file=sys.stderr)
             _blame(log_path)
             return 2
 
@@ -292,8 +295,8 @@ def main(argv: list[str] | None = None) -> int:
     audio = [f for f in files if f.suffix.lower() in srcfile.SUPPORTED_TYPES]
     if audio:
         print(
-            f"注意:這批有 {len(audio)} 個錄音/影片要轉逐字稿,"
-            "每個檔可能要數十分鐘(視長度與本機有無 GPU)。",
+            t("注意:這批有 {n} 個錄音/影片要轉逐字稿,每個檔可能要數十分鐘(視長度與本機有無 GPU)。",
+              n=len(audio)),
             file=sys.stderr,
         )
 
@@ -310,6 +313,7 @@ def main(argv: list[str] | None = None) -> int:
             options={
                 "model_key": args.model or transcribe.default_model_key(),
                 "num_speakers": max(args.speakers, 0),
+                "language": args.language or meetlang.from_ui(i18n.current()),
             },
         )
     except UserFacingError as e:
@@ -319,13 +323,13 @@ def main(argv: list[str] | None = None) -> int:
         _blame(log_path)
         return 2
     except KeyboardInterrupt:
-        print("已中止。", file=sys.stderr)
+        print(t("已中止。"), file=sys.stderr)
         return 130
     except Exception:
         # 這支程式的使用者是開發者與 AI,不是非技術同仁——traceback 對他們
         # 有用(GUI 那邊才必須藏起來,見 spec §8)。繁中一行仍要有
         logger.exception("轉檔時發生未預期的錯誤")
-        print("轉檔時發生未預期的錯誤,詳情見上方 traceback。", file=sys.stderr)
+        print(t("轉檔時發生未預期的錯誤,詳情見上方 traceback。"), file=sys.stderr)
         _blame(log_path)
         return 2
 
@@ -348,8 +352,8 @@ def main(argv: list[str] | None = None) -> int:
         # 這支程式時只看得到離開碼——沒有這兩行,它只會回報「轉檔失敗」然後
         # 停在那裡(2026-09-18 FWIKI 那次正是如此)
         print(
-            f"⚠️ 有 {len(report.failed)} 個檔案沒有轉成功"
-            f"(其餘 {len(report.ok)} 個已完成,路徑在 stdout)。",
+            t("⚠️ 有 {n} 個檔案沒有轉成功(其餘 {ok} 個已完成,路徑在 stdout)。",
+              n=len(report.failed), ok=len(report.ok)),
             file=sys.stderr,
         )
         _blame(log_path)

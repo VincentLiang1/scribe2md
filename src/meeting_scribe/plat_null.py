@@ -56,8 +56,12 @@ MONO_FAMILY = "Courier"
 ACCEL = ("Control", "Ctrl+")       # 視窗內快捷鍵(`plat.accel`)
 
 #: 見 `plat.reinstall_hint` / `plat.heic_workaround`(這邊只有開發者會看到)
-REINSTALL_HINT = "請在工具資料夾執行 uv sync 把環境裝齊"
-HEIC_WORKAROUND = "或先另存為 JPG 再轉"
+def reinstall_hint() -> str:
+    return "請在工具資料夾執行 uv sync 把環境裝齊"
+
+
+def heic_workaround() -> str:
+    return "或先另存為 JPG 再轉"
 
 
 def seconds_since_process_start() -> float | None:
@@ -181,6 +185,11 @@ def update_manual_note() -> str | None:
 
 def apply_update(staged, target, version: str) -> Outcome:
     return Outcome("unsupported", _WHY)
+
+
+def preferred_languages() -> list[str]:
+    """不知道這個平台怎麼問;`i18n` 會退回英文。"""
+    return []
 
 
 def total_ram_mb() -> int | None:

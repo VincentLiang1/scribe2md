@@ -201,10 +201,22 @@ BUTTONS = {
 ACCENT_STYLES = (RUN_STYLE, STOP_STYLE, RUN_PAGE_STYLE, STOP_PAGE_STYLE, RUN_SMALL_STYLE)
 
 
+# 介面語言要換字型的(使用者 2026-10-21 定,docs/dev/i18n.md):正黑體會把簡體字畫成台灣的字形。
+# ⚠️ **不必判斷平台**:這台機器沒有這兩個字型(Mac)就照舊退回系統預設,見 winkit `prefer_ui_font`。
+UI_FONTS_BY_LANG = {"zh_CN": ("Microsoft YaHei UI", "Microsoft YaHei")}
+
+
 def apply(root: tk.Misc, scale: float) -> tuple[str, dict, "_loader.SquircleSkin | None"]:
     """設定字型與佈景,回傳 (字型家族名, 色票, squircle 皮膚)。
 
     ⚠️ 機制在 `winkit.skin.apply`——這一層只負責把**這支 app 的規格**交出去。
     ⚠️ 規格就是**本模組自己**(上面那幾個常數),所以直接把模組交出去,不必再開一個
-    只為了轉手的資料類別。"""
+    只為了轉手的資料類別。
+    ⚠️ **字型偏好要在 `apply` 之前交出去**:`apply` 一進去就挑字型,挑完的名字散進十幾個
+    具名字型與樣式,事後再換一定漏。"""
+    from meeting_scribe import i18n
+
+    fonts = UI_FONTS_BY_LANG.get(i18n.current())
+    if fonts:
+        _loader.prefer_ui_font(*fonts)
     return _loader.apply(root, scale, spec=sys.modules[__name__])

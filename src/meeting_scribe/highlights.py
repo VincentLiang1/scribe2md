@@ -24,7 +24,7 @@ import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from meeting_scribe import export, loopdetect
+from meeting_scribe import export, vocab
 from meeting_scribe.types import UNKNOWN_SPEAKER, SpokenSegment
 
 logger = logging.getLogger(__name__)
@@ -177,7 +177,7 @@ def _group_regions(times: list[float], units: list[_Unit]) -> list[tuple[list[fl
 def _units_of(spoken: list[SpokenSegment]) -> list[_Unit]:
     return [_Unit(s.start, s.end, s.speaker,
                   s.speaker != UNKNOWN_SPEAKER
-                  and not s.text.startswith(loopdetect.MARKER_PREFIX),
+                  and not vocab.is_marker(s.text),
                   bool(s.pause_before))
             for s in spoken]
 
@@ -213,7 +213,6 @@ def _md_units(lines: list[str]) -> tuple[list[int], list[_Unit]]:
     talk: list[bool] = []
     pause: list[bool] = []
     pending_pause = False
-    unknown = export.speaker_label(UNKNOWN_SPEAKER)
     for i, line in enumerate(lines):
         if export.starts_diagnostics(line):
             break
@@ -227,8 +226,9 @@ def _md_units(lines: list[str]) -> tuple[list[int], list[_Unit]]:
         starts.append(int(m.group("h")) * 3600 + int(m.group("m")) * 60 + int(m.group("s")))
         names.append(m.group("name"))
         body = next((x for x in lines[i + 1:] if x.strip()), "")
-        talk.append(m.group("name") != unknown
-                    and not body.startswith(loopdetect.MARKER_PREFIX))
+        # ⚠️ 三種會議語言的「未知」與跳針標記都要認(英文逐字稿是「Unknown」)
+        talk.append(not vocab.is_unknown(m.group("name"))
+                    and not vocab.is_marker(body))
         pause.append(pending_pause)
         pending_pause = False
     units = [_Unit(st, starts[k + 1] if k + 1 < len(starts) else st, names[k],
@@ -257,14 +257,15 @@ def from_md(md_text: str) -> Highlights:
     prev: int | None = None
     for k, r in enumerate(rows):
         m = export.SPEAKER_LINE_RE.match(lines[r].strip())
-        if export.MARK_HIGHLIGHT not in (m.group("marks") or "").split(export.MARK_SEP):
+        if not any(vocab.is_highlight_mark(x)
+                   for x in (m.group("marks") or "").split(export.MARK_SEP)):
             continue
         end = rows[k + 1] if k + 1 < len(rows) else len(lines)
         notes = []
         for x in lines[r + 1:end]:
             if export.starts_diagnostics(x):
                 break
-            if is_note_line(x) and (c := clean(x[len(export.NOTE_PREFIX):])):
+            if is_note_line(x) and (c := clean(vocab.note_text(x))):
                 notes.append(c)
         same = (prev is not None and units[k].speaker == units[prev].speaker
                 and not any(units[j].pause_before for j in range(prev + 1, k + 1))
@@ -310,7 +311,8 @@ def md_items(h: Highlights, md_text: str, width: int = 30) -> list[Item]:
 
 
 def is_note_line(line: str) -> bool:
-    return line.startswith(export.NOTE_PREFIX)
+    """重點底下的備註行(三種會議語言都認,見 `vocab.is_note_line`)。"""
+    return vocab.is_note_line(line)
 
 
 def rewrite_md(md_text: str, h: Highlights) -> str:
@@ -320,6 +322,8 @@ def rewrite_md(md_text: str, h: Highlights) -> str:
     ⚠️ **先全部拆掉再照時間重算**,不是在舊的上面加減:舊標記講的是舊的講者歸屬。
     ⚠️ 單位是**一行講者行**:收尾時逐句切開的那幾行(手機版同樣會切)照樣留著,
     所以重算的粒度跟原本一樣細。"""
+    # ⚠️ 重標時照**這份 md 的**會議語言寫(英文逐字稿是〔highlight〕與「> Note: 」)
+    v = vocab.detect(md_text)
     lines = _strip(md_text.splitlines())
     rows, units = _md_units(lines)
     marked: set[int] = set()
@@ -337,7 +341,7 @@ def rewrite_md(md_text: str, h: Highlights) -> str:
         diag = export.starts_diagnostics(line)
         k = row_of.get(i)
         if open_k is not None and (diag or k is not None or export.is_pause_line(line)):
-            out = _flush_notes(out, notes_at.get(open_k, []))
+            out = _flush_notes(out, notes_at.get(open_k, []), v)
             open_k = None
         if diag:
             out.extend(lines[i:])
@@ -348,15 +352,15 @@ def rewrite_md(md_text: str, h: Highlights) -> str:
         open_k = k
         m = export.SPEAKER_LINE_RE.match(line.strip())
         marks = [x for x in (m.group("marks") or "").split(export.MARK_SEP)
-                 if x and x != export.MARK_HIGHLIGHT]
+                 if x and not vocab.is_highlight_mark(x)]
         if k in marked:
-            marks.append(export.MARK_HIGHLIGHT)
+            marks.append(v.mark_highlight)
         secs = int(m.group("h")) * 3600 + int(m.group("m")) * 60 + int(m.group("s"))
         out.append(export.speaker_line(m.group("name"), secs, marks))
     else:
         if open_k is not None:
-            out = _flush_notes(out, notes_at.get(open_k, []))
-    out = _insert_legends(out, bool(marked), bool(notes_at))
+            out = _flush_notes(out, notes_at.get(open_k, []), v)
+    out = _insert_legends(out, bool(marked), bool(notes_at), v)
     return "\n".join(out) + ("\n" if md_text.endswith("\n") else "")
 
 
@@ -371,7 +375,7 @@ def _strip(lines: list[str]) -> list[str]:
             skip_blank = False
             continue
         skip_blank = False
-        if x in (export.HIGHLIGHT_LEGEND, export.NOTE_LEGEND):
+        if vocab.is_legend(x):
             skip_blank = True
             continue
         if is_note_line(x):
@@ -380,28 +384,29 @@ def _strip(lines: list[str]) -> list[str]:
     return out
 
 
-def _flush_notes(out: list[str], texts: list[str]) -> list[str]:
+def _flush_notes(out: list[str], texts: list[str], v: "vocab.Vocab" = vocab.ZH_TW) -> list[str]:
     """把備註接在目前這一輪內文的最後一行之後(跳過尾端的空行)。"""
     if not texts:
         return out
     tail = len(out)
     while tail > 0 and not out[tail - 1].strip():
         tail -= 1
-    return out[:tail] + [export.NOTE_PREFIX + t for t in texts] + out[tail:]
+    return out[:tail] + [v.note_prefix + t for t in texts] + out[tail:]
 
 
-def _insert_legends(lines: list[str], highlight: bool, notes: bool) -> list[str]:
+def _insert_legends(lines: list[str], highlight: bool, notes: bool,
+                    v: "vocab.Vocab" = vocab.ZH_TW) -> list[str]:
     r"""兩行說明放在逐字稿標題底下(同 `export.to_markdown`);沒有標題(批次那條路)就放在
     第一行講者行前面。"""
     add: list[str] = []
     if highlight:
-        add += [export.HIGHLIGHT_LEGEND, ""]
+        add += [v.highlight_legend, ""]
     if notes:
-        add += [export.NOTE_LEGEND, ""]
+        add += [v.note_legend, ""]
     if not add:
         return lines
     for i, x in enumerate(lines):
-        if x.startswith(export.TRANSCRIPT_HEADING):
+        if any(x.startswith(w.transcript_heading) for w in vocab.ALL):
             j = i + 1
             while j < len(lines) and not lines[j].strip():
                 j += 1

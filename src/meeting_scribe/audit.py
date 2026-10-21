@@ -25,7 +25,7 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
-from meeting_scribe import audio, export
+from meeting_scribe import audio, export, vocab
 from meeting_scribe.errors import UserFacingError
 from meeting_scribe.types import SpeechBlock
 
@@ -164,8 +164,11 @@ def reassign(md_text: str, blocks: list[SpeechBlock], new_name: str) -> tuple[st
     if not blocks or not new_name.strip():
         return md_text, 0
     want: dict[tuple[str, str], int] = {}
+    # ⚠️ 標籤照**這份 md 的**會議語言組(英文逐字稿是「Speaker 3」),否則一行都對不上
+    v = vocab.detect(md_text)
+    crosstalk = {w.mark_crosstalk for w in vocab.ALL}
     for b in blocks:
-        key = (export.speaker_label(b.speaker), _hms(b.start))
+        key = (v.speaker_label(b.speaker), _hms(b.start))
         want[key] = want.get(key, 0) + 1
 
     seen: dict[tuple[str, str], int] = {}
@@ -192,7 +195,7 @@ def reassign(md_text: str, blocks: list[SpeechBlock], new_name: str) -> tuple[st
             # 旁邊等於把警告安到一個沒做過那件事的人頭上。而〔多人交錯〕是
             # 聲學事實(那個時間真的好幾個人在搶著講),不因改掛而消失
             marks = [x for x in (m.group("marks") or "").split(export.MARK_SEP)
-                     if x == export.MARK_CROSSTALK]
+                     if x in crosstalk]
             out.append(export.speaker_line(
                 new_name,
                 int(m.group("h")) * 3600 + int(m.group("m")) * 60
@@ -209,8 +212,6 @@ def reassign(md_text: str, blocks: list[SpeechBlock], new_name: str) -> tuple[st
 # `export.diag_prose_renamer` 認得的兩種,套用名字時它要能把「講者 3」一起
 # 換掉;自創第三種寫法的話,這段加註會在命名之後指向一個文件裡已經不存在
 # 的標籤(那正是 DIAG_ROW_RE 註解說的「比沒有警告更糟」)
-_REASSIGN_NOTE = ("> ⚠️ **這份逐字稿人工改掛過**,所以下面的數字與排序是"
-                  "**機器分群當下**的結果,與內文已經對不上:")
 
 
 def note_reassigned(md_text: str, labels, new_name: str, moved: int) -> str:
@@ -229,16 +230,18 @@ def note_reassigned(md_text: str, labels, new_name: str, moved: int) -> str:
     改掛好幾次會累積成好幾條(同一個抬頭底下,依動作順序排)。"""
     if not moved or not md_text:
         return md_text
-    who = "、".join(f"「{n}」" for n in labels) or "這一群"
-    bullet = f"> - {who}的 {moved} 段已改掛給「{new_name}」"
+    # 加註照**這份 md 的**會議語言寫(診斷區塊本身就是那一套)
+    v = vocab.detect(md_text)
+    who = v.list_sep.join(f"「{n}」" for n in labels) or v.reassign_group
+    bullet = v.reassign_bullet.format(who=who, moved=moved, new=new_name)
     lines = md_text.splitlines()
     at = next((i for i, ln in enumerate(lines) if export.starts_diagnostics(ln)), None)
     if at is None:
         return md_text          # 沒有診斷區塊(沒給 quality)就沒有東西會對不上
     head = next((i for i in range(at + 1, len(lines))
-                 if lines[i] == _REASSIGN_NOTE), None)
+                 if lines[i] == v.reassign_note), None)
     if head is None:
-        lines[at + 1:at + 1] = ["", _REASSIGN_NOTE, bullet]
+        lines[at + 1:at + 1] = ["", v.reassign_note, bullet]
     else:
         end = head + 1
         while end < len(lines) and lines[end].startswith("> "):

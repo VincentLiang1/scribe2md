@@ -17,6 +17,7 @@ from pathlib import Path
 
 from meeting_scribe import docsrc, plat, srcfile
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -50,15 +51,13 @@ def preview_summary(text, recursive: bool = True) -> str:
     audio = sum(1 for f in files if f.suffix.lower() in docsrc.AUDIO_TYPES)
     if audio:
         parts.append(
-            f"⚠ 其中 {audio} 個是錄音/影片,要轉成逐字稿——"
-            "每個檔可能要數十分鐘到數小時(視長度與本機有無顯示晶片),"
-            "比文件慢很多。"
+            t("⚠ 其中 {audio} 個是錄音/影片,要轉成逐字稿——每個檔可能要數十分鐘到數小時(視長度與本機有無顯示晶片),比文件慢很多。", audio=audio)
         )
     shown = docsrc.skipped_lines(skipped)[:_MAX_SKIPPED_SHOWN]
     if shown:
         parts.append("\n".join(shown))
         if len(skipped) > _MAX_SKIPPED_SHOWN:
-            parts.append(f"(另有 {len(skipped) - _MAX_SKIPPED_SHOWN} 個項目未列出)")
+            parts.append(t("(另有 {v} 個項目未列出)", v=len(skipped) - _MAX_SKIPPED_SHOWN))
     return "\n\n".join(p for p in parts if p)
 
 
@@ -82,15 +81,15 @@ def audio_summary(text, recursive: bool = False) -> str:
     if not srcfile.clean_paths(text):
         return ""
     if not srcfile.looks_like_batch(text):
-        return "**單一檔案**:轉完會讓你替每位講者命名。"
+        return t("**單一檔案**:轉完會讓你替每位講者命名。")
     try:
         files, skipped = docsrc.validate_batch(
             text, recursive=bool(recursive), types=srcfile.SUPPORTED_TYPES,
-            what="錄音或錄影檔", hint=srcfile.supported_hint(),
+            what=t("錄音或錄影檔"), hint=srcfile.supported_hint(),
         )
     except UserFacingError as e:
         return str(e)
-    return f"{docsrc.summarize(files, skipped)}(整批連續轉,不做講者命名)"
+    return t("{v}(整批連續轉,不做講者命名)", v=docsrc.summarize(files, skipped))
 
 
 def _append_paths(current, added: str) -> str:
@@ -177,7 +176,7 @@ def open_output_dirs(dirs) -> None:
     成品」的保證押在那份報告上,不需要再彈一次訊息。只有失敗才出聲。"""
     paths = top_level_dirs(dirs)
     if not paths:
-        raise UserFacingError("這一批還沒有產生任何檔案")
+        raise UserFacingError(t("這一批還沒有產生任何檔案"))
     opened = 0
     unsupported = ""
     for d in paths[:_MAX_OPEN_DIRS]:
@@ -195,8 +194,8 @@ def open_output_dirs(dirs) -> None:
         return
     if unsupported:
         raise UserFacingError(
-            f"這個系統不支援自動開啟資料夾,請自行前往:{paths[0]}")
-    raise UserFacingError(f"開不了資料夾,請自行前往:{paths[0]}")
+            t("這個系統不支援自動開啟資料夾,請自行前往:{v}", v=paths[0]))
+    raise UserFacingError(t("開不了資料夾,請自行前往:{v}", v=paths[0]))
 
 
 def reveal(path) -> None:
@@ -218,15 +217,15 @@ def reveal(path) -> None:
     if not p.exists():
         # ⚠️ 記錄檔那條路走得到這裡:開檔失敗(資料夾唯讀)時 `logs\` 根本沒被建出來。
         # 靜靜什麼都不做的話,那顆鈕看起來就是壞的。
-        raise UserFacingError(f"找不到這個位置:{p}")
+        raise UserFacingError(t("找不到這個位置:{p}", p=p))
     _allow_foreground()
     outcome = plat.reveal(p)
     if outcome.ok:
         return
     logger.warning("開啟檔案管理員失敗(%s):%s", p, outcome.reason)
     if outcome.state == "unsupported":
-        raise UserFacingError(f"這個系統不支援自動開啟檔案管理員,請自行前往:{p}")
-    raise UserFacingError(f"開不了檔案管理員,請自行前往:{p}")
+        raise UserFacingError(t("這個系統不支援自動開啟檔案管理員,請自行前往:{p}", p=p))
+    raise UserFacingError(t("開不了檔案管理員,請自行前往:{p}", p=p))
 
 
 def install_skill(root: Path | None = None) -> str:
@@ -243,8 +242,8 @@ def install_skill(root: Path | None = None) -> str:
     root = root or repo_root()
     script = root / "scripts" / "install_skill.py"
     if not script.is_file():
-        raise UserFacingError("找不到 Skill 的安裝程式(scripts/install_skill.py),"
-                              "工具資料夾可能不完整,請重新解壓縮或重新安裝。")
+        raise UserFacingError(t("找不到 Skill 的安裝程式(scripts/install_skill.py),"
+                              "工具資料夾可能不完整,請重新解壓縮或重新安裝。"))
     out = io.StringIO()
     try:
         spec = importlib.util.spec_from_file_location("_meeting_scribe_install_skill", script)
@@ -254,15 +253,11 @@ def install_skill(root: Path | None = None) -> str:
             rc = mod.main([])
     except Exception as exc:  # noqa: BLE001 - 寫不進設定資料夾之類,英文原文進記錄檔
         logger.exception("安裝 Skill 失敗;安裝程式的輸出:\n%s", out.getvalue())
-        raise UserFacingError("Skill 安裝失敗,寫不進 Claude Code 的設定資料夾。") from exc
+        raise UserFacingError(t("Skill 安裝失敗,寫不進 Claude Code 的設定資料夾。")) from exc
     if rc != 0:
         logger.warning("安裝 Skill 失敗(離開碼 %s);安裝程式的輸出:\n%s", rc, out.getvalue())
         lines = [ln for ln in out.getvalue().splitlines() if ln.strip()]
-        raise UserFacingError("Skill 安裝失敗:" + (lines[-1] if lines else "原因不明。"))
+        raise UserFacingError(t("Skill 安裝失敗:{why}", why=lines[-1] if lines else t("原因不明。")))
     logger.info("已安裝 Skill:\n%s", out.getvalue())
     names = sorted(p.name for p in (root / "skills").iterdir() if p.is_dir())
-    return (f"已安裝 Claude Code Skill:{'、'.join(names)}\n"
-            f"位置:{mod.skills_root()}\n\n"
-            "重新開啟 Claude Code 就會生效。之後只要跟它說要看哪份 PDF 或 Word,"
-            "它就會自己先轉成 Markdown 再讀。換一台電腦要在那台再按一次;"
-            "工具更新之後也按一次,才會用到新版的 Skill 說明。")
+    return (t("已安裝 Claude Code Skill:{v}\n位置:{v2}\n\n重新開啟 Claude Code 就會生效。之後只要跟它說要看哪份 PDF 或 Word,它就會自己先轉成 Markdown 再讀。換一台電腦要在那台再按一次;工具更新之後也按一次,才會用到新版的 Skill 說明。", v=t("、").join(names), v2=mod.skills_root()))
