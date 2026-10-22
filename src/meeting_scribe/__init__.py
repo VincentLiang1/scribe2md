@@ -22,7 +22,7 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 # 這個變數,結果與速度都一樣),那十幾行是 oneDNN 自己另外探一次 OpenCL 引擎、
 # 失敗後的抱怨(`no opencl gpu device is available` / `CL_INVALID_OPERATION`)。
 # ⚠️ **為什麼非關不可**:黑視窗是我們叫非技術同仁「看得出原因」時打開的地方
-# (`疑難排解\啟動DEBUG.bat`),而那整片英文 error 會把真正的訊息淹掉,還會讓人
+# (`Troubleshooting\Launch-DEBUG.bat`),而那整片英文 error 會把真正的訊息淹掉,還會讓人
 # 以為 GPU 壞了。oneDNN 3.4 起預設就會印 error 級的訊息,要 `none` 才全關。
 # ⚠️ **`setdefault`**:自己要查 oneDNN 時,外面設 `ONEDNN_VERBOSE=all` 仍然蓋得過。
 # ⚠️ 必須在**任何** import openvino 之前——同上面兩個遙測開關的理由。

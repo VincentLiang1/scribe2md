@@ -1,18 +1,18 @@
 #!/bin/zsh
 # macOS 上把 Claude Code Skill 裝到使用者層級。雙擊即可。
 #
-# ⚠️ **這一支是交付物**(2026-10-02 起;「啟動.command」「安裝.command」仍然不是,
+# ⚠️ **這一支是交付物**(2026-10-02 起;「Launch.command」「Install.command」仍然不是,
 # 那兩件事 `.app` 自己做了):Mac 版的 `.app` 首次啟動會把公開版整份搬到
 # `~/Library/Application Support/meeting-scribe/app`,這支就在那個資料夾裡,
 # 使用者照「❓ 使用說明」的「📂 工具資料夾在哪」開過去雙擊(`package.py` 的
 # EXTRA_FILES 帶它)。⚠️ **所以訊息要同時對兩種擺法成立**:交付版裡 winkit 在
 # 資料夾**裡面**、環境是 App 第一次啟動時建的;開發期 winkit 在**隔壁**、環境由
-# 「安裝.command」建。
+# 「Install.command」建。
 #
 # ⚠️ **真正的邏輯在 `scripts/install_skill.py`,而那一支本來就是跨平台的**
 # (預設問的是 `~/.claude/skills`,Windows 與 macOS 都成立;設了
 # `CLAUDE_CONFIG_DIR` 則以它為準——見那支的 `skills_root`)。
-# 所以這支與 Windows 的「安裝Skill.bat」是**同一支腳本的兩個入口**,不是兩份
+# 所以這支與 Windows 的「Install-Skill.bat」是**同一支腳本的兩個入口**,不是兩份
 # 實作——⚠️ 要改行為請改那支 Python,不要在這裡另外長一份。
 
 cd "$(dirname "$0")" || { echo "找不到工具資料夾,請確認這個檔沒有被單獨搬走。"; exit 1; }
@@ -31,7 +31,7 @@ cd "$(dirname "$0")" || { echo "找不到工具資料夾,請確認這個檔沒�
 }
 
 # Finder 起的終端機讀得到登入 shell 的 PATH,但 uv 裝在 ~/.local/bin,
-# 那條不一定在預設 PATH 裡(同「啟動.command」)
+# 那條不一定在預設 PATH 裡(同「Launch.command」)
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
 
 if ! command -v uv >/dev/null 2>&1; then
@@ -66,5 +66,5 @@ echo
 echo "(按 Enter 關閉這個視窗)"
 read -r _
 # ⚠️ **這一行不可省**:`read` 碰到 EOF 回 1,而它是最後一道指令——不明寫 exit 0
-# 的話,裝成功卻回報離開碼 1(`安裝.command` 也有同樣的問題)
+# 的話,裝成功卻回報離開碼 1(`Install.command` 也有同樣的問題)
 exit 0

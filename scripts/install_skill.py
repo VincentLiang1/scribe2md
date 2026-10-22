@@ -1,6 +1,6 @@
 r"""把 `skills/` 底下的 Claude Code Skill 安裝到使用者層級。
 
-**兩個雙擊入口共用這一支**:Windows 的 `安裝Skill.bat` 與 macOS 的 `安裝Skill.command`
+**兩個雙擊入口共用這一支**:Windows 的 `Install-Skill.bat` 與 macOS 的 `Install-Skill.command`
 (2026-09-26 加,`docs/spec/mac/06` §6.2)——它們不是兩份實作,行為要改就改這裡。
 也可以直接 `uv run python scripts/install_skill.py`。
 
@@ -33,8 +33,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # 跑一次 `render`,標記檔被當範本處理只是白費工,還讓它看起來像 Skill 內容。
 MARKER = ".meeting-scribe-skill"
 MARKER_TEXT = (
-    "本資料夾由「AI 文件.MD 轉換器」的 Skill 安裝程式(安裝Skill.bat /\n"
-    "安裝Skill.command)建立,重新安裝時會把範本已經沒有的檔一併清掉。\n"
+    "本資料夾由「AI 文件.MD 轉換器」的 Skill 安裝程式(Install-Skill.bat /\n"
+    "Install-Skill.command)建立,重新安裝時會把範本已經沒有的檔一併清掉。\n"
     "請不要把自己的檔案放在這裡。\n"
 )
 

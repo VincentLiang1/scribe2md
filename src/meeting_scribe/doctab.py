@@ -232,8 +232,8 @@ def install_skill(root: Path | None = None) -> str:
     r"""「🤖 安裝 Claude Skill…」:把 `skills/` 底下的 Skill 裝到這台電腦,回一段結果給使用者看。
 
     (2026-10-02 使用者選案 C1:Mac 交付的是 `.app`,工具資料夾藏在 `~/Library` 底下,
-    叫人去那裡雙擊 `安裝Skill.command` 太繞。)
-    ⚠️ **邏輯一律在 `scripts/install_skill.py`**:這顆鈕、`安裝Skill.bat`、`安裝Skill.command`
+    叫人去那裡雙擊 `Install-Skill.command` 太繞。)
+    ⚠️ **邏輯一律在 `scripts/install_skill.py`**:這顆鈕、`Install-Skill.bat`、`Install-Skill.command`
     是同一支的三個入口,這裡只是把它載進來叫 `main([])`——要改行為請改那一支。
     ⚠️ **載進同一個行程,不開子行程**:那一支只用標準函式庫,而 Mac 版的 python 是 bundle
     裡那顆、靠 `PYTHONPATH` 起來的,另開一個行程還得把那套環境變數原樣傳過去。

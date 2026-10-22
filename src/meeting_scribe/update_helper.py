@@ -144,7 +144,7 @@ class Swap:
 
 
 def find_uv() -> str | None:
-    """`安裝.bat` 裝 uv 的地方:PATH 上,或 `%USERPROFILE%\\.local\\bin`。"""
+    """`Install.bat` 裝 uv 的地方:PATH 上,或 `%USERPROFILE%\\.local\\bin`。"""
     exe = shutil.which("uv")
     if exe:
         return exe
@@ -180,8 +180,12 @@ def uv_sync(target: Path) -> bool:
 
 def relaunch(target: Path) -> None:
     r"""重新開啟。⚠️ **用 `wscript.exe` 帶啟動器當參數**,不靠 `.vbs` 的關聯(同
-    `make_shortcut.py`:不少公司把 `.vbs` 關聯到記事本)。"""
-    vbs = target / "啟動.vbs"
+    `make_shortcut.py`:不少公司把 `.vbs` 關聯到記事本)。
+    ⚠️ **找不到 `Launch.vbs` 才退回舊名 `啟動.vbs`**(2026-10-22 入口改英文檔名):換版失敗
+    還原成改名前的版本時,資料夾裡只有舊名那一支。"""
+    vbs = target / "Launch.vbs"
+    if not vbs.exists() and (target / "啟動.vbs").exists():
+        vbs = target / "啟動.vbs"
     wscript = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "wscript.exe"
     try:
         if wscript.exists():
@@ -194,7 +198,7 @@ def relaunch(target: Path) -> None:
         message(f"更新完成,但沒能自動重新開啟。請自己開啟「{TITLE}」。", error=False)
 
 
-MANUAL = ("請到 GitHub 下載最新版,解壓縮後覆蓋到工具資料夾,再雙擊「安裝.bat」:\n"
+MANUAL = ("請到 GitHub 下載最新版,解壓縮後覆蓋到工具資料夾,再雙擊「Install.bat」:\n"
           "https://github.com/VincentLiang1/scribe2md/releases/latest")
 
 

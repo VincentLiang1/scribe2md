@@ -44,7 +44,7 @@ def native_engine_error(e: BaseException) -> UserFacingError:
             t("AI 元件無法在這台電腦上載入:缺少它需要的系統元件。請安裝 "
             "Microsoft Visual C++ 2015-2022 可轉散發套件(x64)後重新啟動程式"
             "——虛擬機器、剛重灌或精簡安裝的 Windows 常常沒有預裝;"
-            "裝了仍然失敗請重新執行「安裝.bat」")
+            "裝了仍然失敗請重新執行「Install.bat」")
         )
     # ⚠️ 只有這一種會在 Mac 上出現(上面那種是 Windows 的 DLL),處方依平台(`plat`)
     return UserFacingError(

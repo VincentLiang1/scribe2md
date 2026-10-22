@@ -906,8 +906,8 @@ def _automation() -> str:
         f"(見「{DOCS}」與「{CONVERT}」),不必為了批次跑來這裡。\n\n"
         "### 🤖 讓 Claude Code 自己叫用(最常見的用法)\n"
         "到「📄 文字、圖像→MD」分頁,按右上角的「**🤖 安裝 Claude Skill…**」"
-        "(結果會寫在右邊的結果框;也可以雙擊工具資料夾裡的「安裝Skill.bat」,"
-        "**Mac 是「安裝Skill.command」**,工具資料夾的位置見"
+        "(結果會寫在右邊的結果框;也可以雙擊工具資料夾裡的「Install-Skill.bat」,"
+        "**Mac 是「Install-Skill.command」**,工具資料夾的位置見"
         f"「{START}」的「📂 工具資料夾在哪」),"
         "之後你只要在對話裡提到某份 PDF 或 Word 的路徑,它就會自動先轉成 md "
         "再讀,不必每次交代。**換一台電腦要在那台再裝一次**"
@@ -1162,7 +1162,7 @@ def _trouble() -> str:
         "可轉散發套件(x64)**。一般的公司筆電幾乎都有,**虛擬機器、剛重灌、"
         "精簡安裝的 Windows** 則常常沒有。那條提示右邊有一顆「**📋 複製下載網址**」,"
         "按一下就把微軟官方的下載網址放進剪貼簿,貼到瀏覽器即可下載;"
-        "裝好之後把工具**重新啟動**就正常了。裝了還是一樣就重新執行一次 `安裝.bat`"
+        "裝好之後把工具**重新啟動**就正常了。裝了還是一樣就重新執行一次 `Install.bat`"
         "(安裝中途斷線、或檔案被防毒軟體隔離也會這樣)。\n\n"
         "⚠️ **已經錄到的聲音不會不見**:音檔在 `output`,補好之後切到"
         "「**🎧 轉錄音檔**」重轉一次就拿得到逐字稿。\n\n"
@@ -1248,7 +1248,7 @@ def _origin() -> str:
         "下載位置:https://github.com/VincentLiang1/scribe2md/releases/latest\n\n"
         "這個網址永遠指向最新版,不必挑版本,在頁面下方的 `Assets` 區塊下載:\n"
         "- **Windows**:點 `scribe2md-win.zip`,"
-        "解壓縮後**覆蓋**到現在的工具資料夾,再雙擊一次 `安裝.bat` 就好。\n"
+        "解壓縮後**覆蓋**到現在的工具資料夾,再雙擊一次 `Install.bat` 就好。\n"
         "- **Mac**:點 `scribe2md-mac.zip`,解壓縮出來的 App **取代**原本那一個,"
         "再雙擊它——第一次開會先跳出終端機視窗更新執行環境,跑完自己開起來。\n\n"
         f"你的聲紋和名單不會被蓋掉(見「{START}」)。\n"
@@ -1283,7 +1283,7 @@ def help_pages(device_name: str, max_speakers: int, lang: str | None = None) -> 
     if lang == "zh_CN":
         from meeting_scribe import zhcn
 
-        # ⚠️ 用 `to_hans_doc` 不用 `to_hans`:檔名(`安裝.bat`)與記錄檔原話在磁碟上就是繁體
+        # ⚠️ 用 `to_hans_doc` 不用 `to_hans`:檔名(`Install.bat`)與記錄檔原話在磁碟上就是繁體
         return [HelpPage(zhcn.to_hans(p.label), zhcn.to_hans_doc(p.top), p.image,
                          zhcn.to_hans_doc(p.bottom)) for p in pages]
     return pages

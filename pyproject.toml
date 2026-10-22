@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "1.7.0"
+version = "1.7.1"
 description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
 # AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
 # 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
@@ -20,7 +20,7 @@ dependencies = [
     # **uv 沒有收進 uv.lock**(`uv lock --refresh-package sherpa-onnx` 也不會補,
     # 連升到 1.13.8 都一樣)→ `uv sync` 裝不到 core → macOS 上 `import sherpa_onnx`
     # 直接 `Library not loaded: @rpath/libonnxruntime.1.27.0.dylib`,講者分離/標點/
-    # 聲紋/核對全掛,而畫面上說的是「請重新執行安裝.bat」(誤導)。
+    # 聲紋/核對全掛,而畫面上說的是「請重新執行Install.bat」(誤導)。
     # ⚠️ **Windows 之所以沒事不是因為不需要 core**,是 `diarize._preload_pip_onnxruntime()`
     # 先用完整路徑載了 pip 版 onnxruntime.dll,之後依**名稱**解析就綁到它;
     # macOS 的 dyld 對 `@rpath/...` 相依**不吃這套**(已實測 ctypes 預載無效),

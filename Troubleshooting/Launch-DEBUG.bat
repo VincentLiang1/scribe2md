@@ -1,14 +1,14 @@
 @echo off
 chcp 950 >nul
-rem 這支住在「疑難排解」子資料夾裡,那兩點是把工作目錄帶回專案根,與「啟動.vbs」
+rem 這支住在「Troubleshooting」子資料夾裡,那兩點是把工作目錄帶回專案根,與「Launch.vbs」
 rem 的 sh.CurrentDirectory = here 對齊。
-rem 【這個檔不是產生出來的】「啟動.vbs」由 scripts/make_launcher.py 產生,這一支是
+rem 【這個檔不是產生出來的】「Launch.vbs」由 scripts/make_launcher.py 產生,這一支是
 rem 手寫的:它是 .bat、規矩完全不同(cp950、CRLF、chcp 950 在第一個中文之前),而且
 rem 它存在的理由正是「那一支連訊息框都跳不出來的時候」——兩支同源反而少了一條退路。
 cd /d %~dp0..
 echo 啟動中,轉換器的視窗隨即開啟。
 echo.
-echo 【這一支是除錯用的】平常請用上一層資料夾的「啟動.vbs」,或桌面與「開始」
+echo 【這一支是除錯用的】平常請用上一層資料夾的「Launch.vbs」,或桌面與「開始」
 echo 功能表那顆圖示。只有在那條路連視窗都開不起來、或它跳出的訊息框看不出原因
 echo 時,才改用這一支:錯誤訊息會完整留在這個黑框裡,訊息框只顯示得下最後幾
 echo 百個字。

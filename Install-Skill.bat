@@ -1,13 +1,13 @@
 @echo off
 setlocal
 chcp 950 >nul
-rem 本檔存成 cp950(Big5),chcp 必須在任何中文之前——理由見「安裝.bat」開頭。
+rem 本檔存成 cp950(Big5),chcp 必須在任何中文之前——理由見「Install.bat」開頭。
 cd /d "%~dp0"
 
 where uv >nul 2>nul
 rem 區塊內的訊息不可出現半形 ")",會被 cmd 當成區塊結尾提前收掉
 if errorlevel 1 (
-    echo [錯誤] 找不到 uv,請先執行「安裝.bat」把環境裝好,再回來執行這個檔案。
+    echo [錯誤] 找不到 uv,請先執行「Install.bat」把環境裝好,再回來執行這個檔案。
     pause
     exit /b 1
 )

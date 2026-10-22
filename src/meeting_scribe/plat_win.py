@@ -152,7 +152,7 @@ ACCEL = ("Control", "Ctrl+")       # 視窗內快捷鍵(`plat.accel`)
 # 決定語言時要問 `plat.preferred_languages()`,而那正是這個模組——模組層的 `t()` 就會
 # 在本模組還沒載完時回頭找它,真的 App 一開就 `AttributeError`(測試把語言釘死,測不到)。
 def reinstall_hint() -> str:
-    return t("請重新執行「安裝.bat」把環境裝齊")
+    return t("請重新執行「Install.bat」把環境裝齊")
 
 
 def heic_workaround() -> str:
@@ -162,7 +162,7 @@ def heic_workaround() -> str:
 def seconds_since_process_start() -> float | None:
     """`GetProcessTimes` 的 creation time 對上 `GetSystemTimePreciseAsFileTime`。
 
-    ⚠️ **不含 `啟動.vbs` 那一層**(wscript ＋ cmd,約 0.14 秒):那是父行程
+    ⚠️ **不含 `Launch.vbs` 那一層**(wscript ＋ cmd,約 0.14 秒):那是父行程
     的時間,這裡問不到。"""
     import ctypes
     from ctypes import wintypes

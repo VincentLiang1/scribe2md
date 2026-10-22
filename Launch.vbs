@@ -1,6 +1,6 @@
-' 啟動.vbs —— 開起轉換器的視窗，全程沒有黑框。
+' Launch.vbs —— 開起轉換器的視窗，全程沒有黑框。
 '
-' 與「疑難排解\啟動DEBUG.bat」的差別只在後者留一個主控台視窗顯示啟動訊息；
+' 與「Troubleshooting\Launch-DEBUG.bat」的差別只在後者留一個主控台視窗顯示啟動訊息；
 ' 這一邊用 pythonw 啟動、並把主控台整個藏起來，所以桌面上只看得到程式自己的視窗。
 '
 ' 代價是原本會印在那個視窗的東西（uv 的錯誤、Python 在 import 期就炸的
@@ -64,7 +64,7 @@ End If
 If Len(missing) > 0 Then
     MsgBox "這個資料夾裡少了必要的檔案：" & vbCrLf & missing & vbCrLf & vbCrLf & _
            here & vbCrLf & vbCrLf & _
-           "請把整個專案資料夾完整複製過來，再執行一次「安裝.bat」。" & vbCrLf & _
+           "請把整個專案資料夾完整複製過來，再執行一次「Install.bat」。" & vbCrLf & _
            "（上面若列出 .. 開頭的路徑，那是隔壁的共用資料夾，要跟專案一起複製。）", _
            vbCritical, APP_TITLE
     WScript.Quit 1
@@ -96,7 +96,7 @@ rc = sh.Run(cmd, 0, True)
 If Err.Number <> 0 Then
     MsgBox "無法啟動程式（" & Err.Description & "）。" & vbCrLf & vbCrLf & _
            "請先確認已安裝 uv（https://docs.astral.sh/uv/），" & vbCrLf & _
-           "再執行「安裝.bat」建立環境。", vbCritical, APP_TITLE
+           "再執行「Install.bat」建立環境。", vbCritical, APP_TITLE
     Cleanup fso, capPath
     WScript.Quit 1
 End If
@@ -123,8 +123,8 @@ If rc <> 0 Then
     If Len(out) > 0 Then
         msg = msg & out
     Else
-        msg = msg & "沒有攔到任何訊息。若是第一次使用，請先執行「安裝.bat」；" & _
-              "仍然這樣的話，改用「疑難排解」資料夾裡的「啟動DEBUG.bat」，訊息會直接顯示在那個視窗裡。"
+        msg = msg & "沒有攔到任何訊息。若是第一次使用，請先執行「Install.bat」；" & _
+              "仍然這樣的話，改用「Troubleshooting」資料夾裡的「Launch-DEBUG.bat」，訊息會直接顯示在那個視窗裡。"
     End If
     MsgBox msg, vbCritical, APP_TITLE
 End If

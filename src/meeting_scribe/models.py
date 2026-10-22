@@ -254,10 +254,10 @@ def download_failed(what: str, target: str, e: Exception) -> UserFacingError:
     return UserFacingError(t("{what}下載失敗,請確認網路連線後重試:{target}", what=what, target=target))
 
 
-# 進度的第二個出口。⚠️ **原生視窗沒有黑視窗**(`啟動.vbs` 用 pythonw 起,主控台
+# 進度的第二個出口。⚠️ **原生視窗沒有黑視窗**(`Launch.vbs` 用 pythonw 起,主控台
 # 整個藏起來),而模型第一次下載是 2~3 GB——只 `print` 的話那段進度**掉在地上**,
 # 使用者看到的是一個十幾二十分鐘不動的畫面,合理地判斷成當掉了。
-# ⚠️ **這是加一個出口、不是換掉 print**:除錯用的「啟動DEBUG.bat」與命令列那條路
+# ⚠️ **這是加一個出口、不是換掉 print**:除錯用的「Launch-DEBUG.bat」與命令列那條路
 # 靠的正是主控台那一份。
 # ⚠️ **會從工作執行緒被呼叫**(下載跑在轉檔那條執行緒上),所以掛進來的東西
 # **不准直接碰 UI**——要自己丟回主執行緒(見 `desktop.App._model_progress`)。

@@ -1,7 +1,7 @@
 r"""桌面視窗的**外殼**:標題列、頂層分頁、「聲音→MD」底下的子分頁。
 
 2026-08-29 新增(原生介面遷移,決策記錄見 `docs/dev/native-ui.md`)。階段 3 只做
-殼(視窗開得起來、工作列身分與圖示、`啟動.vbs` 的守門會說話——那三件事與頁面內容
+殼(視窗開得起來、工作列身分與圖示、`Launch.vbs` 的守門會說話——那三件事與頁面內容
 完全無關,混在一起做的話任何一個症狀都會有兩打嫌疑犯);階段 4 一頁一頁接內容,
 **六頁現在都接上了**(⚠️ 還缺的是頁面裡的兩塊:轉檔那頁的**命名區**與**現場收音**)。
 
@@ -81,7 +81,7 @@ from meeting_scribe.pipeline import run_pipeline
 from meeting_scribe.types import (DEVICE_NAMES, MAX_SPEAKERS,
                                   UNKNOWN_SPEAKER)
 
-# ⚠️ **名字寫死,不可以用 `__name__`**(2026-09-15 量啟動速度時才發現):`啟動.vbs` 跑的是
+# ⚠️ **名字寫死,不可以用 `__name__`**(2026-09-15 量啟動速度時才發現):`Launch.vbs` 跑的是
 # `pythonw -m meeting_scribe.desktop`,那時 `__name__` 是 `__main__`,不在 `meeting_scribe`
 # 底下——`filelog` 只把 `meeting_scribe` 那一支調到 DEBUG,`__main__` 退回 root 預設的
 # WARNING,這一支的 INFO/DEBUG(十幾行)在使用者的記錄檔裡**一行都沒有**,而測試是
@@ -292,7 +292,7 @@ BANNER_TITLE = t("⚠ 這台電腦少了 AI 元件需要的系統元件,錄音�
 BANNER_BODY = (
     t("請安裝「Microsoft Visual C++ 2015-2022 可轉散發套件(x64)」後重新啟動本工具"
     "——虛擬機器、剛重灌或精簡安裝的 Windows 常常沒有預裝。"
-    "裝了仍然失敗的話,請重新執行一次「安裝.bat」。")
+    "裝了仍然失敗的話,請重新執行一次「Install.bat」。")
 )
 # ⚠️ **按鈕只把網址放進剪貼簿,不自己開瀏覽器**:這支工具 2026-09-05 之後就沒有瀏覽器
 # 那一層了(使用者裁定「AP 不會用瀏覽器」),為了一顆鈕破例不划算。
@@ -772,7 +772,7 @@ DOC_INTRO = (t("把 Word、PowerPoint、Excel、PDF、網頁、掃描件、照�
              "方便交給 AI 閱讀。成品放在**原始檔案旁邊**,共支援 {n} 種格式(清單見"
              "「❓ 使用說明」);錄音要**替講者取真實姓名**請改用「🎙 聲音→MD」。"))
 # 文件頁右上那顆(2026-10-02 選案 C1):Mac 的工具資料夾藏在 `~/Library`,雙擊
-# `安裝Skill.command` 太繞。⚠️ 🤖 沒有 VS16,Tk 畫得出來(見檔頭那條 VS16 規則)
+# `Install-Skill.command` 太繞。⚠️ 🤖 沒有 VS16,Tk 畫得出來(見檔頭那條 VS16 規則)
 SKILL_BUTTON = t("🤖 安裝 Claude Skill…")
 DOC_NOTE = (t("轉出的內容裡,「〔 〕」標的是無法完整呈現的地方(圖表、儲存格底色等),"
             "檔頭也有一份清單——寧可讓你看到少了什麼,也不要安靜地少掉。"))
@@ -1551,7 +1551,7 @@ def seconds_since_process_start() -> float | None:
 
     ⚠️ **要從行程建立算,不是從這一支 import 算**:Python 自己起來、套件根與 `desktop`
     的 import 也是使用者等的那一段(2026-09-15 量到約 0.2 秒),拿 `perf_counter` 在模組
-    裡記起點就漏掉了。⚠️ **仍然不含 `啟動.vbs` 那一層**(wscript ＋ cmd,約 0.14 秒):
+    裡記起點就漏掉了。⚠️ **仍然不含 `Launch.vbs` 那一層**(wscript ＋ cmd,約 0.14 秒):
     那是父行程的時間,這裡問不到。
 
     ⚠️ **怎麼問是平台的事**(2026-09-24 搬進 `plat`):Windows 是 `GetProcessTimes`,
@@ -1563,7 +1563,7 @@ def seconds_since_process_start() -> float | None:
 class ModelChoice(tk.StringVar):
     r"""「模型」那個值:**沒有人選過的話,預設在 `get()` 當下才算**。
 
-    (2026-09-15 使用者:「感覺按下啟動.vbs 到畫面出來有點慢」。)預設要看有沒有 GPU
+    (2026-09-15 使用者:「感覺按下Launch.vbs 到畫面出來有點慢」。)預設要看有沒有 GPU
     (`transcribe.default_model_key`),而偵測是整條開窗路徑上最貴的一段——`import
     openvino` ＋ 列裝置,暖的時候約 0.34 秒(整趟開窗 1.23 秒),而且載入約 106 MB 的
     DLL(冷啟動要從磁碟讀、過防毒)。所以開窗時不決定,改成視窗畫好之後在背景偵測
@@ -1860,7 +1860,7 @@ class App(tk.Tk):
     def _boot_done(self) -> None:
         r"""視窗第一次畫好之後:記下開窗花了多久,再開始背景偵測 GPU(`main` 排的)。
 
-        (2026-09-15 使用者:「感覺按下啟動.vbs 到畫面出來有點慢」。)
+        (2026-09-15 使用者:「感覺按下Launch.vbs 到畫面出來有點慢」。)
         ⚠️ **秒數寫進記錄檔,是為了拿到「開機後第一次」的真實數字**:開發機上量得到的
         都是暖的(檔案早在記憶體裡),而使用者感覺慢的通常是冷的那一次。從行程建立算起、
         不含啟動器那一層(見 `seconds_since_process_start`)。
@@ -1873,7 +1873,7 @@ class App(tk.Tk):
             return
         secs = seconds_since_process_start()
         if secs is not None:
-            # ⚠️ 說「啟動器」不說「啟動.vbs」:macOS 那條是「啟動.command」
+            # ⚠️ 說「啟動器」不說「Launch.vbs」:macOS 那條是「Launch.command」
             # (2026-09-25),而這一行在兩個平台的記錄檔裡都會出現
             logger.info("視窗畫好:啟動後 %.2f 秒(從行程建立算起,不含啟動器那一層)",
                         secs)
@@ -10005,7 +10005,7 @@ class App(tk.Tk):
 
 
 def main() -> None:
-    r"""視窗的進站。`啟動.vbs` 跑的是這一支。"""
+    r"""視窗的進站。`Launch.vbs` 跑的是這一支。"""
     # ⚠️ **已經開著就不要再開第二個**:兩個實例會搶同一顆 GPU 與同一份聲紋庫,而畫
     # 面上只看得到各自那份進度。找得到既有的就把它叫到前景——什麼都不做的話,使用者
     # 會以為程式壞了、再點兩三次。整條政策(含「搶輸了卻找不到那個視窗就照常開」那
@@ -10037,6 +10037,11 @@ def main() -> None:
     # 幾 GB 的資料;它照樣找得到——`paths.appdata_root()` 在新位置還不存在時
     # 會回舊的。⚠️ **要在 `filelog.start()` 之後**:搬移要留得下記錄。
     paths_mod.migrate_legacy_appdata()
+    # ⚠️ **入口 2026-10-22 改成英文檔名**,而換版不刪舊檔:舊版更新上來的副本在這裡把捷徑
+    # 改指 `Launch.vbs`、刪掉中文檔名的舊入口。⚠️ **背景做**:寫捷徑要起 COM,不擋開窗。
+    import threading
+    threading.Thread(target=update.migrate_legacy_entries,
+                     name="legacy-entries", daemon=True).start()
     # ⚠️ **硬退出殘留的暫存目錄要在這裡清**(同網頁版 `app._launch` 的位置):關視窗
     # /當機來不及自清的 `meeting-scribe-*` 留在系統暫存裡,沒有人會回頭刪它。
     # ⚠️ **先前這一支完全沒清**——網頁版清、命令列的 `doccli` 清,就原生視窗不清,

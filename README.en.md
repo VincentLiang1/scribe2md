@@ -14,7 +14,7 @@ Supports **Windows 10/11 (x64)** and **Apple Silicon Macs on macOS 14.2 or later
 
 > If something goes wrong, check chapter 4, “FAQ and troubleshooting”, first. If that doesn't solve it, contact whoever gave you this tool, or [open an issue](https://github.com/VincentLiang1/scribe2md/issues) on the project's GitHub page.
 
-The interface follows your computer's language (繁體中文 / 简体中文 / English) and can be switched with the “🌐” at the top right of the window. Screenshots and some file names in the tool folder (such as `安裝.bat`, “install”) are in Chinese.
+The interface follows your computer's language (繁體中文 / 简体中文 / English) and can be switched with the “🌐” at the top right of the window. Screenshots and some file names in the tool folder (such as `Install.bat`, “install”) are in Chinese.
 
 ---
 
@@ -25,12 +25,12 @@ In a hurry? This is enough; details follow in the chapters below.
 **First installation (once, about 10 minutes)**: the steps below are for Windows; **for a Mac, see “Installing on a Mac” at the end of chapter 1**, which has fewer steps:
 
 1. Unzip the zip to your desktop, or to a folder under `C:\` (for example `C:\Tools`; **folder names in Chinese are fine too**)
-2. Double-click **`安裝.bat`** (install). If a blue “Windows protected your PC” appears, click “More info” → “Run anyway” (this is normal). A black window installs everything in 3–10 minutes; `環境建置完成` (environment ready) means success. It then **puts a “Scribe2MD” icon on your desktop** (and one in the Start menu); start it from there from now on
-3. Double-click “**Scribe2MD**” on the desktop (or **`啟動.vbs`** (start) in the tool folder): the tool's window opens directly, with no browser and no black window
+2. Double-click **`Install.bat`** (install). If a blue “Windows protected your PC” appears, click “More info” → “Run anyway” (this is normal). A black window installs everything in 3–10 minutes; `環境建置完成` (environment ready) means success. It then **puts a “Scribe2MD” icon on your desktop** (and one in the Start menu); start it from there from now on
+3. Double-click “**Scribe2MD**” on the desktop (or **`Launch.vbs`** (start) in the tool folder): the tool's window opens directly, with no browser and no black window
 
 **Everyday use:**
 
-1. Double-click “Scribe2MD” on the desktop (no icon? double-click `啟動.vbs` in the tool folder; it's the same thing)
+1. Double-click “Scribe2MD” on the desktop (no icon? double-click `Launch.vbs` in the tool folder; it's the same thing)
 2. When it opens, “What to do” is set to “**🎙️ Record live**”: choose the recording setup and click “● Start recording” to **record and transcribe while the meeting goes on** (when the meeting ends you only wait for the wrap-up, not a full transcription). See “**🎙️ Record a meeting live**” in the tool's “❓ Help”
 3. To transcribe **a file you already have**: switch “What to do” to “**🎧 File**”, click “**Choose files…**” and pick audio (`m4a`/`mp3`/`wav`) or video (`mp4`/`mov`/`avi`), or paste the file path into the box (iPhone Voice Memos are `m4a` and work as they are; **no need to move or copy anything first**, the tool reads the original file in place). Click “Start” (it lights up once a file is chosen) and wait for the progress to finish. **Choosing 1 file** lets you name the speakers; **choosing several files or a whole folder** transcribes them one after another without naming. See “**🎧 Transcribe files**” in the tool's “❓ Help”
 4. “Meeting language” and “Speakers” are right on the left column: choose the meeting's language (it defaults to the interface language); **for interviews or conversations with 1–3 people, enter the exact number of speakers**, otherwise (especially meetings of a dozen people) leave it at **0** to auto-detect. Device, model and CPU cores are in “**Advanced settings**” (right of the blue “Start” button in the left column; clicking it opens a small window); the **defaults** are fine
@@ -55,28 +55,28 @@ In a hurry? This is enough; details follow in the chapters below.
 
 ### Step 1: Unzip
 
-Right-click the zip → “Extract All”. You get a `scribe2md` folder containing `安裝.bat` (install), `啟動.vbs` (start), this guide (`README.md`) and some program files.
+Right-click the zip → “Extract All”. You get a `scribe2md` folder containing `Install.bat` (install), `Launch.vbs` (start), this guide (`README.md`) and some program files.
 
 Put it anywhere; **a folder name in Chinese is fine** (tested in Chinese paths: installation, document conversion and transcripts all work). One suggestion: **keep it shallow**: the desktop or under `C:\` (for example `C:\Tools`) is best. Don't bury it in deeply nested folders: paths get close to Windows' length limit and conversions are more likely to run into trouble.
 
-### Step 2: Run 安裝.bat
+### Step 2: Run Install.bat
 
-Double-click **`安裝.bat`**.
+Double-click **`Install.bat`**.
 
 - **If a blue “Windows protected your PC” window appears, that's normal** (Windows warns about every batch file that came from the internet). Click **“More info”**, then **“Run anyway”**.
 - A **black text window** then installs the runtime automatically, in about 3–10 minutes (depending on your connection).
 - When you see **`環境建置完成`** (environment ready), it worked; press any key to close the window.
 - If you see `[錯誤]` (error), run it once more; if it still fails, see chapter 4.
 
-### Step 3: Run 啟動.vbs
+### Step 3: Run Launch.vbs
 
-Double-click **`啟動.vbs`**.
+Double-click **`Launch.vbs`**.
 
 - **The tool's window opens directly** (in about a second), with no browser and no black text window.
 - Double-clicking again while one is already open brings that window to the front instead of opening another.
-- If nothing happens at all, the installation usually didn't finish or the folder wasn't copied completely: run `安裝.bat` again (the launcher detects this itself and explains).
+- If nothing happens at all, the installation usually didn't finish or the folder wasn't copied completely: run `Install.bat` again (the launcher detects this itself and explains).
 
-From then on, double-click the desktop icon (or `啟動.vbs`) whenever you want to use it.
+From then on, double-click the desktop icon (or `Launch.vbs`) whenever you want to use it.
 
 ### Installing on a Mac
 
@@ -92,7 +92,7 @@ More things to know on a Mac:
 - **Transcripts aren't next to the App**: the App itself is read-only, so `output` (transcripts and recordings), `data` (voiceprints and the people list) and the logs are in `~/Library/Application Support/meeting-scribe/app/`, and `Library` is hidden in Finder by default. The tool's “**📂 Output…**” button is the quickest way in; other ways are in “❓ Help”.
 - **Don't close the lid while recording**: once a Mac sleeps, the audio device stops, and that stretch of sound can't be recovered (the screen dimming or turning off by itself is fine).
 - **On macOS 26 or later, the Mac's built-in speech recognition (model “Apple”) is the default**: the first time, if this Mac doesn't have the speech data for the meeting language yet, macOS downloads it itself (that one time only). For meetings full of English technical terms and numbers, choose “Fast” or “Accurate” in “Advanced settings”.
-- **To let Claude Code run conversions itself**: in the tool's “📄 Docs→MD” tab, click “🤖 Install Claude Skill…” at the top right. Or double-click “`安裝Skill.command`” in the tool folder above (`~/Library/Application Support/meeting-scribe/app/`). If you use Terminal, you can also paste this line: `cd ~/Library/Application\ Support/meeting-scribe/app && uv run python scripts/install_skill.py`.
+- **To let Claude Code run conversions itself**: in the tool's “📄 Docs→MD” tab, click “🤖 Install Claude Skill…” at the top right. Or double-click “`Install-Skill.command`” in the tool folder above (`~/Library/Application Support/meeting-scribe/app/`). If you use Terminal, you can also paste this line: `cd ~/Library/Application\ Support/meeting-scribe/app && uv run python scripts/install_skill.py`.
 
 ---
 
@@ -182,7 +182,7 @@ Double-click the desktop icon and the tool's window opens. “What to do” star
 **⚡ Automation, batches**
 
 - The `doc2md` command line, without opening the tool's window (**all options** are in that section's table)
-- “🤖 Install Claude Skill…” in the “📄 Docs→MD” tab (or double-click `安裝Skill.bat`, on a Mac `安裝Skill.command`): lets AI tools such as Claude Code run conversions themselves
+- “🤖 Install Claude Skill…” in the “📄 Docs→MD” tab (or double-click `Install-Skill.bat`, on a Mac `Install-Skill.command`): lets AI tools such as Claude Code run conversions themselves
 - `audit_voiceprints.py`: a full check of the voiceprint store (more detailed than “Check-up” in the tool)
 
 **🆘 Something seems off**
@@ -223,11 +223,11 @@ The **full explanation** of everything above is in the tool's “**❓ Help**”
 
 **Q: Right after opening the tool: “this computer is missing system components the AI needs”?** This Windows is missing a system component the AI models use, the **Microsoft Visual C++ 2015-2022 Redistributable (x64)**; see chapter 5, “System requirements”. That notice has a “**📋 Copy download link**” button on its right that puts Microsoft's official download address on the clipboard; paste it into a browser to download. After installing, restart the tool and it works. ⚠️ **Audio already recorded isn't lost**: the file is still in `output`; once the component is installed, switch to “**🎧 File**” and transcribe it again to get the transcript, with no need to hold the meeting again.
 
-**Q: Nothing appears after double-clicking?** First check that `安裝.bat` finished (you saw `環境建置完成`). The launcher itself catches “the folder wasn't copied completely” and “the environment isn't built yet” and shows a message; if there's no message at all, look at the newest log in the tool folder's `logs` subfolder and attach it to your report.
+**Q: Nothing appears after double-clicking?** First check that `Install.bat` finished (you saw `環境建置完成`). The launcher itself catches “the folder wasn't copied completely” and “the environment isn't built yet” and shows a message; if there's no message at all, look at the newest log in the tool folder's `logs` subfolder and attach it to your report.
 
 **Q: A button doesn't respond?** Recording, transcription and document conversion **can only run one at a time**; the other two “Start” buttons are blocked (the screen says which side is busy). While a job runs, “Advanced settings” and the “People” tab are locked too, since settings are fixed the moment you click start. Everything comes back when it finishes or you click “Stop”.
 
-**Q: 安裝.bat shows [錯誤] (error)?**
+**Q: Install.bat shows [錯誤] (error)?**
 1. Check the network and run it again (it doesn't start over; finished parts are kept).
 2. If it keeps failing on a company or school network, a firewall or proxy may be blocking downloads; another network (home, a phone hotspot) usually works. If not, contact whoever gave you the tool.
 
@@ -239,13 +239,13 @@ The **full explanation** of everything above is in the tool's “**❓ Help**”
 
 **Q: Do converted files stay in the computer's temporary folder?** Conversions create working copies (intermediate files) in the system's temporary folder; **they are cleaned up immediately when the tool closes normally, and leftovers from a crash are cleaned up the next time it starts**, so they don't pile up. Your **original files are never affected** (the tool only reads them; it never moves or deletes them). Finished transcripts and recordings are kept permanently in `output`; they aren't temporary.
 
-**Q: How much does it download the first time?** A few hundred MB of runtime (`安裝.bat`) + about 2–3 GB of AI model + about 60 MB of punctuation model + about 50 MB of conversion tools (at the first conversion). Each is downloaded once. “Fast” and “Accurate” each use their own model, downloaded the first time it's used; with both, the models total about 4–6 GB.
+**Q: How much does it download the first time?** A few hundred MB of runtime (`Install.bat`) + about 2–3 GB of AI model + about 60 MB of punctuation model + about 50 MB of conversion tools (at the first conversion). Each is downloaded once. “Fast” and “Accurate” each use their own model, downloaded the first time it's used; with both, the models total about 4–6 GB.
 
 **Q: How fast is it?** Newer computers (for example an Intel Core Ultra 7 with Arc integrated graphics) automatically use the built-in GPU to speed up transcription while the CPU does speaker analysis, both at once without waiting for each other. On computers without a usable graphics chip, the two steps run one after the other (so they don't fight over the processor), and being slower is normal. With the Fast model, a one-hour meeting takes roughly 20–40 minutes. **On computers with a GPU, “Accurate” and “Fast” take about the same total time**: speaker analysis (CPU) is the bottleneck and runs alongside transcription, so Accurate's extra transcription time is hidden inside it. That's why such machines default to Accurate (at the cost of about 3× as much work for the graphics card and more power); only on computers without a GPU is Accurate clearly slower, about 4×. Processing time is roughly proportional to the recording's **length** (a 3-hour recording takes about 1–2 hours), not its file size, so large files of hundreds of MB are nothing to worry about. You can leave the window alone and do something else meanwhile. To see whether your GPU was detected, click “**Advanced settings**” to the right of the blue “Start” button in the left column; the line under “Model” says so (“GPU: …” or “CPU: …”). To see **which kind** (Intel GPU / NVIDIA GPU / CPU), look at “This computer will use” in “❓ Help” → “⚙️ Accuracy and speed”. The start of the transcript preview also shows the device actually used. And: during long stretches of talk without any pause, the progress bar may stand still for a while and then jump forward; that's not a hang.
 
 One known exception to watch for: **the integrated graphics of some older computers (such as the Intel UHD 600 series) are also treated as accelerators automatically, but they're too weak and may actually be slower than the CPU alone, and the tool doesn't notice “too slow” and switch back to the CPU** (it only sees whether there is one, not how strong). How to tell: “This computer will use” in “❓ Help” → “⚙️ Accuracy and speed” says “Intel GPU” (after one conversion, the start of the transcript preview says so too), progress really is moving and it isn't downloading a model, yet it's unreasonably slow. **In that case you can turn it off yourself**: click “**Advanced settings**” → set “**Device**” to “**CPU only**”, and convert the same file again to compare (this setting is remembered). ⚠️ Once off, transcription and speaker analysis go from “at the same time” to “taking turns”, so **it isn't guaranteed to be faster**; it only pays off when that graphics chip really is slower than the CPU, and converting the same file both ways is the only way to find out.
 
-**Q: Can I use the tool on another computer?** Yes. Copy the zip to the other computer and install it again with the three steps in chapter 1 (unzip → `安裝.bat` → `啟動.vbs`); nothing needs changing. Three things to know:
+**Q: Can I use the tool on another computer?** Yes. Copy the zip to the other computer and install it again with the three steps in chapter 1 (unzip → `Install.bat` → `Launch.vbs`); nothing needs changing. Three things to know:
 
 1. **Each computer downloads the models again**: the AI models are stored in each computer's, each user account's own user folder, **not in the tool folder**, so copying the tool folder doesn't bring the models along. The new computer downloads about 2–3 GB again at its first conversion (different accounts on the same computer each download their own, too).
 2. **Same system requirements**: see chapter 5. Moving from Windows to a Mac (or back) works too, but download **that platform's zip** and install again; to bring voiceprints and the people list along, copy the old computer's whole `data` folder to the same place on the new one (for the Mac location, see the end of chapter 1).
@@ -260,7 +260,7 @@ One known exception to watch for: **the integrated graphics of some older comput
 
 With 0, the tool keeps speakers who talk enough and sound clearly different from the others, merging only “very short noise fragments” and “drift from one person's volume or distance changing”. Recording quality (distance from the microphone, background noise) affects the result directly too, and matters more than any setting. Also, the “Speaker diagnostics” section at the end of the transcript lists each label's turns, time and cohesion, and names the few most worth checking first; to judge whether a transcript was separated well, looking there is much faster than listening to it all again.
 
-**Q: How do I update to a new version?** **On Windows you usually don't need to do anything**: when a new version exists, a window appears as the tool opens; “Update now” downloads it, swaps it in and reopens by itself (you can also click “🔄 Check for updates” at the very bottom of “❓ Help”). Only when the automatic update can't run (a Mac, or no write permission on the tool folder) do it by hand: download the latest version from the [Releases page](https://github.com/VincentLiang1/scribe2md/releases/latest) (that address always points to the latest version, so there's nothing to pick). **Windows**: download `scribe2md-win.zip` (called `scribe2md.zip` up to v0.9.20, same content), unzip it **over** your current tool folder (when File Explorer asks whether to replace, choose replace), then double-click `安裝.bat` once more; it's the same zip as the first installation. **Mac**: download `scribe2md-mac.zip`, let the unzipped App **replace** the old one, then double-click it; the first time it opens, a Terminal window updates the runtime and then the tool opens by itself.
+**Q: How do I update to a new version?** **On Windows you usually don't need to do anything**: when a new version exists, a window appears as the tool opens; “Update now” downloads it, swaps it in and reopens by itself (you can also click “🔄 Check for updates” at the very bottom of “❓ Help”). Only when the automatic update can't run (a Mac, or no write permission on the tool folder) do it by hand: download the latest version from the [Releases page](https://github.com/VincentLiang1/scribe2md/releases/latest) (that address always points to the latest version, so there's nothing to pick). **Windows**: download `scribe2md-win.zip` (called `scribe2md.zip` up to v0.9.20, same content), unzip it **over** your current tool folder (when File Explorer asks whether to replace, choose replace), then double-click `Install.bat` once more; it's the same zip as the first installation. **Mac**: download `scribe2md-mac.zip`, let the unzipped App **replace** the old one, then double-click it; the first time it opens, a Terminal window updates the runtime and then the tool opens by itself.
 
 **Everything you had is kept**: transcripts in `output`, voiceprints, the people list and word lists in `data`, and the AI models already downloaded (stored in `%LOCALAPPDATA%\meeting-scribe\models` on Windows and `~/Library/Application Support/meeting-scribe/models` on a Mac, not in the tool folder, so updates can't touch them). `data-default` in the tool folder is the factory default, only used to fill in what's missing from `data`; it never touches your data.
 

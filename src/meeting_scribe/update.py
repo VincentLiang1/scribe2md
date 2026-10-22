@@ -112,7 +112,7 @@ def is_dev_tree(root: Path | None = None) -> bool:
     r"""這是不是開發用的資料夾(有 `.git`)?
 
     ⚠️ **是的話絕不自動換版**:那會拿公開版把 repo 整個蓋過去。`.git` 是檔案(git
-    worktree,這條線就是)或資料夾都算——與 `安裝.bat` 略過捷徑的判準同一個。"""
+    worktree,這條線就是)或資料夾都算——與 `Install.bat` 略過捷徑的判準同一個。"""
     root = root or paths.repo_root()
     return (root / ".git").exists()
 
@@ -380,6 +380,85 @@ def prepare(rel: Release, progress=None, stop: threading.Event | None = None) ->
     staged = plat.stage_update(zip_path, rel.version, base / "staged")
     zip_path.unlink(missing_ok=True)
     return staged
+
+
+#: 2026-10-22 之前的入口檔名(使用者:「支援多國語言,安裝檔案應該是英文檔名,目錄也不應該
+#: 有中文」)。⚠️ **換版只覆蓋、不刪檔**(`update_helper` 檔頭),所以舊版自動更新上來的副本
+#: 兩套都在——見 `migrate_legacy_entries`。
+LEGACY_ENTRIES = ("安裝.bat", "安裝Skill.bat", "安裝.command", "安裝Skill.command",
+                  "啟動.command", "疑難排解/啟動DEBUG.bat")
+LEGACY_LAUNCHER = "啟動.vbs"
+LEGACY_DIR = "疑難排解"
+LAUNCHER = "Launch.vbs"
+
+
+def _load_make_shortcut(root: Path):
+    """交付包裡的 `scripts/make_shortcut.py`(`package.SCRIPT_FILES` 帶著它)。"""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_make_shortcut", root / "scripts" / "make_shortcut.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def migrate_legacy_entries(root: Path | None = None) -> list[str]:
+    r"""舊版更新上來的副本:把捷徑改指 `Launch.vbs`、刪掉中文檔名的舊入口。回傳刪掉了哪些。
+
+    ⚠️ **只在「新舊兩支啟動器都在」時動手**:那個組合只會出現在「改名前裝的、自動更新上來」
+    的副本;全新安裝與 Mac(`rsync --delete` 自己就清乾淨了)都碰不到。開發用的資料夾
+    一律不動(那些檔是版控的)。
+    ⚠️ **只改原本就在的捷徑、不新建**:使用者自己刪掉的那顆不該被變回來。
+    ⚠️ **捷徑沒改成就留著 `啟動.vbs`**:桌面那顆還指著它,刪了就是一顆點不開的死圖示;下一次
+    啟動再試。其他舊檔沒有人指著,照刪。
+    ⚠️ **絕不拋例外**:這是開窗路徑上的順手清理,任何一步失敗都只記一行。"""
+    from meeting_scribe import plat
+
+    root = root or paths.repo_root()
+    if is_dev_tree(root) or not (root / LAUNCHER).is_file():
+        return []
+    removed: list[str] = []
+    try:
+        if (root / LEGACY_LAUNCHER).exists():
+            retargeted = True
+            folders = (plat.desktop_dir(), plat.start_menu_programs_dir())
+            for folder in folders:
+                if folder is None or not (Path(folder) / f"{brand.APP_TITLE}.lnk").exists():
+                    continue
+                try:
+                    _load_make_shortcut(root).install_to(Path(folder))
+                    logger.info("捷徑改指 %s:%s", LAUNCHER, folder)
+                except Exception as e:  # noqa: BLE001
+                    retargeted = False
+                    logger.warning("捷徑沒能改指 %s(%s):%s", LAUNCHER, folder, e)
+            if retargeted:
+                removed += _unlink(root, (LEGACY_LAUNCHER,))
+        removed += _unlink(root, LEGACY_ENTRIES)
+        try:
+            (root / LEGACY_DIR).rmdir()      # 只刪空的:使用者可能放了自己的東西
+        except OSError:
+            pass
+    except Exception as e:  # noqa: BLE001
+        logger.warning("舊入口清理失敗:%s", e)
+    if removed:
+        logger.info("刪掉舊的中文檔名入口:%s", ", ".join(removed))
+    return removed
+
+
+def _unlink(root: Path, rels) -> list[str]:
+    done = []
+    for rel in rels:
+        p = root / rel
+        if not p.is_file():
+            continue
+        try:
+            p.unlink()
+            done.append(rel)
+        except OSError as e:
+            # 舊的 `啟動.vbs` 若正被 wscript 開著,就下次再刪
+            logger.info("舊入口 %s 這次刪不掉:%s", rel, e)
+    return done
 
 
 def helper_source() -> Path:
