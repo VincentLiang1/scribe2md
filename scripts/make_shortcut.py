@@ -47,6 +47,16 @@ ICON = Path("src") / "meeting_scribe" / "assets" / "icon.ico"
 # 滑鼠停在圖示上會看到這句。寫「不會上傳」是因為那是同仁最常問的第一個問題
 DESCRIPTION = "把錄音、影片、文件轉成 Markdown(全程在這台電腦上跑,不會上傳)"
 
+def _say(zh_tw: str, zh_cn: str, en: str) -> str:
+    """挑介面語言那一句(與工具介面同一套:🌐 選過的優先,否則跟系統)。
+
+    ⚠️ **不包 `t()`**:譯文抽取只掃 `src/`,`scripts/` 裡包了 `t()` 的字串查不到譯文,
+    會無聲退回繁中。"""
+    from meeting_scribe import i18n
+
+    return {i18n.ZH_TW: zh_tw, i18n.ZH_CN: zh_cn}.get(i18n.current(), en)
+
+
 _S_OK = 0
 _CLSCTX_INPROC_SERVER = 1
 _CLSID_SHELL_LINK = "{00021401-0000-0000-C000-000000000046}"
@@ -200,7 +210,9 @@ def main() -> int:
 
     launcher = ROOT / LAUNCHER
     if not launcher.is_file():
-        print(f"[提醒] 找不到 {LAUNCHER},略過建立捷徑。")
+        print(_say(f"[提醒] 找不到 {LAUNCHER},略過建立捷徑。",
+                   f"[提醒] 找不到 {LAUNCHER},跳过创建快捷方式。",
+                   f"[Note] {LAUNCHER} not found, skipping the shortcut."))
         return 3
 
     # 只講原因,不講「那你改用啟動.bat」——那句由「Install.bat」的 :nolnk 統一
@@ -208,10 +220,13 @@ def main() -> int:
     try:
         install_to(desktop_dir())
     except Exception as exc:
-        print(f"[提醒] 桌面圖示建立失敗:{exc}")
+        print(_say(f"[提醒] 桌面圖示建立失敗:{exc}", f"[提醒] 桌面图标创建失败:{exc}",
+                   f"[Note] Could not create the desktop icon: {exc}"))
         return 3
 
-    print(f"已經在桌面放上「{APP_NAME}」,以後雙擊它就能啟動。")
+    print(_say(f"已經在桌面放上「{APP_NAME}」,以後雙擊它就能啟動。",
+               f"已经在桌面放上「{APP_NAME}」,以后双击它就能启动。",
+               f"“{APP_NAME}” is now on your desktop. Double-click it to start the tool from now on."))
 
     # 開始功能表是備援,不是主角:桌面被公司政策鎖住時它通常還寫得進去,
     # 而且同仁可以按 Windows 鍵直接搜尋名字。失敗就安靜跳過——為了一個
@@ -219,7 +234,9 @@ def main() -> int:
     if (programs := start_menu_programs_dir()) is not None:
         try:
             install_to(programs)
-            print("「開始功能表」裡也放了一份,按 Windows 鍵打名字就找得到。")
+            print(_say("「開始功能表」裡也放了一份,按 Windows 鍵打名字就找得到。",
+                       "「开始」菜单里也放了一份,按 Windows 键输入名字就找得到。",
+                       "A copy is in the Start menu too: press the Windows key and type its name."))
         except Exception:
             pass
     return 0

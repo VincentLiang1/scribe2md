@@ -157,19 +157,33 @@ def install_one(src_dir: Path, dest_root: Path, install_dir: Path) -> Path:
     return dest
 
 
+def _say(zh_tw: str, zh_cn: str, en: str) -> str:
+    """挑介面語言那一句(與工具介面同一套:🌐 選過的優先,否則跟系統)。
+
+    ⚠️ **不包 `t()`**:譯文抽取只掃 `src/`,`scripts/` 裡包了 `t()` 的字串查不到譯文,
+    會無聲退回繁中。"""
+    from meeting_scribe import i18n
+
+    return {i18n.ZH_TW: zh_tw, i18n.ZH_CN: zh_cn}.get(i18n.current(), en)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     install_dir = Path(args[0]).resolve() if args else ROOT
     sources = sorted(p for p in (ROOT / "skills").iterdir() if p.is_dir())
     if not sources:
-        print("找不到任何要安裝的 Skill(skills/ 是空的)。", file=sys.stderr)
+        print(_say("找不到任何要安裝的 Skill(skills/ 是空的)。",
+                   "找不到任何要安装的 Skill(skills/ 是空的)。",
+                   "No Skills to install (skills/ is empty)."), file=sys.stderr)
         return 1
     dest_root = skills_root()
     for src in sources:
         dest = install_one(src, dest_root, install_dir)
-        print(f"已安裝 Skill:{dest}")
-    print(f"工具位置已填入:{install_dir}")
-    print("重開 Claude Code 就會生效。")
+        print(_say(f"已安裝 Skill:{dest}", f"已安装 Skill:{dest}", f"Installed Skill: {dest}"))
+    print(_say(f"工具位置已填入:{install_dir}", f"工具位置已填入:{install_dir}",
+               f"Tool location filled in: {install_dir}"))
+    # 不在這裡講「重開 Claude Code」:兩個入口(`Install-Skill.bat`/`.command`)收尾那句已經講了,
+    # 這裡再講一次就是同一件事連說兩遍(2026-10-23 使用者)
     return 0
 
 

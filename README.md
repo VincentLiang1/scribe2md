@@ -14,7 +14,7 @@ Supports **Windows 10/11 (x64)** and **Apple Silicon Macs on macOS 14.2 or later
 
 > If something goes wrong, check chapter 4, “FAQ and troubleshooting”, first. If that doesn't solve it, contact whoever gave you this tool, or [open an issue](https://github.com/VincentLiang1/scribe2md/issues) on the project's GitHub page.
 
-The interface follows your computer's language (繁體中文 / 简体中文 / English) and can be switched with the “🌐” at the top right of the window. Screenshots and some file names in the tool folder (such as `Install.bat`, “install”) are in Chinese.
+The interface follows your computer's language (繁體中文 / 简体中文 / English) and can be switched with the “🌐” at the top right of the window. Installer messages follow your computer's language too; the Mac App's name is in Chinese only.
 
 ---
 
@@ -25,12 +25,12 @@ In a hurry? This is enough; details follow in the chapters below.
 **First installation (once, about 10 minutes)**: the steps below are for Windows; **for a Mac, see “Installing on a Mac” at the end of chapter 1**, which has fewer steps:
 
 1. Unzip the zip to your desktop, or to a folder under `C:\` (for example `C:\Tools`; **folder names in Chinese are fine too**)
-2. Double-click **`Install.bat`** (install). If a blue “Windows protected your PC” appears, click “More info” → “Run anyway” (this is normal). A black window installs everything in 3–10 minutes; `環境建置完成` (environment ready) means success. It then **puts a “Scribe2MD” icon on your desktop** (and one in the Start menu); start it from there from now on
-3. Double-click “**Scribe2MD**” on the desktop (or **`Launch.vbs`** (start) in the tool folder): the tool's window opens directly, with no browser and no black window
+2. Double-click **`Install.bat`** (install). If a blue “Windows protected your PC” appears, click “More info” → “Run anyway” (this is normal). A black window installs everything in 3–10 minutes; `Setup complete.` means success. It then **puts the tool's icon on your desktop** (and one in the Start menu); start it from there from now on
+3. Double-click the tool's icon on the desktop (or **`Launch.vbs`** (start) in the tool folder): the tool's window opens directly, with no browser and no black window
 
 **Everyday use:**
 
-1. Double-click “Scribe2MD” on the desktop (no icon? double-click `Launch.vbs` in the tool folder; it's the same thing)
+1. Double-click the tool's icon on the desktop (no icon? double-click `Launch.vbs` in the tool folder; it's the same thing)
 2. When it opens, “What to do” is set to “**🎙️ Record live**”: choose the recording setup and click “● Start recording” to **record and transcribe while the meeting goes on** (when the meeting ends you only wait for the wrap-up, not a full transcription). See “**🎙️ Record a meeting live**” in the tool's “❓ Help”
 3. To transcribe **a file you already have**: switch “What to do” to “**🎧 File**”, click “**Choose files…**” and pick audio (`m4a`/`mp3`/`wav`) or video (`mp4`/`mov`/`avi`), or paste the file path into the box (iPhone Voice Memos are `m4a` and work as they are; **no need to move or copy anything first**, the tool reads the original file in place). Click “Start” (it lights up once a file is chosen) and wait for the progress to finish. **Choosing 1 file** lets you name the speakers; **choosing several files or a whole folder** transcribes them one after another without naming. See “**🎧 Transcribe files**” in the tool's “❓ Help”
 4. “Meeting language” and “Speakers” are right on the left column: choose the meeting's language (it defaults to the interface language); **for interviews or conversations with 1–3 people, enter the exact number of speakers**, otherwise (especially meetings of a dozen people) leave it at **0** to auto-detect. Device, model and CPU cores are in “**Advanced settings**” (right of the blue “Start” button in the left column; clicking it opens a small window); the **defaults** are fine
@@ -65,8 +65,8 @@ Double-click **`Install.bat`**.
 
 - **If a blue “Windows protected your PC” window appears, that's normal** (Windows warns about every batch file that came from the internet). Click **“More info”**, then **“Run anyway”**.
 - A **black text window** then installs the runtime automatically, in about 3–10 minutes (depending on your connection).
-- When you see **`環境建置完成`** (environment ready), it worked; press any key to close the window.
-- If you see `[錯誤]` (error), run it once more; if it still fails, see chapter 4.
+- When you see **`Setup complete.`**, it worked; press any key to close the window.
+- If you see `[Error]`, run it once more; if it still fails, see chapter 4.
 
 ### Step 3: Run Launch.vbs
 
@@ -80,9 +80,9 @@ From then on, double-click the desktop icon (or `Launch.vbs`) whenever you want 
 
 ### Installing on a Mac
 
-1. On the download page, click **`scribe2md-mac.zip`** under `Assets` and double-click to unzip it; you get the App “**AI 文件.MD 轉換器**” (Scribe2MD). Dragging it into “**Applications**” makes it easier to open from Launchpad or the Dock (double-clicking it in “Downloads” works too).
+1. On the download page, click **`scribe2md-mac.zip`** under `Assets` and double-click to unzip it; you get the App (its name is in Chinese; look for the Scribe2MD icon). Dragging it into “**Applications**” makes it easier to open from Launchpad or the Dock (double-clicking it in “Downloads” works too).
 2. **Double-click it.** macOS may first ask whether to open an App downloaded from the internet; choose “Open” (the App is notarized by Apple, so it only asks the first time).
-3. A **Terminal window** then builds the runtime automatically (first installing uv, a Python environment manager, then downloading dependencies), in about 3–10 minutes. When you see “**完成。正在啟動……**” (done, starting…) the tool's window opens by itself; the Terminal window **doesn't close by itself**: when it stops at “`[Process completed]`” it is finished and you can close it. If you see `[錯誤]` (error), check the network and double-click the App again.
+3. A **Terminal window** then builds the runtime automatically (first installing uv, a Python environment manager, then downloading dependencies), in about 3–10 minutes. When you see “**Done. Starting...**” the tool's window opens by itself; the Terminal window **doesn't close by itself**: when it stops at “`[Process completed]`” it is finished and you can close it. If you see `[Error]`, check the network and double-click the App again.
 4. From then on it opens directly with a double-click, **with no Terminal** (it appears once more only after an update).
 
 More things to know on a Mac:
@@ -127,7 +127,7 @@ Double-click the desktop icon and the tool's window opens. “What to do” star
 
 - Three recording setups: in person, online (**echo removed automatically**, speakers are fine, no headset needed), system audio only; **it always starts at “In person”**
 - Transcribes while the meeting goes on, so there is almost no wait afterwards; with a graphics chip even speaker separation is done during the recording
-- The audio file is a result too (`錄音_date_time.wav`; online meetings are stereo: left = room, right = computer)
+- The audio file is a result too (a `.wav` named with the date and time; online meetings are stereo: left = room, right = computer)
 - “‖ Pause” / “● Resume”: nothing is recorded while paused and it isn't counted in the transcript's time; the seam is marked 〔Recording paused here…〕
 - “★ Highlight” (or ⌘B/Ctrl+B): press it when you hear something important, and type a note on the spot if you like; the transcript marks it 〔highlight〕 with the note under that turn (same format as the phone app), and the minutes draft gets a section for them
 - Closing the window while recording asks first; the computer doesn't sleep while recording
@@ -223,17 +223,17 @@ The **full explanation** of everything above is in the tool's “**❓ Help**”
 
 **Q: Right after opening the tool: “this computer is missing system components the AI needs”?** This Windows is missing a system component the AI models use, the **Microsoft Visual C++ 2015-2022 Redistributable (x64)**; see chapter 5, “System requirements”. That notice has a “**📋 Copy download link**” button on its right that puts Microsoft's official download address on the clipboard; paste it into a browser to download. After installing, restart the tool and it works. ⚠️ **Audio already recorded isn't lost**: the file is still in `output`; once the component is installed, switch to “**🎧 File**” and transcribe it again to get the transcript, with no need to hold the meeting again.
 
-**Q: Nothing appears after double-clicking?** First check that `Install.bat` finished (you saw `環境建置完成`). The launcher itself catches “the folder wasn't copied completely” and “the environment isn't built yet” and shows a message; if there's no message at all, look at the newest log in the tool folder's `logs` subfolder and attach it to your report.
+**Q: Nothing appears after double-clicking?** First check that `Install.bat` finished (you saw `Setup complete.`). The launcher itself catches “the folder wasn't copied completely” and “the environment isn't built yet” and shows a message; if there's no message at all, look at the newest log in the tool folder's `logs` subfolder and attach it to your report.
 
 **Q: A button doesn't respond?** Recording, transcription and document conversion **can only run one at a time**; the other two “Start” buttons are blocked (the screen says which side is busy). While a job runs, “Advanced settings” and the “People” tab are locked too, since settings are fixed the moment you click start. Everything comes back when it finishes or you click “Stop”.
 
-**Q: Install.bat shows [錯誤] (error)?**
+**Q: Install.bat shows [Error]?**
 1. Check the network and run it again (it doesn't start over; finished parts are kept).
 2. If it keeps failing on a company or school network, a firewall or proxy may be blocking downloads; another network (home, a phone hotspot) usually works. If not, contact whoever gave you the tool.
 
 **Q: Antivirus warns or quarantines files?** Every component of this tool is open source, with no malicious behavior (the source code is public for you to inspect). Add the tool folder to your antivirus allow list; on computers where you can't change that yourself (such as company-issued ones), contact your IT department.
 
-**Q: What does “(此段轉錄異常……請對照原始錄音)” (transcription of this part failed, check the original recording) in a transcript mean?** When several people talk at once, there is a lot of noise, or someone talks at length without pausing, the AI transcription model occasionally gets “stuck”, repeating the same word endlessly (“including data, including data, …”), and the real content of that part can't be transcribed. The tool detects this and retries automatically; parts it still can't recover are honestly marked “not reliable” with this note and the time range, so you can go straight to that part of the recording. It usually affects only one passage; the rest of the transcript is fine.
+**Q: What does “(Transcription problem: … check the original recording if you need it)” in a transcript mean?** When several people talk at once, there is a lot of noise, or someone talks at length without pausing, the AI transcription model occasionally gets “stuck”, repeating the same word endlessly (“including data, including data, …”), and the real content of that part can't be transcribed. The tool detects this and retries automatically; parts it still can't recover are honestly marked “not reliable” with this note and the time range, so you can go straight to that part of the recording. It usually affects only one passage; the rest of the transcript is fine.
 
 **Q: Will it send my recordings anywhere?** No. The tool is a window program running on your own computer, with all outgoing telemetry off. Its network activity is downloading the models and runtime the first time, and asking GitHub whether there's a new version when it opens (only that one question, with no files or usage data; it can be turned off at the bottom of “❓ Help”). Once the models are downloaded, conversions are **entirely offline** (it works with the network cable unplugged). Recordings and transcripts stay on your computer from start to finish.
 
@@ -268,7 +268,7 @@ To be extra safe, copy the `data` folder somewhere else before updating; it take
 
 **Q: Not enough disk space; can I delete the models?** On Windows, delete the `%LOCALAPPDATA%\meeting-scribe\models` folder (paste that path into File Explorer's address bar to open it); on a Mac, delete `~/Library/Application Support/meeting-scribe/models` (Finder → “Go” → “Go to Folder…”, paste the path). They're downloaded again the next time you use it.
 
-**Q: What should I include when reporting a problem?** Switch to the “❓ Help” tab and click “📂 Log…” at the **top right**; the file manager points straight at this session's log (one per start, named by the start time, for example `2026-08-03_143020-12345.log`; no need to dig through the tool folder). **Attach that file to your report** (to whoever gave you the tool, or in a GitHub issue): it holds diagnostics not shown on screen (such as whether audio capture was stable during a recording), which is far more useful than a description. The log's first lines include “**程式版本**” (program version), so attaching the file covers it; without it, nobody knows which version you have. Logs stay on your own computer, are never sent anywhere, and are deleted automatically after 30 days.
+**Q: What should I include when reporting a problem?** Switch to the “❓ Help” tab and click “📂 Log…” at the **top right**; the file manager points straight at this session's log (one per start, named by the start time, for example `2026-08-03_143020-12345.log`; no need to dig through the tool folder). **Attach that file to your report** (to whoever gave you the tool, or in a GitHub issue): it holds diagnostics not shown on screen (such as whether audio capture was stable during a recording), which is far more useful than a description. The log's first lines include the **program version**, so attaching the file covers it; without it, nobody knows which version you have. Logs stay on your own computer, are never sent anywhere, and are deleted automatically after 30 days.
 
 ---
 

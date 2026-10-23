@@ -42,9 +42,11 @@ REPO = "VincentLiang1/scribe2md"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 #: 使用者手動更新時要去的頁面(Mac 版、或自動更新走不了的時候)
 DOWNLOAD_PAGE = f"https://github.com/{REPO}/releases/latest"
-#: Release 內文裡英文更新說明的小標(⚠️ 與 `scripts/release.py` 的 `EN_HEADING` 是同一個字,
-#: 測試釘著):`---` 之前,它前面是中文、後面是英文
+#: Release 內文裡分開兩種語言的小標(⚠️ 與 `scripts/release.py` 的同名常數是同一個字,
+#: 測試釘著),都在 `---` 之前:v1.7.3 起英文在前、`ZH_HEADING` 之後是中文;
+#: v1.7.2 以前中文在前、`EN_HEADING` 之後是英文
 EN_HEADING = "### English"
+ZH_HEADING = "### 中文"
 #: ⚠️ 與 `scripts/release.py` 的 `WIN_ASSET` 是同一個名字(測試釘著)
 WIN_ASSET = "scribe2md-win.zip"
 #: ⚠️ 與 `scripts/release.py` 的 `MAC_ASSET` 是同一個名字(測試釘著)
@@ -120,14 +122,18 @@ def is_dev_tree(root: Path | None = None) -> bool:
 def notes_from_body(body: str | None, lang: str | None = None) -> str:
     r"""從 Release 內文取出「這一版改了什麼」。
 
-    內文的形狀由 `release.build_notes` 決定:`## v1.2.0 更新內容`、空行、本次更新、
-    (有英文時)`### English` 與英文的本次更新、`---`、固定不變的產品介紹。只要前一半,
+    內文的形狀由 `release.build_notes` 決定:`## v1.2.0 What's new`、英文的本次更新、
+    `### 中文` 與中文的本次更新、`---`、固定不變的產品介紹(v1.7.2 以前是中文在前、
+    `### English` 底下接英文,舊 Release 照樣認得)。只要前一半,
     標題也拿掉(對話框自己會寫版號);`**粗體**` 的星號在 Tk 的純文字框裡只會是雜訊,一併拿掉。
     英文介面只列英文那段、其他介面只列中文那段(`lang` 不給就問介面語言);沒有英文那段的
     舊 Release 一律列中文。"""
     text = (body or "").replace("\r\n", "\n")
     text = text.split("\n---\n", 1)[0]
-    zh, sep, en = text.partition(f"\n{EN_HEADING}\n")
+    if f"\n{ZH_HEADING}\n" in text:
+        en, sep, zh = text.partition(f"\n{ZH_HEADING}\n")
+    else:
+        zh, sep, en = text.partition(f"\n{EN_HEADING}\n")
     text = en if sep and (lang or i18n.current()) == "en" else zh
     lines = [ln for ln in text.split("\n") if not ln.startswith("## ")]
     return "\n".join(lines).replace("**", "").strip()
