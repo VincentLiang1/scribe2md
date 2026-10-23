@@ -30,7 +30,7 @@ CPU 99% 在「其他」、資料夾沒跳出來在「文件轉檔」中間、錄
 代價是日後改文字要改兩處,所以**只給這四條最常被問的,不擴散**。
 
 只有文案、無邏輯,抽離 app.build_ui 讓接線讀起來不被百行說明文打斷。
-內容與 README.md(GitHub 上的使用手冊)對應章節同步維護;Markdown
+內容與 README.zh-TW.md(GitHub 上的繁中使用手冊)對應章節同步維護;Markdown
 粗體不可貼在全形引號外側(CommonMark flanking 地雷,測試掃著)。
 """
 

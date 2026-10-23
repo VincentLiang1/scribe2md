@@ -1,6 +1,6 @@
 # AI 文件.MD 轉換器 使用手册
 
-[繁體中文](README.md) | [English](README.en.md) | **简体中文**
+[English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文**
 
 把**声音、文字、图像**都转换成**适合 AI 阅读的 Markdown 格式**(以节省 Token):会议录音或录像变成「**谁说了什么**」的**逐字稿**(繁体中文、简体中文或英文),Word、PowerPoint、Excel、PDF、扫描件等文档转成 Markdown。所有处理都在本机电脑完成,**录音文件、文档和逐字稿都不会上传到任何地方**。(只有三种情况会连网:第一次使用时下载 AI 模型;在 Windows 上转**旧版** Office 档而电脑上没有 LibreOffice 时下载它——旧版指扩展名**结尾没有 x** 的 `doc`/`xls`/`ppt`,现在的 `docx`/`xlsx`/`pptx` 不会下载任何东西;以及打开时向 GitHub 问有没有新版——只发送这一个询问,可以关掉。)
 
@@ -8,9 +8,9 @@
 
 📥 **下载(免费):[最新版](https://github.com/VincentLiang1/scribe2md/releases/latest)** —— 点进去,在页面下方的 `Assets` 区块挑你的平台:**Windows 点 `scribe2md-win.zip`、Mac 点 `scribe2md-mac.zip`**。文件不大是正常的(Windows 版 2MB 出头、Mac 版约 30MB,多的是 App 内附的 Python),运行环境与 AI 模型都是第一次启动时才自动下载(合计约 3～6GB,见第五章)。
 
-![声音→MD:现场收音或转现成的录音录像,做成含讲者分离的繁体中文逐字稿](docs/screenshot-audio.png)
+![声音→MD:现场收音或转现成的录音录像,做成含讲者分离的繁体中文逐字稿](docs/screenshot-audio.zh-CN.png)
 
-![文字、图像→MD:Word、PowerPoint、Excel、PDF、网页、扫描件、照片与邮件批量转成 Markdown](docs/screenshot-doc.png)
+![文字、图像→MD:Word、PowerPoint、Excel、PDF、网页、扫描件、照片与邮件批量转成 Markdown](docs/screenshot-doc.zh-CN.png)
 
 > 有问题先看第四章「常见问题与故障排除」;还是解决不了,就联系把这个工具给你的人,或到项目的 GitHub 页面[开一个 issue](https://github.com/VincentLiang1/scribe2md/issues)。
 
@@ -53,7 +53,7 @@
 
 ### 步骤 1:解压缩
 
-对 zip 档按右键 →「全部解压缩」。解压后会得到一个 `scribe2md` 文件夹,里面有 `Install.bat`、`Launch.vbs`、这份使用手册(`README.md`)和一些程序文件。
+对 zip 档按右键 →「全部解压缩」。解压后会得到一个 `scribe2md` 文件夹,里面有 `Install.bat`、`Launch.vbs`、这份使用手册(`README.zh-CN.md`)和一些程序文件。
 
 放哪里都可以,**文件夹名称是中文也没关系**(工具在中文路径下实测过:安装、文档转换、逐字稿都正常)。只有一个建议:**放浅一点**——桌面或 `C:\` 底下(例如 `C:\Tools`)就好,别塞进层层嵌套的深文件夹里,那会让路径长到接近 Windows 的长度上限,转换时比较容易出状况。
 
