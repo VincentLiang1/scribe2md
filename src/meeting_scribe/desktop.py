@@ -607,44 +607,207 @@ MINUTES_HINT = (t("挑一份轉好的 .md(建議先替講者命名),整理出摘
                 "⚠ 地端小模型,品質比不上雲端 AI,只能當草稿。"))
 # 動作列右邊那顆:開草稿資料夾。⚠️ 草稿**不在**逐字稿旁邊(見 `minutes.drafts_dir`),
 # 不給這顆的話使用者找不到它
-MINUTES_DIR_BUTTON = t("📂 草稿資料夾…")
 # 命名收工之後右邊預覽卡上那顆捷徑(B 案的後半):帶入剛寫好的那份、直接開始
 MINUTES_SHORTCUT = t("✨ 用這份產生會議紀錄草稿")
 # 「地端 AI」那一格的模型選擇(Mac;2026-10-14 使用者選案 A:膠囊二選一 ＋ 底下一行說明;
 # 只有一個能用時整排收起來,見 `minutes.choices`)。⚠️ 說明那一行是「選之前」唯一講得到
 # 「要下載 3 GB」與「比較慢」的地方,不可以為了省高度拿掉(量過:最窄視窗多 102 px、
 # 視窗本身不變高)。上面原本有一行小標「用哪個模型整理」,同日使用者指定拿掉
-MINUTES_ENGINE_OPTIONS = ((minutes.ENGINE_APPLE, "", "Apple"), (minutes.ENGINE_QWEN, "", "Qwen 4B"))
+# 2026-10-29 M3 多一格 Gemma 4(使用者:「有畫面不等我確認,請先做出來」——**沒有走設計稿選案**,
+# 照原本那一排的形狀加一格;比較頁與說明在 M4)
+MINUTES_ENGINE_OPTIONS = ((minutes.ENGINE_APPLE, "", "Apple"), (minutes.ENGINE_QWEN, "", "Qwen 4B"),
+                          (minutes.ENGINE_GEMMA, "", "Gemma 4"))
+# Windows 那一排(2026-10-29 W3:Gemma 4 E4B 放進 Windows;使用者說「模型選單你先做出來,不需要
+# 給我看,再給你修改的建議」——**沒有走設計稿選案**,照 Mac 那一排的形狀做;看過截圖後同日選
+# 「選項寫完整型號」,說明那一行與下載那一問跟著寫全名)
+MINUTES_ENGINE_OPTIONS_WIN = ((minutes.ENGINE_OV, "", "Qwen3.5 4B"), (minutes.ENGINE_GEMMA, "", "Gemma 4 E4B"))
+
+
+def minutes_engine_options() -> tuple:
+    """這個平台那一排的選項(只有列得出兩個時才放出來,見 `minutes.choices`)。"""
+    return MINUTES_ENGINE_OPTIONS_WIN if minutes._backend() == "openvino" else MINUTES_ENGINE_OPTIONS
+
+
+def minutes_engine_downloaded(engine: str) -> bool:
+    """這個模型下載好了沒(底下那行說明與「要先下載」那一問用;不連網)。"""
+    if engine == minutes.ENGINE_QWEN:
+        return models.mlx_llm_cached()
+    if engine == minutes.ENGINE_GEMMA:
+        return models.gemma_mlx_cached() if minutes._backend() == "apple" else models.gemma_ov_cached()
+    if engine == minutes.ENGINE_OV:
+        return models.llm_cached("4b")
+    return True
 
 
 def minutes_engine_note(engine: str, can: plat.Outcome | None, downloaded: bool) -> str:
-    """選模型那一排底下那一行。用不了(`failed`)就直接講怎麼解——按下去也是這一句。"""
+    """選模型那一排底下那一行。用不了(`failed`)就直接講怎麼解——按下去也是這一句。
+
+    Windows 兩顆都寫出處(同手機版比較頁:使用者 2026-10-17 要寫明哪一顆是中國的模型)。"""
     if can is not None and not can.ok:
         return can.reason
+    if engine == minutes.ENGINE_OV:
+        first = t("已下載") if downloaded else t("第一次用時下載約 {v} GB", v=models.LLM_DOWNLOAD_GB["4b"])
+        return t("Qwen3.5 4B(阿里巴巴,中國):{first};比較快。", first=first)
+    if engine == minutes.ENGINE_GEMMA and minutes._backend() == "apple":
+        # 強弱項只寫這台兩場都成立的(M5 使用者 2026-10-29 選;手機版的「較少編造」這台量不出來,
+        # 數字見 `compare_cards`)
+        first = t("已下載") if downloaded else t("第一次用時下載約 {v} GB", v=models.GEMMA_MLX_DOWNLOAD_GB)
+        return t("Gemma 4:{first};待辦比 Apple 準,但議題涵蓋最少、檔案最大。", first=first)
+    if engine == minutes.ENGINE_GEMMA:
+        first = t("已下載") if downloaded else t("第一次用時下載約 {v} GB", v=models.GEMMA_OV_DOWNLOAD_GB)
+        return t("Gemma 4 E4B(Google,美國):{first};比 Qwen 稍慢、記憶體多用一倍,"
+                 "開著其他大程式時會更慢。", first=first)
     if engine == minutes.ENGINE_QWEN:
         first = t("已下載") if downloaded else t("第一次用時下載約 {MLX_LLM_DOWNLOAD_GB} GB", MLX_LLM_DOWNLOAD_GB=models.MLX_LLM_DOWNLOAD_GB)
-        return t("Qwen 4B:{first};整理得比較完整,比 Apple 慢約五成。", first=first)
-    return t("Apple:不必下載、比較快;偶爾有幾段整理不出來。")
+        return t("Qwen 4B:{first};待辦最準,長會的交辦抓得最全。", first=first)
+    return t("Apple:不必下載;待辦比較常不準。")
 
 
 # 第一次選 Qwen 按下去時的確認框(使用者 2026-10-14 選「先問一次」;實測這台下載花過 24 分鐘)
+MINUTES_DOWNLOAD_ASK_GEMMA = (t("要先下載 Gemma 4 E4B 模型(約 {gb} GB)。\n\n"
+                              "可能要二三十分鐘,下載完接著整理。中斷了再按一次,會接著下載。"))
 MINUTES_DOWNLOAD_ASK = (t("要先下載 Qwen 4B 模型(約 {gb} GB)。\n\n"
                         "可能要二三十分鐘,下載完接著整理。中斷了再按一次,會接著下載。"))
 MINUTES_DOWNLOAD_OK = t("下載並開始")
-# 「進階參數設定」裡那一列(Mac、這台能用 Qwen 時才有;使用者 2026-10-14 選放這裡)
-QWEN_ROW_TITLE = t("地端 AI 模型")
-QWEN_DELETE = t("刪除模型…")
-QWEN_DELETE_ASK = t("要刪除 Qwen 4B 模型({gb:.1f} GB)嗎?\n\n刪除後,下次選 Qwen 4B 時會重新下載。")
+# 「進階參數設定」裡那一列(這台有可刪的模型時才有;Mac 的 Qwen 使用者 2026-10-14 選放這裡,
+# Windows 的 Gemma 2026-10-29 W4 選「只有刪除」、不放比較頁的入口)
+LLM_DELETE = t("刪除模型…")
+LLM_DELETE_ASK = t("要刪除 {name} 模型({gb:.1f} GB)嗎?\n\n刪除後,下次選 {name} 時會重新下載。")
 
 
-def qwen_row_info() -> str:
-    """那一列的說明(一行):下載了沒、佔多少。"""
-    size = models.mlx_llm_size()
-    if models.mlx_llm_cached():
-        return t("會議紀錄草稿用的 Qwen 4B,已下載 {v:.1f} GB", v=size / 1000000000.0)
+@dataclass(frozen=True)
+class RowModel:
+    """那一列管的那一顆:名字、現在佔多少、下載好了沒、怎麼刪(三支都在用的當下才去問 `models`,
+    測試換掉 `models.*` 才接得到)。"""
+    name: str
+    size: object
+    cached: object
+    delete: object
+
+
+def row_models() -> tuple:
+    r"""這台有幾顆可刪的模型(一顆一列):Mac 是 Qwen 4B、Gemma 4(這台能用的那幾顆)、Windows 是
+    Gemma 4 E4B(這台列得出來時)。
+    ⚠️ **Windows 的 Qwen 不在這裡**:它是預設那一顆、也是 Gemma 用不了的電腦唯一的一顆,
+    刪了下一場又要重下 3.4 GB。⚠️ Mac 兩顆都**不經 `engines()`**(理由見 `minutes.qwen_available`)。"""
+    if minutes._backend() == "openvino":
+        can = minutes.engines().get(minutes.ENGINE_GEMMA)
+        if can is None or not can.ok:
+            return ()
+        return (RowModel("Gemma 4 E4B", lambda: models.gemma_ov_size(),
+                         lambda: models.gemma_ov_cached(), lambda: models.delete_gemma_ov()),)
+    if minutes._backend() != "apple":
+        return ()
+    out = []
+    if minutes.qwen_available():
+        out.append(RowModel("Qwen 4B", lambda: models.mlx_llm_size(),
+                            lambda: models.mlx_llm_cached(), lambda: models.delete_mlx_llm()))
+    if minutes._gemma_mlx_capability().state != "unsupported":
+        out.append(RowModel("Gemma 4", lambda: models.gemma_mlx_size(),
+                            lambda: models.gemma_mlx_cached(), lambda: models.delete_gemma_mlx()))
+    return tuple(out)
+
+
+def llm_row_info(m: RowModel) -> str:
+    """那一列的說明(一行):下載了沒、佔多少。模型名是那一列的大標(使用者 2026-10-29 選),
+    這裡不再重複。"""
+    size = m.size()
+    if m.cached():
+        return t("已下載 {v:.1f} GB", v=size / 1000000000.0)
     if size:
-        return t("會議紀錄草稿用的 Qwen 4B,下載到一半({v:.1f} GB)", v=size / 1000000000.0)
-    return t("會議紀錄草稿用的 Qwen 4B,還沒下載")
+        return t("下載到一半({v:.1f} GB)", v=size / 1000000000.0)
+    return t("還沒下載")
+
+
+# 「地端 AI 進階設定」(使用者 2026-10-29 從設計稿選):「地端 AI」自己的一扇,入口在它動作列的第二格
+# (同其他三個模式「⚙ 進階參數設定…」坐的位置)。放這一條路專用的東西:各模型比較、刪模型、
+# 草稿資料夾——先前刪模型放在轉錄用的「進階參數設定」,使用者說「做法不對」。
+LLM_ADV_TITLE = t("地端 AI 進階設定")
+LLM_ADV_BUTTON = t("⚙ 地端 AI 設定…")
+LLM_ADV_OPEN = t("打開…")
+COMPARE_INFO = t("出處、大小、要等多久與強弱項")
+DRAFTS_TITLE = t("草稿資料夾")
+# 「與我相關」(會議紀錄草稿第 6 階段,使用者 2026-10-29 選設計稿 A:右邊直接是輸入框)
+ABOUT_ME_TITLE = t("與我相關")
+ABOUT_ME_INFO = t("你的稱呼,用逗號分開;提到的放最上面")
+DRAFTS_INFO = t("草稿存在這裡,不放在逐字稿旁邊")
+DRAFTS_OPEN = t("📂 打開…")
+
+
+# 「各模型比較」(W4 2026-10-29 使用者選:入口在模型說明那一行右邊、版面同手機版的「怎麼選＋
+# 對照表」)。⚠️ **出處一定要寫**(手機版 10-17 使用者:Qwen 是中國的模型,要告知)。⚠️ **還沒有
+# 強項/弱項**:這台 W3 單次的結果跟手機版相反(Gemma 編造反而多),同日使用者選「等 W5 每顆跑 3 次
+# 再補」。數字是這台(Intel 內顯)兩場真實會議量的,見 `docs/spec/mac/05` §5.4b。
+COMPARE_TITLE = t("各模型比較")
+
+
+@dataclass(frozen=True)
+class CompareCard:
+    engine: str
+    name: str
+    country: str
+    company: str
+    size: str
+    memory: str
+    hour: str
+    # 強項/弱項(Mac:M4/M5 使用者 2026-10-29 選;Windows:W5 同日選「照 W5 寫」)
+    strong: str = ""
+    weak: str = ""
+
+
+def compare_cards() -> tuple:
+    r"""這個平台的對照表(一顆一欄);沒有對照表的平台(`plat_null`)入口鈕就不放。
+    Mac 的數字是這台(M5 晶片)兩場真實會議量的(M5,`docs/spec/mac/05` §5.4b):一小時的會 Apple 約
+    2~2.4 分、Qwen 約 1.4~1.9、Gemma 約 1.6~2.4;記憶體是 MLX 的配置峰值(Qwen 3.3、Gemma 4.8~5.4 GB)。
+    ⚠️ **強弱項只寫兩場都成立的**(M5 使用者 2026-10-29 選):兩場的強弱不一樣(長會 Apple 交辦漏最多、
+    短會反而抓最多),那種只在一場成立的不寫。每顆跑 3 次分數一模一樣,差別來自會議、不是運氣。"""
+    if minutes._backend() == "apple":
+        return (
+            CompareCard(minutes.ENGINE_APPLE, "Apple Intelligence", t("美國"), "Apple",
+                        t("不用下載"), t("由 macOS 管"), t("約 {v} 分鐘", v="2~3"),
+                        t("不用下載"), t("待辦最常不準")),
+            CompareCard(minutes.ENGINE_QWEN, "Qwen3.5 4B", t("中國"), t("阿里巴巴"),
+                        f"{models.MLX_LLM_DOWNLOAD_GB} GB", t("約 {v} GB", v=3.5), t("約 {v} 分鐘", v=2),
+                        t("待辦最準\n長會交辦最全"), t("短會交辦漏得多")),
+            CompareCard(minutes.ENGINE_GEMMA, "Gemma 4 E4B", t("美國"), "Google",
+                        f"{models.GEMMA_MLX_DOWNLOAD_GB} GB", t("約 {v} GB", v=5), t("約 {v} 分鐘", v="2~3"),
+                        t("待辦比 Apple 準"), t("議題涵蓋最少\n檔案最大")),
+        )
+    if minutes._backend() != "openvino":
+        return ()
+    # Windows(Intel 內顯)是 W5 量的(兩場 × 各 3 次,§5.4b「Windows 用標準答案評測」):一小時的會 Qwen
+    # 約 3.5~3.7 分、Gemma 約 3.9~4.2;強弱項同 Mac 只寫兩場都成立的——議題涵蓋(10 對 6、5 對 3)與
+    # 關鍵數字(3 對 2、4 對 2)兩場都是 Qwen 多;待辦準不準兩場不一樣(短會打平、長會 Qwen 0.77 對
+    # 0.63),不寫。沒有兩場都成立的那一格寫「—」,不硬湊
+    return (
+        CompareCard(minutes.ENGINE_OV, "Qwen3.5 4B", t("中國"), t("阿里巴巴"),
+                    f"{models.LLM_DOWNLOAD_GB['4b']} GB", t("約 {v} GB", v=5), t("約 {v} 分鐘", v="3~4"),
+                    t("議題較全\n關鍵數字較多"), "—"),
+        CompareCard(minutes.ENGINE_GEMMA, "Gemma 4 E4B", t("美國"), "Google",
+                    f"{models.GEMMA_OV_DOWNLOAD_GB} GB", t("約 {v} GB", v=8), t("約 {v} 分鐘", v=4),
+                    "—", t("議題涵蓋較少\n記憶體多用一倍")),
+    )
+
+
+#: 「怎麼選」:一句情境 → 哪一顆(只寫量得到的差別,理由見上)
+COMPARE_PICKS = ((t("議題要全、可以用中國模型"), "Qwen3.5 4B"), (t("不用中國模型"), "Gemma 4 E4B"))
+COMPARE_PICKS_MAC = ((t("不想下載"), "Apple Intelligence"), (t("待辦要準、可以用中國模型"), "Qwen3.5 4B"),
+                     (t("不用中國模型、比 Apple 準"), "Gemma 4 E4B"))
+COMPARE_ROWS = ((t("出處"), None), (t("下載大小"), "size"), (t("跑的時候佔記憶體"), "memory"),
+                (t("一小時的會要等"), "hour"))
+#: 有強弱項(Mac)才多這兩列
+COMPARE_ROWS_JUDGED = ((t("強項"), "strong"), (t("弱項"), "weak"))
+
+
+def compare_picks() -> tuple:
+    return COMPARE_PICKS_MAC if minutes._backend() == "apple" else COMPARE_PICKS
+
+
+def compare_rows(cards) -> tuple:
+    return COMPARE_ROWS + (COMPARE_ROWS_JUDGED if any(c.strong for c in cards) else ())
+COMPARE_FOOT = t("這台電腦兩場真實會議的實測,每台電腦、每場會議都會不同。")
+#: 對照表每一欄至少多寬(邏輯 px;設計稿量的:最長的「Gemma 4 E4B」小標放得下、兩欄看起來一樣寬)
+COMPARE_COL_W = 170
 
 # 使用說明裡那張 Claude 隱私設定截圖(全篇唯一一張圖)。
 PRIVACY_IMG = repo_root() / "docs" / "claude-privacy-setting.jpg"
@@ -1775,9 +1938,16 @@ class App(tk.Tk):
         self._minutes_jump_md: Path | None = None
         # Mac 選了哪個模型整理(`minutes.ENGINE_*`);那一排收著時是 None(見 `_minutes_engine_sync`)
         self._minutes_engine: str | None = None
-        # 「進階參數設定」裡 Qwen 那一列(對話框點了才建、這台能用 Qwen 才有;見 `_adv_open`)
-        self._qwen_hint: ttk.Label | None = None
-        self._qwen_delete: HandButton | None = None
+        # 「進階參數設定」裡模型那一列(對話框點了才建、這台有可刪的模型才有;見 `_adv_open`)
+        # 「地端 AI 進階設定」那扇(點了才建;見 `_llm_adv_open`)與裡面模型那幾列:
+        # 每一列是 (那一顆, 說明, 刪除鈕);Mac 最多兩列(Qwen、Gemma)
+        self._llm_adv_win: tk.Toplevel | None = None
+        # 那扇裡「與我相關」的輸入框與它的值(點了才建、關窗時存檔並清掉;見 `_aliases_save`)
+        self._aliases_var: tk.StringVar | None = None
+        self._aliases_entry: ttk.Entry | None = None
+        self._llm_rows: list[tuple[RowModel, ttk.Label, HandButton]] = []
+        # 「各模型比較」那扇窗(點了才建;見 `_compare_open`)
+        self._compare_win: tk.Toplevel | None = None
         # 「這台電腦載不起 AI 元件」那條橫幅(只有壞掉的機器才會長出來,見
         # `_native_banner`)。⚠️ **不是 `_lockable`**,理由在那一支。
         self._banner: ttk.Frame | None = None
@@ -5038,7 +5208,7 @@ class App(tk.Tk):
 
         # ---- 卡外:狀態一行,主要動作鈕與「進階參數設定」並排 ------------------ #
         # 收音、轉檔、重設講者各一顆入口鈕(`_adv_button`),跟著自己那一列一起換上換下;
-        # 「地端 AI」沒有(它用不到任何一個參數,那個位置是「草稿資料夾…」)。
+        # 「地端 AI」沒有(它用不到任何一個參數,那個位置是它自己的「⚙ 地端 AI 設定…」)。
         self._adv_btns: list[HandButton] = []
         self._rec_bar = self._rec_actions(inner)
         self._file_bar = self._file_actions(inner)
@@ -5590,11 +5760,12 @@ class App(tk.Tk):
         ttk.Label(box, text=t("要整理哪一份逐字稿"), style="CardH.TLabel").pack(anchor="w")
         self._wrap(ttk.Label(box, text=MINUTES_HINT, style="Hint.TLabel",
                              justify="left")).pack(anchor="w", pady=(self.px(SP_XS), 0))
-        # 選模型那一排(Mac 兩個都列得出來時才放出來,見 `_minutes_tab_sync`;建好先不 pack)
+        # 選模型那一排(兩個都列得出來時才放出來,見 `_minutes_tab_sync`;建好先不 pack)
         pick = ttk.Frame(box, style="CardBody.TFrame")
         track, self._minutes_engine_cells = self._segmented(
-            pick, MINUTES_ENGINE_OPTIONS, self._minutes_engine_show)
+            pick, minutes_engine_options(), self._minutes_engine_show)
         track.pack(fill="x")
+        # (「各模型比較…」W4 曾放在這一行右邊,2026-10-29 使用者選搬進「地端 AI 進階設定」)
         self._minutes_engine_note = self._wrap(ttk.Label(pick, text="", style="Hint.TLabel",
                                                          justify="left"))
         self._minutes_engine_note.pack(anchor="w", pady=(self.px(SP_XS), 0))
@@ -5620,20 +5791,21 @@ class App(tk.Tk):
         return box
 
     def _minutes_actions(self, parent) -> ttk.Frame:
-        r"""「地端 AI」的動作列。右邊那顆是「草稿資料夾…」,不是「進階參數設定」:
-        這條路沒有任何一個參數用得到(不轉錄、不分群;模型 Mac 在卡片裡那一排選、Windows 依
-        有沒有內顯自動挑,見 `minutes._ov_plan`)。"""
+        r"""「地端 AI」的動作列。右邊那顆是「⚙ 地端 AI 設定…」(2026-10-29 使用者選),不是轉錄用的
+        「⚙ 進階參數設定…」:這條路一個轉錄參數都用不到(不轉錄、不分群)。
+        ⚠️ **工作中不鎖入口**:裡面的比較與草稿資料夾整理中照樣能看,只有刪模型要鎖
+        (`_llm_adv_lock`)。"""
         bar = ttk.Frame(parent, style="Page.TFrame")
         self._minutes_btn = self._action_btn(bar, "minutes", MINUTES_ACTION)
-        # 樣式同文件頁同一個位置的「輸出資料夾…」(坐在頁面底色上,`CTA_STYLE` 是卡片白用的)
-        folder = HandButton(bar, text=MINUTES_DIR_BUTTON, style=skin.SKIP_PAGE_STYLE,
-                            command=self._minutes_open_dir)
-        self._action_slot(bar, self._minutes_btn, folder)
+        # 樣式同其他三個模式同一個位置的「⚙ 進階參數設定…」(坐在頁面底色上)
+        entry = HandButton(bar, text=LLM_ADV_BUTTON, style=skin.SKIP_PAGE_STYLE,
+                           command=self._llm_adv_open)
+        self._action_slot(bar, self._minutes_btn, entry)
         self._slot_shrink(bar)
         return bar
 
     def _minutes_open_dir(self) -> None:
-        r"""「📂 草稿資料夾…」。⚠️ **先建再開**:這顆鈕一直按得到,而第一份草稿做出來之前
+        r"""「地端 AI 進階設定」裡「草稿資料夾」那顆「📂 打開…」。⚠️ **先建再開**:這顆鈕一直按得到,而第一份草稿做出來之前
         那個資料夾還不存在——`open_output_dirs` 對不存在的路徑丟例外,Tk 把它吞進記錄檔,
         畫面上就是「按了沒反應」(別的「輸出資料夾…」都是做完才亮,碰不到這個情況)。"""
         folder = minutes.drafts_dir()
@@ -5711,7 +5883,7 @@ class App(tk.Tk):
             return
         self._minutes_engine_note.configure(text=minutes_engine_note(
             self._minutes_engine, minutes.engines().get(self._minutes_engine),
-            models.mlx_llm_cached()))
+            minutes_engine_downloaded(self._minutes_engine)))
 
     def _minutes_engine_show(self, key: str) -> None:
         """點了一格:記住(下一場、下次開程式都沿用)。⚠️ **整理中不准換**:這一場的模型在
@@ -5722,6 +5894,84 @@ class App(tk.Tk):
         self._minutes_engine = key
         self._segment_show(self._minutes_engine_cells, key)
         self._minutes_engine_note_sync()
+
+    def _compare_open(self) -> None:
+        r"""「各模型比較」:上面「怎麼選」,下面一張對照表,最後一列是下載了沒(版面同手機版
+        `ModelCompareView`,使用者 2026-10-29 選)。⚠️ **不 `grab_set`**、已經開著就叫到前面來
+        (同 `_adv_open`);**每次開都重建**:最後一列「已下載」跟當下的狀態有關。
+        ⚠️ **沒有下載鈕**:模型是第一次按「產生草稿」時才下載(會先問),這裡只講。"""
+        win = self._compare_win
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            win.focus_set()
+            return
+        cards = compare_cards()
+        win = tk.Toplevel(self)
+        win.title(COMPARE_TITLE)
+        win.configure(background=self.pal["page"])
+        win.transient(self)
+        win.resizable(False, False)
+        win.protocol("WM_DELETE_WINDOW", self._compare_close)
+        win.bind("<Escape>", lambda _e: self._compare_close())
+        self._compare_win = win
+        pad = ttk.Frame(win, style="Page.TFrame", padding=self.px(SP_LG))
+        pad.pack(fill="both", expand=True)
+        card = ttk.Frame(pad, style="Card.TFrame", padding=self.px(CARD_PAD))
+        card.pack(fill="x")
+        body = ttk.Frame(card, style="CardBody.TFrame")
+        body.pack(fill="x")
+        span = len(cards) + 1
+        gap = (self.px(SP_LG), 0)
+
+        def rule(row: int, pady: int) -> None:
+            # `tk.Frame` 不是 `ttk.Separator`:顏色要跟著皮膚走(同 `_adv_open` 的分隔線)
+            tk.Frame(body, height=1, background=self.pal["card_line"]).grid(
+                row=row, column=0, columnspan=span, sticky="ew", pady=pady)
+
+        ttk.Label(body, text=t("怎麼選"), style="CardH.TLabel").grid(
+            row=0, column=0, columnspan=span, sticky="w")
+        r = 1
+        for need, name in compare_picks():
+            ttk.Label(body, text=need, style="Field.TLabel").grid(
+                row=r, column=0, columnspan=span - 1, sticky="w", pady=(self.px(SP_XS), 0))
+            ttk.Label(body, text=name, style="Hint.TLabel").grid(
+                row=r, column=span - 1, sticky="w", pady=(self.px(SP_XS), 0), padx=gap)
+            r += 1
+        rule(r, self.px(SP_LG))
+        r += 1
+        for c, cd in enumerate(cards, start=1):
+            ttk.Label(body, text=cd.name, style="CardH.TLabel").grid(row=r, column=c, sticky="w", padx=gap)
+            body.columnconfigure(c, minsize=self.px(COMPARE_COL_W))
+        r += 1
+        for label, key in compare_rows(cards):
+            ttk.Label(body, text=label, style="Hint.TLabel").grid(
+                row=r, column=0, sticky="nw", pady=(self.px(SP_SM), 0))
+            for c, cd in enumerate(cards, start=1):
+                text = f"{cd.country}\n{cd.company}" if key is None else getattr(cd, key)
+                ttk.Label(body, text=text, style="Field.TLabel", justify="left").grid(
+                    row=r, column=c, sticky="nw", padx=gap, pady=(self.px(SP_SM), 0))
+            r += 1
+        rule(r, self.px(SP_MD))
+        r += 1
+        for c, cd in enumerate(cards, start=1):
+            done = minutes_engine_downloaded(cd.engine)
+            # Apple 的模型是 macOS 自己的,沒有「下載」這回事
+            state = (t("✓ macOS 內建") if cd.engine == minutes.ENGINE_APPLE
+                     else t("✓ 已下載") if done else t("第一次用時下載"))
+            ttk.Label(body, text=state, style="Hint.TLabel").grid(row=r, column=c, sticky="w", padx=gap)
+        r += 1
+        ttk.Label(body, text=COMPARE_FOOT, style="Hint.TLabel").grid(
+            row=r, column=0, columnspan=span, sticky="w", pady=(self.px(SP_LG), 0))
+        bar = ttk.Frame(pad, style="Page.TFrame")
+        bar.pack(fill="x", pady=(self.px(CARD_GAP), 0))
+        HandButton(bar, text=t("關閉"), style=skin.SKIP_PAGE_STYLE,
+                   command=self._compare_close).pack(side="right")
+
+    def _compare_close(self) -> None:
+        win, self._compare_win = self._compare_win, None
+        if win is not None and win.winfo_exists():
+            win.destroy()
 
     def _minutes_jump_show(self, md: Path | None) -> None:
         """收工捷徑:給一份 md 就放出來(只在這台用得了「地端 AI」時),`None` 就收起來。"""
@@ -5776,6 +6026,13 @@ class App(tk.Tk):
                 MINUTES_DOWNLOAD_ASK.format(gb=models.MLX_LLM_DOWNLOAD_GB),
                 ok_text=MINUTES_DOWNLOAD_OK):
             return
+        # Gemma 也一樣先問(Windows 6.5 GB、Mac 5.2 GB,都比 Qwen 大)
+        if engine == minutes.ENGINE_GEMMA and not minutes_engine_downloaded(engine) and not self._ask_close(
+                MINUTES_DOWNLOAD_ASK_GEMMA.format(
+                    gb=models.GEMMA_MLX_DOWNLOAD_GB if minutes._backend() == "apple"
+                    else models.GEMMA_OV_DOWNLOAD_GB),
+                ok_text=MINUTES_DOWNLOAD_OK):
+            return
         cancel.reset()
         self._run_lock(True)
         self._run_dirs = [str(minutes.drafts_dir())]   # 要在 `_run_lock(True)` 之後,它會歸零
@@ -5793,7 +6050,9 @@ class App(tk.Tk):
         """「地端 AI」的主體(**工作執行緒**上)。`engine` 是 None 時由 `minutes` 自己挑
         (Windows,或 Mac 只有一個能用時)。"""
         minutes.clear_capability_cache()
-        body = minutes.generate(md_text, lambda f: say(("run_stage", (first, f))), engine=engine)
+        # 檔名給名詞對照表挑分組(同手機版:會議名稱裡有分組名才加套)
+        body = minutes.generate(md_text, lambda f: say(("run_stage", (first, f))), engine=engine,
+                                title=md_path.stem)
         text = minutes.render(md_path, body)
         out = minutes.save(md_path, text)
         say(("run_preview", text))
@@ -5814,9 +6073,12 @@ class App(tk.Tk):
             self._stage(t("已依要求停止。"))
         else:
             self._stage("")
-            self._run_set_preview(
-                error.args[0] if isinstance(error, UserFacingError)
-                else t("未預期的錯誤,{LOG_HINT}。", LOG_HINT=LOG_HINT))
+            text = (error.args[0] if isinstance(error, UserFacingError)
+                    else t("未預期的錯誤,{LOG_HINT}。", LOG_HINT=LOG_HINT))
+            # 整場卡住(連續幾段寫不出來)要請他回報:回報要附記錄檔,這裡指路
+            if isinstance(error, minutes.Stuck):
+                text += "\n" + LOG_HINT
+            self._run_set_preview(text)
 
     # ---- 現場收音 -------------------------------------------------------- #
     def _rec_build(self, parent) -> ttk.Frame:
@@ -6303,12 +6565,11 @@ class App(tk.Tk):
         body.columnconfigure(0, minsize=self.px(ADV_TEXT_W), weight=1)
         body.columnconfigure(1, minsize=self.px(ADV_CTL_W))
         # 這扇窗有幾列(分隔線要靠它算出「哪一列是最後」,見 `section`)。
-        # ⚠️ 後兩列只在用得到的機器上才有:Qwen 那列要這台能用 Qwen(Mac,見 `QWEN_ROW_TITLE`),
-        # 現場收音那列要護欄真的會動東西(見 `HONOR_TITLE`)——用不到的機器上冒出一列按了
-        # 沒作用的控制項,就是一個那個平台看得到的文案變更
-        has_qwen = minutes.qwen_available()
+        # ⚠️ 最後一列只在用得到的機器上才有:現場收音那列要護欄真的會動東西(見 `HONOR_TITLE`)
+        # ——用不到的機器上冒出一列按了沒作用的控制項,就是一個那個平台看得到的文案變更。
+        # (刪模型那幾列 2026-10-29 搬去「地端 AI 進階設定」,見 `_llm_adv_open`)
         has_honor = live_scribe.guardrail_applies()
-        rows = 3 + has_qwen + has_honor
+        rows = 3 + has_honor
 
         def section(n: int, title: str, hint: str, build):
             r"""一列:左邊小標＋一行說明,右邊控制項;段與段之間一條細線。
@@ -6388,17 +6649,6 @@ class App(tk.Tk):
 
         self._cores_hint = section(2, t("CPU 核心數"), cores_info(), cores)
 
-        # ---- 地端 AI 模型(Mac 的 Qwen 4B:看大小、刪除) --------------------------- #
-        # (2026-10-14 使用者選放這裡:刪模型是很少做的維護動作。)⚠️ **它不是這一趟工作的
-        # 參數**,但一樣要跟著工作鎖:整理中刪掉,子行程讀到一半的權重就不見了。
-        if has_qwen:
-            def qwen(parent):
-                self._qwen_delete = HandButton(parent, text=QWEN_DELETE, style="Small.TButton",
-                                               command=self._qwen_delete_ask)
-                self._qwen_delete.pack(fill="x")
-
-            self._qwen_hint = section(3, QWEN_ROW_TITLE, qwen_row_info(), qwen)
-
         # ---- 現場收音也照上面的設定跑 -------------------------------------- #
         # (2026-09-28 使用者:「現場錄音請改為還是能讓我調整模型為精準,因為我想
         # 測試看看」;選案「加一顆開關,預設關」。)
@@ -6456,7 +6706,6 @@ class App(tk.Tk):
         self._model_cells = self._device_cells = None
         self._cores_spin = None
         self._honor_check = None
-        self._qwen_hint = self._qwen_delete = None
         self._model_hint = self._device_hint = self._cores_hint = None
         if win is not None and win.winfo_exists():
             win.destroy()
@@ -6566,25 +6815,125 @@ class App(tk.Tk):
         if self._honor_check is not None:
             self._honor_check.configure(state="disabled" if busy else "normal")
         # 沒有東西可刪(還沒下載)也灰著
-        if self._qwen_delete is not None:
-            self._qwen_delete.configure(
-                state="disabled" if busy or not models.mlx_llm_size() else "normal")
 
-    def _qwen_delete_ask(self) -> None:
+    def _llm_delete_ask(self, m: RowModel) -> None:
         """「刪除模型…」:問一次再刪;刪完那一列與「地端 AI」那一格的說明一起重寫。"""
-        if self._params_busy() or not models.mlx_llm_size():
+        if self._params_busy() or not m.size():
             return
-        if not self._ask_close(QWEN_DELETE_ASK.format(gb=models.mlx_llm_size() / 1e9),
+        if not self._ask_close(LLM_DELETE_ASK.format(name=m.name, gb=m.size() / 1e9),
                                ok_text=t("刪除")):
             return
         try:
-            models.delete_mlx_llm()
+            m.delete()
         except OSError as e:
-            logger.warning("刪除 Qwen 模型失敗:%s", e)
-        if self._qwen_hint is not None:
-            self._qwen_hint.configure(text=qwen_row_info())
-        self._adv_lock()
+            logger.warning("刪除 %s 模型失敗:%s", m.name, e)
+        for row, hint, _ in self._llm_rows:
+            if row is m:
+                hint.configure(text=llm_row_info(m))
+        self._llm_adv_lock()
         self._minutes_engine_note_sync()
+
+    def _llm_adv_open(self) -> None:
+        r"""「地端 AI 進階設定」(2026-10-29 使用者選版面):一張卡,一列一件事——各模型比較、這台每一顆
+        可刪的模型(大標是模型名、說明是下載了沒)、草稿資料夾。版面照「進階參數設定」那扇
+        (左字右鈕、`ADV_TEXT_W`/`ADV_CTL_W`,說明一行)。⚠️ **不 `grab_set`**、已經開著就叫到前面、
+        **每次開都重建**(下載狀態會變),同 `_adv_open`。"""
+        win = self._llm_adv_win
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            win.focus_set()
+            return
+        win = tk.Toplevel(self)
+        win.title(LLM_ADV_TITLE)
+        win.configure(background=self.pal["page"])
+        win.transient(self)
+        win.resizable(False, False)
+        win.protocol("WM_DELETE_WINDOW", self._llm_adv_close)
+        win.bind("<Escape>", lambda _e: self._llm_adv_close())
+        self._llm_adv_win = win
+        pad = ttk.Frame(win, style="Page.TFrame", padding=self.px(SP_LG))
+        pad.pack(fill="both", expand=True)
+        card = ttk.Frame(pad, style="Card.TFrame", padding=self.px(CARD_PAD))
+        card.pack(fill="x")
+        body = ttk.Frame(card, style="CardBody.TFrame")
+        body.pack(fill="x")
+        body.columnconfigure(0, minsize=self.px(ADV_TEXT_W), weight=1)
+        body.columnconfigure(1, minsize=self.px(ADV_CTL_W))
+        llms = row_models()
+        has_compare = bool(compare_cards())
+        rows = has_compare + len(llms) + 2
+        n = 0
+
+        def section(title: str, hint: str, text: str, command,
+                    control=None) -> tuple[ttk.Label, HandButton]:
+            nonlocal n
+            left = ttk.Frame(body, style="CardBody.TFrame")
+            left.grid(row=n * 2, column=0, sticky="w")
+            ttk.Label(left, text=title, style="CardH.TLabel").pack(anchor="w")
+            note = ttk.Label(left, text=hint, style="Hint.TLabel", justify="left",
+                             wraplength=self.px(ADV_TEXT_W))
+            note.pack(anchor="w", pady=(self.px(SP_XS), 0))
+            button = (control(body) if control is not None
+                      else HandButton(body, text=text, style="Small.TButton", command=command))
+            button.grid(row=n * 2, column=1, sticky="ew")
+            # 最後一列後面不畫線(同 `_adv_open` 的 `section`)
+            if n < rows - 1:
+                tk.Frame(body, height=1, background=self.pal["card_line"]).grid(
+                    row=n * 2 + 1, column=0, columnspan=2, sticky="ew", pady=self.px(SP_LG))
+            n += 1
+            return note, button
+
+        if has_compare:
+            section(COMPARE_TITLE, COMPARE_INFO, LLM_ADV_OPEN, self._compare_open)
+        # ⚠️ 刪模型**跟著工作鎖**:整理中刪掉,子行程讀到一半的權重就不見了(`_llm_adv_lock`)
+        self._llm_rows = []
+        for m in llms:
+            hint, button = section(m.name, llm_row_info(m), LLM_DELETE,
+                                   lambda m=m: self._llm_delete_ask(m))
+            self._llm_rows.append((m, hint, button))
+        self._aliases_var = tk.StringVar(value=", ".join(minutes.aliases()))
+
+        def aliases_entry(parent):
+            # 坐在白色卡片上:用預設的 `TEntry`(圓角外側畫卡片色)。`WELL_ENTRY_STYLE` 是灰底專用,
+            # 放在這裡四個角會露出灰色方角(2026-10-29 Windows 150% 實拍)
+            entry = ttk.Entry(parent, textvariable=self._aliases_var)
+            # ⚠️ 打完(離開、按 Enter、關窗)才存,不是每打一個字寫一次檔(`_aliases_save`)
+            entry.bind("<FocusOut>", lambda _e: self._aliases_save())
+            entry.bind("<Return>", lambda _e: self._aliases_save())
+            return entry
+
+        _, self._aliases_entry = section(ABOUT_ME_TITLE, ABOUT_ME_INFO, "", None, aliases_entry)
+        section(DRAFTS_TITLE, DRAFTS_INFO, DRAFTS_OPEN, self._minutes_open_dir)
+        bar = ttk.Frame(pad, style="Page.TFrame")
+        bar.pack(fill="x", pady=(self.px(CARD_GAP), 0))
+        HandButton(bar, text=t("關閉"), style=skin.SKIP_PAGE_STYLE,
+                   command=self._llm_adv_close).pack(side="right")
+        self._llm_adv_lock()
+        self._adv_place(win)
+
+    def _llm_adv_close(self) -> None:
+        """關掉「地端 AI 進階設定」;參照先清再 destroy(理由同 `_adv_close`)。"""
+        self._aliases_save()
+        win, self._llm_adv_win = self._llm_adv_win, None
+        self._llm_rows = []
+        self._aliases_var = self._aliases_entry = None
+        if win is not None and win.winfo_exists():
+            win.destroy()
+
+    def _aliases_save(self) -> None:
+        """「與我相關」的稱呼落地(描述用這台電腦的人,所以記住;下一場 `minutes.aliases` 讀它)。"""
+        if self._aliases_var is None:
+            return
+        raw = self._aliases_var.get().strip()   # 怎麼分隔都行,讀的時候才拆(`minutes.aliases`)
+        if raw != (settings.get(settings.KEY_MINUTES_ALIASES) or ""):
+            settings.set(settings.KEY_MINUTES_ALIASES, raw)
+
+    def _llm_adv_lock(self) -> None:
+        """工作中與沒東西可刪時,「刪除模型…」灰著(對話框沒開就什麼都不做)。"""
+        busy = self._params_busy()
+        for m, _, button in self._llm_rows:
+            button.configure(state="disabled" if busy or not m.size() else "normal")
 
     def _device_show(self, key: str) -> None:
         r"""切運算裝置(自動／只用 CPU)。⚠️ **轉檔中不准切**,同「模型」那排。
@@ -6689,6 +7038,7 @@ class App(tk.Tk):
         # 「地端 AI」選模型那一排同一個道理(收著的時候鎖不鎖都看不到,一律照鎖)
         self._segment_enable(self._minutes_engine_cells, not own)
         self._adv_lock()
+        self._llm_adv_lock()
         for btn in self._adv_btns:
             btn.configure(state="disabled" if busy else "normal")
         # 講者人數:只有「錄音中」放行,收尾(`run`)與檔案轉檔一起鎖

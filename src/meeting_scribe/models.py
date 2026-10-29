@@ -543,6 +543,91 @@ def minutes_llm_dir(size: str) -> Path:
     return target
 
 
+# 會議紀錄草稿的 Gemma 4 E4B,Windows 那一份(OpenVINO,只跑在內顯;2026-10-28 使用者要
+# 「Gemma 4 E4B 也放進 Mac 與 Windows」,見 docs/spec/mac/05 §5.4b)。⚠️ **釘版本、逐檔核
+# sha256**(同 Mac 的 Qwen):上游重傳權重,兩台的草稿就不再是同一顆模型寫的。⚠️ **看圖用的那幾個
+# 檔也要**:Gemma 4 在 OpenVINO 上一樣走 VLMPipeline,建構時會讀;大檔的雜湊跟 Hugging Face 的
+# LFS 對過(2026-10-29)
+GEMMA_OV_REPO = "OpenVINO/gemma-4-E4B-it-int4-ov"
+GEMMA_OV_REVISION = "9e0659b961752791d2d1325ddb1edf35057c3d2d"
+#: 檔名 → (位元組數, sha256)
+GEMMA_OV_FILES = {
+    "chat_template.jinja": (18569, "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5"),
+    "config.json": (5174, "4861dd6c98eeea978f97d871ffc5313eafd456d663b2c4f723b5fa9373914c4d"),
+    "generation_config.json": (203, "4c2d18c072dc54cc2ee8f4a29e63525f56bc97a14a0e93c9a30755ba7b6b9014"),
+    "openvino_config.json": (1160, "451fc3603d08c3a1fb00bb42ffab4e00fc8e6e6b6621e60be883e8113712ea66"),
+    "openvino_detokenizer.bin": (4413547, "461919bda7b546453e903052588c578e3e94e9e8215b7cec07cb00cb97459d13"),
+    "openvino_detokenizer.xml": (29792, "fd0aa647e2acce4e54c01128a03f99e4a2840f52efe8a3ab5454aa5803c745ab"),
+    "openvino_language_model.bin": (2815657513, "ad62540973a8d53e853e68bfb3f6bf6d917893d1612b9c67b2612d8d6e55067d"),
+    "openvino_language_model.xml": (5142009, "754b7572bbec879afb3098423ddf021ebbf292f45b75cb3fe10ac87c90d9811d"),
+    "openvino_text_embeddings_model.bin": (671612936, "f4ba107d403f58e4190d0bfef396c9e4eda6762021e4f429c10a53bb4f87aee2"),
+    "openvino_text_embeddings_model.xml": (7079, "03ffa3e546653e344394a04688456c7fc3036919d0340ad07ff2e0463c8d7a54"),
+    "openvino_text_embeddings_per_layer_model.bin": (2819096656, "e666691fa271c8b6e26aa6eff33f3030148c0bfe43d3a1514b9b997a9a594c5e"),
+    "openvino_text_embeddings_per_layer_model.xml": (17900, "310e3a42d76f726145871fed9ff8ed8c1bc6ff85e3ba8d205a3351b7a9a5ee7b"),
+    "openvino_tokenizer.bin": (17270350, "72cc61385a142c29a1ea37125b9d7a4c5775fe8386a5f6db1dd1108ea5ec1361"),
+    "openvino_tokenizer.xml": (46761, "fdd24f36dd1604fd646586edee1daee4f62916dadcdf2d267446f93a707d4b47"),
+    "openvino_vision_embeddings_model.bin": (169812532, "6c7609d984db75c39461f74b418cf3eac65b90da8678a08bc4e158e2f4524c3d"),
+    "openvino_vision_embeddings_model.xml": (1932063, "4120821825d31bb690c2ddeb4e39c961a4a1b0a395160a326bbaf03e67cc3c17"),
+    "preprocessor_config.json": (403, "12476d626b89e273a9b2c6a493a6319ab02427ebfcd3635d92b29584b27c7249"),
+    "processor_config.json": (1689, "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c"),
+    "tokenizer.json": (32169626, "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"),
+    "tokenizer_config.json": (3700, "aa2f4089111e7c2f23ee3064153267ad8d72bf67378bed3d89c62b20a0c96f88"),
+}
+#: 下載量(GB,給確認框與等待提示那幾句話用)
+GEMMA_OV_DOWNLOAD_GB = round(sum(n for n, _ in GEMMA_OV_FILES.values()) / 1e9, 1)
+
+
+def gemma_ov_target() -> Path:
+    return cache_dir() / "llm" / "gemma-4-E4B-it-int4-ov"
+
+
+def gemma_ov_cached() -> bool:
+    """下載好了沒(不連網、不核 sha256;判準含大小,理由同 `mlx_llm_cached`)。"""
+    target = gemma_ov_target()
+    return all((target / name).is_file() and (target / name).stat().st_size == size
+               for name, (size, _) in GEMMA_OV_FILES.items())
+
+
+def gemma_ov_size() -> int:
+    """模型資料夾現在佔多少位元組(含下載到一半的;「進階參數設定」顯示用)。"""
+    target = gemma_ov_target()
+    if not target.is_dir():
+        return 0
+    return sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
+
+
+def delete_gemma_ov() -> None:
+    """刪掉 Windows 的 Gemma 模型(使用者在「進階參數設定」按的;下次用時重新下載)。"""
+    target = gemma_ov_target()
+    if target.is_dir():
+        shutil.rmtree(target)
+
+
+def gemma_ov_dir() -> Path:
+    """下載(或沿用)Windows 的 Gemma 4 E4B,回模型資料夾;下載完逐檔核 sha256,對不上的那個檔
+    刪掉、叫使用者再按一次(同 `mlx_llm_dir`)。"""
+    target = gemma_ov_target()
+    if gemma_ov_cached():
+        return target
+    from huggingface_hub import snapshot_download
+
+    name = t("AI 模型 {v}", v=GEMMA_OV_REPO.split('/')[-1])
+    try:
+        with_tls_rescue(lambda: snapshot_download(
+            GEMMA_OV_REPO, revision=GEMMA_OV_REVISION, allow_patterns=list(GEMMA_OV_FILES),
+            local_dir=target, tqdm_class=hub_tqdm(name)), t("AI 模型"))
+    except Exception as e:
+        raise download_failed(t("AI 模型"), GEMMA_OV_REPO, e) from e
+    report_progress(t("核對下載的 AI 模型檔案中…"), 1.0)
+    for fname, (size, digest) in GEMMA_OV_FILES.items():
+        path = target / fname
+        if not path.is_file() or path.stat().st_size != size or _sha256(path) != digest:
+            path.unlink(missing_ok=True)
+            logger.warning("Gemma 模型檔核對不符,已刪除:%s", fname)
+            raise UserFacingError(t("下載的 AI 模型檔案不完整,請再按一次重新下載。"))
+    return target
+
+
 # 會議紀錄草稿的 Qwen3.5-4B,Mac 那一份(MLX,跑在 GPU;使用者 2026-10-14 選定,見
 # docs/spec/mac/05 §5.4b)。⚠️ **跟手機版 `Qwen.swift` 是同一個固定版本、同一份 sha256**:
 # 版本不釘,上游哪天重傳權重,兩邊的草稿就不再是同一顆模型寫的,而那正是兩邊實測對照的前提。
@@ -628,6 +713,77 @@ def mlx_llm_dir() -> Path:
             raise UserFacingError(t("下載的 AI 模型檔案不完整,請再按一次重新下載。"))
     return target
 
+
+
+# 會議紀錄草稿的 Gemma 4 E4B,Mac 那一份(MLX;2026-10-28 使用者要「Gemma 4 E4B 也放進 Mac 與
+# Windows」,docs/spec/mac/05 §5.4b)。⚠️ **跟手機版 `OfflineModel.gemma` 是同一個固定版本、同一份
+# sha256**(理由同 Qwen)。只下文字要用的 7 個檔:**不下 `processor_config.json`**(看圖、聽音用的;
+# 手機版同樣不下),`mlx_lm` 只問文字用不到
+GEMMA_MLX_REPO = "mlx-community/gemma-4-e4b-it-4bit"
+GEMMA_MLX_REVISION = "475b9088d29754a3379866cf5aeb6b41acd313c2"
+#: 檔名 → (位元組數, sha256)
+GEMMA_MLX_FILES = {
+    "config.json": (6628, "780ccb3a514a5f1ced161d383f948fc22eca9b84b752ca19494f625bd9bad7a6"),
+    "generation_config.json": (208, "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de"),
+    "chat_template.jinja": (17336, "2f1b4d75d067bae3fe44e676721c7f077d243bc007156cb9c2f8b5836613d082"),
+    "tokenizer_config.json": (2740, "080d9e1aff284e2f6043889cd05367966f7c7b80e025fbc0b06745e218158656"),
+    "tokenizer.json": (32169626, "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"),
+    "model.safetensors.index.json": (240961, "f8accac59ee7efe87e0c298c854610b262c3cadd477407503147c71209ff0093"),
+    "model.safetensors": (5146800534, "932b8271fc3fe65adcc78b96c10c6268bbfb13e8f67d1358727c0d6ee97e1eff"),
+}
+#: 下載量(GB,給確認框與等待提示那幾句話用)
+GEMMA_MLX_DOWNLOAD_GB = round(sum(n for n, _ in GEMMA_MLX_FILES.values()) / 1e9, 1)
+
+
+def gemma_mlx_target() -> Path:
+    return cache_dir() / "llm" / "gemma-4-e4b-it-4bit-mlx"
+
+
+def gemma_mlx_cached() -> bool:
+    """下載好了沒(不連網、不核 sha256;判準含大小,理由同 `mlx_llm_cached`)。"""
+    target = gemma_mlx_target()
+    return all((target / name).is_file() and (target / name).stat().st_size == size
+               for name, (size, _) in GEMMA_MLX_FILES.items())
+
+
+def gemma_mlx_size() -> int:
+    """模型資料夾現在佔多少位元組(含下載到一半的)。"""
+    target = gemma_mlx_target()
+    if not target.is_dir():
+        return 0
+    return sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
+
+
+def delete_gemma_mlx() -> None:
+    """刪掉 Mac 的 Gemma 模型(下次用時重新下載)。"""
+    target = gemma_mlx_target()
+    if target.is_dir():
+        shutil.rmtree(target)
+
+
+def gemma_mlx_dir() -> Path:
+    """下載(或沿用)Mac 的 Gemma 4 E4B,回模型資料夾;下載完逐檔核 sha256,對不上的那個檔
+    刪掉、叫使用者再按一次(同 `mlx_llm_dir`)。"""
+    target = gemma_mlx_target()
+    if gemma_mlx_cached():
+        return target
+    from huggingface_hub import snapshot_download
+
+    name = t("AI 模型 {v}", v=GEMMA_MLX_REPO.split('/')[-1])
+    try:
+        with_tls_rescue(lambda: snapshot_download(
+            GEMMA_MLX_REPO, revision=GEMMA_MLX_REVISION, allow_patterns=list(GEMMA_MLX_FILES),
+            local_dir=target, tqdm_class=hub_tqdm(name)), t("AI 模型"))
+    except Exception as e:
+        raise download_failed(t("AI 模型"), GEMMA_MLX_REPO, e) from e
+    report_progress(t("核對下載的 AI 模型檔案中…"), 1.0)
+    for fname, (size, digest) in GEMMA_MLX_FILES.items():
+        path = target / fname
+        if not path.is_file() or path.stat().st_size != size or _sha256(path) != digest:
+            path.unlink(missing_ok=True)
+            logger.warning("Gemma(MLX)模型檔核對不符,已刪除:%s", fname)
+            raise UserFacingError(t("下載的 AI 模型檔案不完整,請再按一次重新下載。"))
+    return target
 
 def ov_whisper_dir(model_key: str) -> Path:
     """下載(或沿用快取)OpenVINO 預轉換 Whisper 模型目錄。

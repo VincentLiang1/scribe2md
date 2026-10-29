@@ -166,7 +166,7 @@ Mac 上另外要知道的:
 **🤖 把成品交給 AI**
 
 - 貼給 AI 之前先關掉「拿對話內容訓練模型」的設定(附設定截圖)
-- **會議紀錄草稿**:用這台電腦上的地端 AI 把逐字稿整理成摘要、主要議題、待辦(附約略時間),逐字稿內容不離開這台電腦(Windows 用工具內建的模型,第一次用要下載約 2~3.4 GB;Mac 每場可選 Apple Intelligence,或工具內建的 Qwen 4B——整理得比較完整、第一次用要下載約 3 GB,需要記憶體 16 GB 以上);⚠️ **地端小模型能力有限,品質比不上雲端 AI**,只能當草稿,正式紀錄請對照逐字稿另行整理;存在工具自己的資料夾、不放在逐字稿旁邊
+- **會議紀錄草稿**:用這台電腦上的地端 AI 把逐字稿整理成摘要、主要議題、待辦(附約略時間),逐字稿內容不離開這台電腦(Windows 用工具內建的模型,第一次用要下載約 2~3.4 GB,有 Intel 內顯、記憶體 16 GB 以上的電腦還可以改選 Google 的 Gemma 4 E4B(約 6.5 GB、比較慢);Mac 每場可選 Apple Intelligence,或工具內建的 Qwen 4B(阿里巴巴,待辦最準、第一次用要下載約 3 GB)、Gemma 4(Google,約 5.2 GB),這兩個需要記憶體 16 GB 以上;兩個平台都有「各模型比較」並排列出出處、大小與要等多久;填了自己的稱呼,提到你的整理在最上面的「與我相關」;打開聲紋同步、同步資料夾裡有名詞對照表時,整理前先更正聽錯的專有名詞);⚠️ **地端小模型能力有限,品質比不上雲端 AI**,只能當草稿,正式紀錄請對照逐字稿另行整理;存在工具自己的資料夾、不放在逐字稿旁邊
 
 **⚙️ 調準確度與速度**
 
@@ -313,7 +313,7 @@ Mac 上另外要知道的:
 | oletools / olefile(讀 Excel 巨集的大綱) | BSD |
 | RapidOCR + PP-OCRv6 模型(圖片文字辨識) | Apache-2.0 |
 | Qwen3.5-4B / 2B 語言模型(阿里巴巴通義千問;「✨ 地端 AI」會議紀錄草稿用——Windows 是 Intel 轉好的 OpenVINO int4 版,Mac 是 mlx-community 轉好的 MLX 4-bit 版;不隨本工具散布,第一次使用時才下載) | Apache-2.0 |
-| MLX / mlx-lm(Mac 跑 Qwen 4B 的推論框架,只裝在 Apple 晶片的 Mac) | MIT |
+| MLX / mlx-lm(Mac 跑 Qwen 4B 與 Gemma 4 的推論框架,只裝在 Apple 晶片的 Mac) | MIT |
 | transformers / sentencepiece / safetensors(mlx-lm 讀模型用) | Apache-2.0 |
 | pillow-heif(HEIC 解碼;內含 libheif) | BSD-3 / LGPL(動態連結) |
 | extract-msg(Outlook 郵件) | BSD-2 |

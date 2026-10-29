@@ -8,9 +8,13 @@ r"""會議紀錄草稿的語言模型子行程(Qwen3.5;父端是 `minutes_ov`)�
 指令:
   啟動:-m meeting_scribe.minutes_worker <模型資料夾> <CPU|GPU|MLX>
       → {"ready":true,"load_sec":5.5}   或 {"ready":false,"error":"…"}
-  {"kind":"llm-notes"|"llm-ask","instructions":"…","prompt":"…","language":"zh_TW"|"zh_CN"|"en"}
-      → {"ok":true,"points":[…],"todo":{…}|null}   /   {"ok":true,"text":"…"}
+  {"kind":"llm-notes"|"llm-ask","instructions":"…","prompt":"…","language":"zh_TW"|"zh_CN"|"en",
+   "lite":false,"retry":false}
+      → {"ok":true,"topic":"…","points":[{"text","quote"}…],"todo":{"task","quote"}|null}
+        /   {"ok":true,"text":"…"}
       → {"ok":false,"error":"decodingFailure"|"other","detail":"…"}
+  段落協定 v2(2026-10-28,同手機版 `ChunkNotes`):`lite` 不要待辦(格式錯重問兩次之後)、
+  `retry` 改用固定種子取樣(同樣的不隨機再問一次多半同樣的錯)。
   EOF → 退出
 
 ⚠️ **回覆格式跟 Apple 那支小程式(`apple_asr.swift` 的 `llm-*`)一樣**,`minutes.py`
@@ -21,15 +25,28 @@ import json
 import re
 import sys
 import time
+from pathlib import Path
 
 from meeting_scribe import draftvocab, plat, stdio
 
 # 跟 apple_asr.swift 的 `ChunkNotes` / `Todo` 同一個形狀;JSON schema 由 OpenVINO 的
 # 結構化輸出硬性約束(2026-10-11 實測:明講「不要用 JSON」照樣只吐 JSON)
+_QUOTED = {"type": "object",
+           "properties": {"text": {"type": "string"}, "quote": {"type": "string"}},
+           "required": ["text", "quote"]}
+#: 不要待辦的那一版(`lite`,同手機版 `ChunkNotesLite`)
+LITE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "topic": {"type": "string"},
+        "points": {"type": "array", "items": _QUOTED, "maxItems": 3},
+    },
+    "required": ["topic", "points"],
+}
 NOTES_SCHEMA = {
     "type": "object",
     "properties": {
-        "points": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
+        **LITE_SCHEMA["properties"],
         "todo": {"anyOf": [
             {"type": "null"},
             {"type": "object",
@@ -37,24 +54,29 @@ NOTES_SCHEMA = {
              "required": ["task", "quote"]},
         ]},
     },
-    "required": ["points", "todo"],
+    "required": ["topic", "points", "todo"],
 }
 # 同 apple_asr.swift 那幾個 @Guide 的字;跟著會議語言換(`draftvocab.notes_format`),這個名字是繁中那份
 NOTES_FORMAT = draftvocab.ZH_TW.notes_format
 
 
 def _notes_format(msg: dict) -> str:
-    """`llm-notes` 接在說明後面的那段欄位說明,照指令帶來的會議語言(沒帶就是繁中:舊的父端)。"""
-    return draftvocab.of(msg.get("language") or "").notes_format
+    """`llm-notes` 接在說明後面的那段欄位說明,照指令帶來的會議語言(沒帶就是繁中:舊的父端);
+    `lite` 時是不含待辦的那一版。"""
+    v = draftvocab.of(msg.get("language") or "")
+    return v.lite_format if msg.get("lite") else v.notes_format
 MAX_NEW_TOKENS = 700
 REPETITION_PENALTY = 1.05
+#: 格式錯重問那一次的取樣(同手機版 `retryOptions`):固定種子,同一版程式照樣每次一樣
+RETRY_TOP_K, RETRY_SEED, RETRY_TEMPERATURE = 40, 7, 0.3
 # Qwen3 系列預設會先「想」;關掉的模板會留一對空的 think 標籤,保險起見再剝一次
 _THINK = re.compile(r"<think>.*?</think>", re.S)
-#: MLX 的 repetition penalty 往回看幾個 token。⚠️ **必須涵蓋整段提示**(一段逐字稿 900 字
-#: ≈ 1,400 token,加說明與回覆):`mlx-lm` 的預設 20 只罰最近 20 個 token,等於沒開——
-#: 2026-10-14 同一場 43 分鐘的會,20 時待辦只剩 1 條、重點長到合併三層被截短;4096 時 12 條、
-#: 合併 1 層,跟 OpenVINO 同級(OpenVINO 的 penalty 本來就罰整段,選型數字是在那個語意下量的)
-MLX_REPETITION_CONTEXT = 4096
+#: MLX 的 repetition penalty 往回看幾個 token。⚠️ **必須涵蓋整段提示**:`mlx-lm` 的預設 20
+#: 只罰最近 20 個 token,等於沒開——2026-10-14 同一場 43 分鐘的會(一段 900 字),20 時待辦只剩
+#: 1 條、重點長到合併三層被截短;4096 時 12 條、合併 1 層,跟 OpenVINO 同級(OpenVINO 的
+#: penalty 本來就罰整段,選型數字是在那個語意下量的)。2026-10-28 段長改 1800 字(≈ 2,700 token)
+#: 再加前文約 400 字與說明、回覆,4096 不夠涵蓋 → 8192
+MLX_REPETITION_CONTEXT = 8192
 # MLX 沒有結構化輸出的硬性約束:回覆裡第一個 `{` 到最後一個 `}` 當成那個物件
 # (實測 16 段都只回一個 JSON 物件,但偶爾會包在 ```json 圍欄裡)
 _JSON_OBJECT = re.compile(r"\{.*\}", re.S)
@@ -71,7 +93,8 @@ def _parse_notes(out: str, strict: bool) -> dict:
         return {"ok": False, "error": "decodingFailure", "detail": "回覆不是 JSON"}
     if not isinstance(got, dict):
         return {"ok": False, "error": "decodingFailure", "detail": "回覆不是物件"}
-    return {"ok": True, "points": got.get("points") or [], "todo": got.get("todo")}
+    # 欄位齊不齊由父端看(`minutes._valid_notes`):少了就重問,兩條路(這裡與 Apple 的小程式)同一套
+    return {"ok": True, "topic": got.get("topic"), "points": got.get("points"), "todo": got.get("todo")}
 
 
 def _reply(obj: dict) -> None:
@@ -85,44 +108,87 @@ def _prompt(tok, instructions: str, prompt: str) -> str:
                                    extra_context={"enable_thinking": False})
 
 
-def answer(pipe, tok, g, msg: dict) -> dict:
-    """問一次。拆出來是為了測試能換上假的 pipeline。"""
+def answer(pipe, tok, g, msg: dict, free: bool = False) -> dict:
+    """問一次。拆出來是為了測試能換上假的 pipeline。
+
+    `free`:不帶結構化輸出(Gemma,見 `_free_format`),欄位說明前面接 `json_only`、從回覆裡撈
+    `{…}`——同 MLX 那條。"""
     notes = msg["kind"] == "llm-notes"
     cfg = g.GenerationConfig()
     cfg.max_new_tokens = MAX_NEW_TOKENS
     cfg.do_sample = False
+    if notes and msg.get("retry"):
+        cfg.do_sample = True
+        cfg.top_k, cfg.rng_seed, cfg.temperature = RETRY_TOP_K, RETRY_SEED, RETRY_TEMPERATURE
     # 2026-10-11 選型實測就是帶著這個值量的。同一份 43 分鐘的逐字稿、4B 內顯:帶著它
     # 待辦 12 條、合併 1 層;拿掉它只剩 4 條,重點也長到合併要三層、還被截短
     cfg.repetition_penalty = REPETITION_PENALTY
     cfg.apply_chat_template = False   # 模板上面自己套了(要關掉 thinking)
-    if notes:
-        cfg.structured_output_config = g.StructuredOutputConfig(json_schema=json.dumps(NOTES_SCHEMA))
-    text = _prompt(tok, msg["instructions"] + (_notes_format(msg) if notes else ""), msg["prompt"])
-    out = _THINK.sub("", pipe.generate(text, images=[], generation_config=cfg).texts[0]).strip()
+    hint = ""
+    if notes and free:
+        hint = draftvocab.of(msg.get("language") or "").json_only + _notes_format(msg)
+    elif notes:
+        hint = _notes_format(msg)
+        schema = LITE_SCHEMA if msg.get("lite") else NOTES_SCHEMA
+        cfg.structured_output_config = g.StructuredOutputConfig(json_schema=json.dumps(schema))
+    text = _prompt(tok, msg["instructions"] + hint, msg["prompt"])
+    out = pipe.generate(text, images=[], generation_config=cfg).texts[0]
+    out = _without_channel(_THINK.sub("", out)).strip()
     if not notes:
         return {"ok": True, "text": out}
-    return _parse_notes(out, strict=True)
+    return _parse_notes(out, strict=not free)
 
 
-def answer_mlx(model, tok, mlx_lm, msg: dict) -> dict:
+def _without_channel(s: str) -> str:
+    """Gemma 4 的思考區塊「<|channel>thought …<channel|>」:只留後面的正文,沒收尾的整段不要
+    (同 `minutes.without_thinking`;子行程不 import minutes,這裡留一份最小的)。"""
+    a = s.find("<|channel>")
+    if a < 0:
+        return s
+    b = s.find("<channel|>", a)
+    return s[:a] if b < 0 else s[:a] + s[b + len("<channel|>"):]
+
+
+def _free_format(model_dir: str) -> bool:
+    """這顆要不要拿掉結構化輸出:Gemma 要(2026-10-28 W1:schema 的 `todo` 可為 null 時,17 段
+    交 0 條;拿掉後 16 條,§5.4b),Qwen 不要(帶不帶都一樣,而帶著格式一定解得開)。看
+    `config.json` 的 `model_type`(Gemma 4 E4B 是 `gemma4`)。"""
+    try:
+        cfg = json.loads((Path(model_dir) / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return str(cfg.get("model_type", "")).startswith("gemma")
+
+
+def answer_mlx(model, tok, mlx_lm, msg: dict, seed=None) -> dict:
     """Mac(MLX)問一次。提示、上限、penalty 值都同 OpenVINO 那條,差在 penalty 的範圍要
     自己放大(`MLX_REPETITION_CONTEXT`)、格式沒有硬性約束。拆出來是為了測試換上假模型
-    (`mlx_lm` 是傳進來的模組:Windows 上沒有 MLX,測試照樣跑得到這一支)。"""
+    (`mlx_lm` 是傳進來的模組:Windows 上沒有 MLX,測試照樣跑得到這一支)。`seed` 是
+    `mlx.core.random.seed`(`retry` 時設種子;取樣器本身不收種子)。"""
     su = mlx_lm.sample_utils
     notes = msg["kind"] == "llm-notes"
+    retry = notes and msg.get("retry")
+    if retry and seed is not None:
+        seed(RETRY_SEED)
     # ⚠️ 不能共用 `_prompt`:那是 OpenVINO tokenizer 的參數形狀(`extra_context`),
     # HF 的模板參數直接當關鍵字傳——傳錯不會報錯,只會讓 Qwen 先「想」一大段再回答
-    msgs = [{"role": "system", "content": msg["instructions"] + (_notes_format(msg) if notes else "")},
+    # ⚠️ 沒有格式約束:要明講「只回一個 JSON」,不然 Qwen 用文字回答(W2 模擬 7 段全解不開)。
+    # 這一句**不可以**放進 OpenVINO 那條:帶著 schema 時多這一句,待辦就一條都不交(`draftvocab` 檔頭)
+    hint = draftvocab.of(msg.get("language") or "").json_only + _notes_format(msg) if notes else ""
+    msgs = [{"role": "system", "content": msg["instructions"] + hint},
             {"role": "user", "content": msg["prompt"]}]
     text = tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False,
                                    enable_thinking=False)
     out = mlx_lm.generate(
         model, tok, text, max_tokens=MAX_NEW_TOKENS, verbose=False,
-        sampler=su.make_sampler(temp=0.0),   # 同 OpenVINO 的 do_sample=False
+        # 平常不隨機(同 OpenVINO 的 do_sample=False);重問那次用固定種子取樣
+        sampler=(su.make_sampler(temp=RETRY_TEMPERATURE, top_k=RETRY_TOP_K) if retry
+                 else su.make_sampler(temp=0.0)),
         logits_processors=su.make_logits_processors(
             repetition_penalty=REPETITION_PENALTY,
             repetition_context_size=MLX_REPETITION_CONTEXT))
-    out = _THINK.sub("", out).strip()
+    # Qwen 的 think 標籤、Gemma 4 的 channel 思考區塊(手機版 10-17 Mac 實測 Gemma 偶爾先想一段)
+    out = _without_channel(_THINK.sub("", out)).strip()
     if not notes:
         return {"ok": True, "text": out}
     return _parse_notes(out, strict=False)
@@ -141,15 +207,18 @@ def _load(model_dir: str, device: str):
         with contextlib.redirect_stdout(sys.stderr):
             model, tok = mlx_lm.load(model_dir)
 
+        import mlx.core as mx
+
         def ask(msg: dict) -> dict:
             with contextlib.redirect_stdout(sys.stderr):
-                return answer_mlx(model, tok, mlx_lm, msg)
+                return answer_mlx(model, tok, mlx_lm, msg, seed=mx.random.seed)
         return ask
     import openvino_genai as g
 
     pipe = g.VLMPipeline(model_dir, device)
     tok = pipe.get_tokenizer()
-    return lambda msg: answer(pipe, tok, g, msg)
+    free = _free_format(model_dir)
+    return lambda msg: answer(pipe, tok, g, msg, free=free)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -26,8 +26,11 @@ class DraftVocab:
     highlight_instructions: str    # 現場標的一個重點 → 一句話
     merge_instructions: str        # 重點太長時分批合併
     summary_instructions: str      # 整場摘要
-    topics_instructions: str       # 主要議題
     notes_format: str              # Qwen 那條:`@Guide` 的字寫成提示詞的一段(`minutes_worker`)
+    lite_format: str               # 同上,格式錯重問兩次之後只要議題與重點、不要待辦
+    json_only: str                 # 沒有格式約束的那條(MLX)接在欄位說明前面:「只回一個 JSON 物件」
+    context_label: str             # 分段:上一段最後幾輪(只供參考)
+    body_label: str                # 分段:這一段要整理的內容
     marked_label: str              # 摘要輸入:現場標記的重點
     notes_label: str               # 摘要輸入:各時段重點
     attendee_note: str             # 重點的提示裡接備註的那句開頭
@@ -37,6 +40,9 @@ class DraftVocab:
     topics_heading: str
     todos_heading: str
     highlights_heading: str
+    about_me_heading: str          # 草稿最上面「與我相關」(手機版改版 F)
+    glossary_label: str            # 指示末尾:這場的專有名詞(名詞對照表,手機版改版 A)
+    list_sep: str                  # 專有名詞之間
     no_todos: str
     notice_apple: str              # 草稿檔第一行(Apple Intelligence 整理的)
     notice_local: str              # 草稿檔第一行(Qwen 那兩條)
@@ -47,6 +53,26 @@ class DraftVocab:
     char_scale: int
     #: 待辦的合理長度(`minutes.looks_like_task`;同 iOS `taskChars`)
     task_chars: tuple[int, int]
+
+
+# 一段的欄位說明(段落協定 v2):前半是議題與重點,後半是待辦——格式錯重問兩次之後只問前半
+# (`lite_format`,同 iOS `ChunkNotesLite`)。
+# ⚠️ **字照抄 iOS `notesHints`,一個字都不要「整理」**(2026-10-28 W2 實測,Qwen3.5-4B 內顯、
+# 38 分鐘 7 段,交了幾條待辦):自己改寫成「只回一個 JSON 物件,欄位:- topic … - todo … 沒有就填
+# null」的條列 → **0**;iOS 原文 → 7(核對後留 4);iOS 原文前面多一句「只回一個 JSON 物件。」→ **0**;
+# 舊的 v1 寫法(沒有 topic、重點不附原句)→ 7。Qwen 對這段的措辭極度敏感,原因沒查,照抄是唯一驗過的
+# 寫法。數據見 `docs/spec/mac/05` §5.4b
+_ZH_TW_NOTES = "\n欄位:topic 這一段主要在談哪件事,8 到 16 字的名詞片語,用逐字稿裡的專有名詞;points 這件事的具體內容(數字、時程、誰要做什麼、結論),最多 3 點,每點 text 是一句話、quote 是逐字稿裡作為依據的那一句(一字不改照抄,10 到 40 字)"
+_ZH_TW_TODO = ";todo 這一段最明確的一件交辦或有人承諾要做的事,沒有就不填、不要湊數,有的話 task 是要做的事(一句話)、quote 是逐字稿裡作為依據的那一句(一字不改照抄,10 到 40 字)"
+_ZH_CN_NOTES = "\n字段:topic 这一段主要在谈哪件事,8 到 16 字的名词词组,用逐字稿里的专有名词;points 这件事的具体内容(数字、时程、谁要做什么、结论),最多 3 点,每点 text 是一句话、quote 是逐字稿里作为依据的那一句(一字不改照抄,10 到 40 字)"
+_ZH_CN_TODO = ";todo 这一段最明确的一件交办或有人承诺要做的事,没有就不填、不要凑数,有的话 task 是要做的事(一句话)、quote 是逐字稿里作为依据的那一句(一字不改照抄,10 到 40 字)"
+_EN_NOTES = "\nFields: topic = what this part is mainly about, a 3-to-8-word noun phrase using the transcript's own names and terms; points = the concrete details (numbers, timelines, who does what, conclusions), at most 3, each with text (one sentence) and quote (the transcript sentence it is based on, copied word for word, 5 to 30 words)"
+# 沒有格式約束的那條(MLX)接在欄位說明前面的那一句。⚠️ **附骨架、內容只寫「…」**(2026-10-28 M2,
+# Qwen3.5-4B MLX、43 分鐘 7 段、貪婪解碼,只換這一句):只講「只回一個 JSON 物件。」→ 待辦 **0** 交;
+# 附一個有內容的範例 → 5 交 1 留,而且三段照抄範例的待辦「下週五前送報價單」;
+# 骨架 → **7 交 6 留**、格式 0 錯。數據在 docs/spec/mac/05 §5.4b
+_SKELETON = '{"topic": "…", "points": [{"text": "…", "quote": "…"}], "todo": {"task": "…", "quote": "…"}}'
+_EN_TODO = "; todo = the clearest task assigned or promised in this part, leave it out if there is none (don't make one up); if present, task is the thing to do (one sentence) and quote is the transcript sentence it is based on, copied word for word (5 to 30 words)"
 
 
 ZH_TW = DraftVocab(
@@ -76,18 +102,13 @@ ZH_TW = DraftVocab(
         "只寫重點裡有的,不要推測;不要寫日期、地點、主持人、出席者;不要每句都寫「某某人認為」;"
         "不要加標題或條列。"
     ),
-    topics_instructions=(
-        "你是會議記錄助理。使用者會給你一場會議各時段的重點。用繁體中文(台灣用語)條列這場會議的"
-        "主要議題,最多 8 點,每點一句,每點用「- 」開頭。\n"
-        "只寫重點裡有的,不要推測;不要寫決議或待辦;不要加標題。"
-    ),
-    # 同 apple_asr.swift 那幾個 @Guide 的字
-    notes_format=(
-        "\n\n只回一個 JSON 物件,欄位:\n"
-        "- points:這一段討論的重點,每點一句,最多 4 點\n"
-        "- todo:這一段最明確的一件交辦或有人承諾要做的事;沒有就填 null,不要湊數。"
-        "有的話是 {\"task\": 要做的事,一句話, \"quote\": 逐字稿裡作為依據的那一句,一字不改照抄,10 到 40 字}"
-    ),
+    # 同 apple_asr.swift 那幾個 @Guide 的字(段落協定 v2,同 iOS `ChunkNotes` / `notesHints`,2026-10-28):
+    # 議題由每段的 topic 挑(`minutes.pick_topics`),重點每點附原句、由程式核對
+    notes_format=_ZH_TW_NOTES + _ZH_TW_TODO + "。",
+    lite_format=_ZH_TW_NOTES + "。",
+    json_only="\n\n只回一個 JSON 物件,形狀像這樣(… 換成這一段的內容):\n" + _SKELETON,
+    context_label="(前文,只供參考,不要整理)",
+    body_label="(以下是要整理的這一段)",
     marked_label="【與會者現場標記的重點】",
     notes_label="【各時段重點】",
     attendee_note="與會者的備註:",
@@ -97,6 +118,9 @@ ZH_TW = DraftVocab(
     todos_heading="## 待辦(約略時間,請對照逐字稿)",
     # 錄音中按了「重點」的那幾輪(2026-10-17,同手機版 `AISummary.highlightsHeading`)
     highlights_heading="## 現場標記的重點",
+    about_me_heading="## 與我相關",
+    glossary_label="這場的專有名詞(照這樣寫):",
+    list_sep="、",
     no_todos="- 沒有找到明確的待辦",
     # ⚠️ 「品質比不上雲端 AI」是使用者 2026-10-11 要求明講的(地端小模型能力有限)
     notice_apple=("> ⚠ AI 草稿:由這台 Mac 上的 Apple Intelligence 整理,能力有限、品質比不上"
@@ -132,17 +156,11 @@ ZH_CN = DraftVocab(
         "只写重点里有的,不要推测;不要写日期、地点、主持人、出席者;不要每句都写「某某人认为」;"
         "不要加标题或条列。"
     ),
-    topics_instructions=(
-        "你是会议记录助理。用户会给你一场会议各时段的重点。用简体中文条列这场会议的"
-        "主要议题,最多 8 点,每点一句,每点用「- 」开头。\n"
-        "只写重点里有的,不要推测;不要写决议或待办;不要加标题。"
-    ),
-    notes_format=(
-        "\n\n只回一个 JSON 对象,字段:\n"
-        "- points:这一段讨论的重点,每点一句,最多 4 点\n"
-        "- todo:这一段最明确的一件交办或有人承诺要做的事;没有就填 null,不要凑数。"
-        "有的话是 {\"task\": 要做的事,一句话, \"quote\": 逐字稿里作为依据的那一句,一字不改照抄,10 到 40 字}"
-    ),
+    notes_format=_ZH_CN_NOTES + _ZH_CN_TODO + "。",
+    lite_format=_ZH_CN_NOTES + "。",
+    json_only="\n\n只回一个 JSON 对象,形状像这样(… 换成这一段的内容):\n" + _SKELETON,
+    context_label="(前文,只供参考,不要整理)",
+    body_label="(以下是要整理的这一段)",
     marked_label="【与会者现场标记的重点】",
     notes_label="【各时段重点】",
     attendee_note="与会者的备注:",
@@ -151,6 +169,9 @@ ZH_CN = DraftVocab(
     topics_heading="## 主要议题",
     todos_heading="## 待办(约略时间,请对照逐字稿)",
     highlights_heading="## 现场标记的重点",
+    about_me_heading="## 与我相关",
+    glossary_label="这场的专有名词(照这样写):",
+    list_sep="、",
     no_todos="- 没有找到明确的待办",
     notice_apple=("> ⚠ AI 草稿:由这台 Mac 上的 Apple Intelligence 整理,能力有限、质量比不上"
                   "云端 AI,可能漏掉或写错;正式记录请对照逐字稿另行整理。"),
@@ -191,19 +212,11 @@ EN = DraftVocab(
         "Only what is in the points; don't guess; don't mention the date, place, chair or "
         "attendees; don't start every sentence with \"X thinks\"; no heading or bullets."
     ),
-    topics_instructions=(
-        "You are a meeting minutes assistant. The user gives you the key points from each part of "
-        "a meeting. List the main topics of the meeting in English, at most 8, one sentence each, "
-        "each starting with \"- \".\n"
-        "Only what is in the points; don't guess; no decisions or action items; no heading."
-    ),
-    notes_format=(
-        "\n\nReply with one JSON object only, fields:\n"
-        "- points: the key points discussed in this part, one sentence each, at most 4\n"
-        "- todo: the clearest task assigned or promised in this part; null if there is none "
-        "(don't make one up). If present: {\"task\": the thing to do, one sentence, \"quote\": the "
-        "transcript sentence it is based on, copied word for word, 5 to 30 words}"
-    ),
+    notes_format=_EN_NOTES + _EN_TODO + ".",
+    lite_format=_EN_NOTES + ".",
+    json_only="\n\nReply with one JSON object only, shaped like this (replace … with this part's content):\n" + _SKELETON,
+    context_label="(Earlier context, for reference only; do not summarize)",
+    body_label="(The part to summarize starts here)",
     marked_label="[Highlights marked by attendees]",
     notes_label="[Key points by section]",
     attendee_note="Attendee's note: ",
@@ -212,6 +225,9 @@ EN = DraftVocab(
     topics_heading="## Main topics",
     todos_heading="## Action items (approximate time; check the transcript)",
     highlights_heading="## Highlights marked during the meeting",
+    about_me_heading="## Related to me",
+    glossary_label="Proper names in this meeting (spell them this way): ",
+    list_sep=", ",
     no_todos="- No clear action items found",
     notice_apple=("> ⚠ AI draft: written by Apple Intelligence on this Mac. It is limited, not as "
                   "good as cloud AI, and may miss or get things wrong; check the transcript for "

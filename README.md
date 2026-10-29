@@ -168,7 +168,7 @@ Double-click the desktop icon and the tool's window opens. “What to do” star
 **🤖 Hand it to an AI**
 
 - Before pasting to an AI, turn off the setting that “trains models on your conversations” (with a screenshot of the setting)
-- **Meeting minutes draft**: a local AI on this computer turns the transcript into a summary, main topics and action items (with approximate times), and the transcript never leaves this computer (Windows uses the tool's built-in model, about 2–3.4 GB downloaded on first use; on a Mac each meeting can use Apple Intelligence, or the built-in Qwen 4B, which is more complete, downloads about 3 GB on first use and needs 16 GB of memory or more); the draft is written in the transcript's language. ⚠️ **A small local model is limited and not as good as cloud AI**, so treat it as a draft and work from the transcript for official minutes; drafts are kept in the tool's own folder, not next to the transcript
+- **Meeting minutes draft**: a local AI on this computer turns the transcript into a summary, main topics and action items (with approximate times), and the transcript never leaves this computer (Windows uses the tool's built-in model, about 2–3.4 GB downloaded on first use, and computers with Intel integrated graphics and 16 GB of memory or more can choose Google's Gemma 4 E4B instead (about 6.5 GB, slower); on a Mac each meeting can use Apple Intelligence, or the built-in Qwen 4B (Alibaba; the most accurate action items, downloads about 3 GB on first use) or Gemma 4 (Google, about 5.2 GB), both of which need 16 GB of memory or more; on both platforms “Compare models” lists each model's origin, size and wait side by side; with your names filled in, what mentions you goes into “Related to me” at the top; with voiceprint sync on and a glossary in the sync folder, misheard proper names are fixed first); the draft is written in the transcript's language. ⚠️ **A small local model is limited and not as good as cloud AI**, so treat it as a draft and work from the transcript for official minutes; drafts are kept in the tool's own folder, not next to the transcript
 
 **⚙️ Accuracy and speed**
 
@@ -315,7 +315,7 @@ License inventory of the components:
 | oletools / olefile (reading the outline of Excel macros) | BSD |
 | RapidOCR + PP-OCRv6 models (text recognition in images) | Apache-2.0 |
 | Qwen3.5-4B / 2B language models (Alibaba Tongyi Qianwen; for the “✨ Local AI” minutes draft: on Windows the OpenVINO int4 version converted by Intel, on a Mac the MLX 4-bit version converted by mlx-community; not distributed with this tool, downloaded on first use) | Apache-2.0 |
-| MLX / mlx-lm (the inference framework for Qwen 4B on a Mac; installed only on Apple silicon Macs) | MIT |
+| MLX / mlx-lm (the inference framework for Qwen 4B and Gemma 4 on a Mac; installed only on Apple silicon Macs) | MIT |
 | transformers / sentencepiece / safetensors (used by mlx-lm to read the model) | Apache-2.0 |
 | pillow-heif (HEIC decoding; includes libheif) | BSD-3 / LGPL (dynamically linked) |
 | extract-msg (Outlook email) | BSD-2 |
