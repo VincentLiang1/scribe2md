@@ -820,16 +820,38 @@ def chinese_number(s: str) -> set[str]:
     """「三百萬」→ {"300", "3000000"}(萬、億前面那段也算一個數:逐字稿寫「三百萬」、草稿寫
     「300 萬」)。口語約數:相鄰兩個數字後一個大 1(一兩、三四、五六)兩種讀法都算——「一兩百」→
     100、200,「三四十」→ 30、40,「十五六」→ 15、16(手機版 `4946414`:原本「一兩百」只讀得出 200,
-    模型寫「一百到兩百」就判數字對不上)。⚠️ 手機版的怪處照抄、不要順手修(兩邊對照組要一樣):
-    「兩百五」是 205、單獨一個「〇」不算數字。"""
-    out = _chinese_number_one(s)
+    模型寫「一百到兩百」就判數字對不上)。口語省略最後一位:「一千一」= 1100、「兩百五」= 250、「三萬五」=
+    35000(手機版 `9d21f4f`:原本讀成 1001、205、30005,「底薪一千一」被判內容站不住);原本的讀法也留著
+    (只會多認)。⚠️ 手機版的怪處照抄、不要順手修(兩邊對照組要一樣):單獨一個「〇」不算數字。"""
+    forms = [s]
     for i in range(len(s) - 1):
         x, y = _CN_DIGIT.get(s[i]), _CN_DIGIT.get(s[i + 1])
         if x is None or y is None or x < 1 or y != x + 1:
             continue
         for keep in (s[i], s[i + 1]):
-            out |= _chinese_number_one(s[:i] + keep + s[i + 2:])
+            forms.append(s[:i] + keep + s[i + 2:])
+    out: set[str] = set()
+    for f in forms:
+        out |= _chinese_number_one(f)
+        full = _implied_unit(f)
+        if full is not None:
+            out |= _chinese_number_one(full)
     return out
+
+
+#: 口語省略的那一位:百 → 十、千 → 百、萬 → 千、億 → 千萬(同手機版 `impliedUnit`)
+_CN_IMPLIED = {"百": "十", "千": "百", "萬": "千", "万": "千", "億": "千萬", "亿": "千万"}
+
+
+def _implied_unit(s: str) -> str | None:
+    """最後是一個數字(1~9)、前面緊接著百/千/萬/億、再前面是數字或十/百/千、整串沒有零、至少 3 個字:
+    補上省略的下一位(「一千一」→「一千一百」;「兩億三」→「兩億三千萬」);不是這種說法回 None。"""
+    if len(s) < 3 or "零" in s or "〇" in s or _CN_DIGIT.get(s[-1], 0) < 1:
+        return None
+    n = _CN_IMPLIED.get(s[-2])
+    if n is None or (s[-3] not in _CN_DIGIT and s[-3] not in _CN_UNIT):
+        return None
+    return s + n
 
 
 def _chinese_number_one(s: str) -> set[str]:
