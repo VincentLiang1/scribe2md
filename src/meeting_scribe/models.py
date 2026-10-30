@@ -589,7 +589,7 @@ def gemma_ov_cached() -> bool:
 
 
 def gemma_ov_size() -> int:
-    """模型資料夾現在佔多少位元組(含下載到一半的;「進階參數設定」顯示用)。"""
+    """模型資料夾現在佔多少位元組(含下載到一半的;「地端 AI 進階設定」顯示用)。"""
     target = gemma_ov_target()
     if not target.is_dir():
         return 0
@@ -597,7 +597,7 @@ def gemma_ov_size() -> int:
 
 
 def delete_gemma_ov() -> None:
-    """刪掉 Windows 的 Gemma 模型(使用者在「進階參數設定」按的;下次用時重新下載)。"""
+    """刪掉 Windows 的 Gemma 模型(使用者在「地端 AI 進階設定」按的;下次用時重新下載)。"""
     target = gemma_ov_target()
     if target.is_dir():
         shutil.rmtree(target)
@@ -663,7 +663,7 @@ def mlx_llm_cached() -> bool:
 
 
 def mlx_llm_size() -> int:
-    """模型資料夾現在佔多少位元組(含下載到一半的;「進階參數設定」顯示用)。"""
+    """模型資料夾現在佔多少位元組(含下載到一半的;「地端 AI 進階設定」顯示用)。"""
     target = mlx_llm_target()
     if not target.is_dir():
         return 0
@@ -671,7 +671,7 @@ def mlx_llm_size() -> int:
 
 
 def delete_mlx_llm() -> None:
-    """刪掉 Mac 的 Qwen 模型(使用者在「進階參數設定」按的;下次用時重新下載)。"""
+    """刪掉 Mac 的 Qwen 模型(使用者在「地端 AI 進階設定」按的;下次用時重新下載)。"""
     target = mlx_llm_target()
     if target.is_dir():
         shutil.rmtree(target)

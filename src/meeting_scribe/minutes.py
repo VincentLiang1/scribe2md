@@ -136,7 +136,7 @@ def _helper_argv(exe) -> list[str]:
 
 
 def _backend() -> str | None:
-    """哪個平台那一套:Mac 是 `apple`(Apple 與 Qwen 兩個模型)、Windows 是 `openvino`、其他沒有。
+    """哪個平台那一套:Mac 是 `apple`(Apple、Qwen、Gemma 三個模型)、Windows 是 `openvino`、其他沒有。
 
     ⚠️ **Mac 不會「自動」退回 Qwen**:Apple Intelligence 沒打開要回 `failed` 叫使用者去打開,
     悄悄改用另一顆模型等於把那句提示吞掉。用不用 Qwen 是使用者在畫面上自己選的
@@ -205,7 +205,7 @@ def choices() -> list[str]:
 
 
 def _preferred() -> str | None:
-    """不探測任何東西的「想用誰」:Windows 只有一個;Mac 是記住的那個,沒記過就 Apple
+    """不探測任何東西的「想用誰」:記住的那個;沒記過時 Windows 是 Qwen(比較快、比較小)、Mac 是 Apple
     (不必下載、比較快;同手機版)。"""
     backend = _backend()
     if backend == "openvino":
@@ -238,7 +238,7 @@ def clear_capability_cache() -> None:
 
 
 def qwen_available() -> bool:
-    """這台列不列得出 Qwen 4B(「進階參數設定」要不要多一列模型管理)。⚠️ 不經 `engines()`:
+    """這台列不列得出 Qwen 4B(「地端 AI 進階設定」要不要多一列模型管理)。⚠️ 不經 `engines()`:
     對話框開在主執行緒上,而那一支沒快取時要起 Apple 的小程式。"""
     return _backend() == "apple" and _qwen_capability().state != "unsupported"
 
@@ -479,19 +479,20 @@ LOCATE_RATIO = 0.75
 LOCATE_MIN_BIGRAMS, LOCATE_MAX_BIGRAMS = 5, 80
 
 
-def locate(quote: str, lines: list[TimedLine], scale: int = 1) -> str | None:
+def locate(quote: str, lines: list[TimedLine]) -> str | None:
     """模型交的原句對回逐字稿,回推估的時間(那一輪的開始 + 原句在這一輪裡的位置);對不上回 None。
-
-    `scale` 是會議語言的字數倍數(`draftvocab.char_scale`):⚠️ 上限 80 組是照中文定的,英文
-    提示詞要的是 5 到 30 個字(一百多個字母),不放大的話每一條英文待辦都因為「太長」被丟掉。"""
-    hit = locate_line(quote, lines, scale)
+    ⚠️ 上限 80 組是照中文定的;英文原句(一百多個字母)不走這條,改比詞(`_locate_words`,上限 120 組詞)。"""
+    hit = locate_line(quote, lines)
     return hit[0] if hit else None
 
 
-def locate_line(quote: str, lines: list[TimedLine], scale: int = 1) -> tuple[str, int] | None:
-    """同 `locate`,另外回對上的那一行(核對內容要看原句附近那幾行;同手機版 `locateLine`)。"""
+def locate_line(quote: str, lines: list[TimedLine]) -> tuple[str, int] | None:
+    """同 `locate`,另外回對上的那一行(核對內容要看原句附近那幾行;同手機版 `locateLine`)。
+    沒有中日韓文字的原句改比相鄰兩個詞(`_locate_words`)。"""
+    if not has_cjk(quote):
+        return _locate_words(quote, lines)
     qb = _bigrams(squash(quote))
-    if not LOCATE_MIN_BIGRAMS <= len(qb) <= LOCATE_MAX_BIGRAMS * scale:
+    if not LOCATE_MIN_BIGRAMS <= len(qb) <= LOCATE_MAX_BIGRAMS:
         return None
 
     def score(text: str) -> float:
@@ -515,9 +516,76 @@ def locate_line(quote: str, lines: list[TimedLine], scale: int = 1) -> tuple[str
     return None
 
 
+#: 英文原句的詞兩字組數的合理範圍(一段約 350 個詞,倒整段進來還是擋得到)
+LOCATE_MIN_WORD_BIGRAMS, LOCATE_MAX_WORD_BIGRAMS = 3, 120
+
+
+def _locate_words(quote: str, lines: list[TimedLine]) -> tuple[str, int] | None:
+    """英文(拼音文字)的原句改比相鄰兩個詞(手機版 `d426beb`,同 Android ce40101):字母兩字組在英文裡
+    太常見,編的句子、打亂詞序的句子都有九成以上對得上;真的原句又常超過 80 組被當成「整段倒進來」。
+    詞兩字組:真的原句 0.95~1.00、編的 0~0.15。門檻同樣 75%。"""
+    qb = _word_bigrams(words(quote))
+    if not LOCATE_MIN_WORD_BIGRAMS <= len(qb) <= LOCATE_MAX_WORD_BIGRAMS:
+        return None
+
+    def score(w: list[str]) -> float:
+        have = set(_word_bigrams(w))
+        return sum(b in have for b in qb) / len(qb)
+
+    lw = [words(l.text) for l in lines]
+    own = [score(w) for w in lw]
+    if own:
+        i = max(range(len(own)), key=lambda k: own[k])
+        if own[i] >= LOCATE_RATIO:
+            # 在這一行裡的位置:對上的詞組第一次出現處取中位數 ÷ 這一行的詞數
+            lb = _word_bigrams(lw[i])
+            pos = sorted(lb.index(b) for b in qb if b in lb)
+            if lines[i].end is None or not pos or not lw[i]:
+                return clock(lines[i].start), i
+            frac = pos[len(pos) // 2] / len(lw[i])
+            return clock(lines[i].start + (lines[i].end - lines[i].start) * frac), i
+    for i in range(len(lines) - 1):
+        if score(lw[i] + lw[i + 1]) >= LOCATE_RATIO:
+            return clock(lines[i].start), i
+    return None
+
+
+def has_cjk(s: str) -> bool:
+    """有中日韓文字就照字比(中文夾英文術語也算中文;同手機版 `hasCJK` 的 Han/平假名/片假名/諺文)。"""
+    return any(_cjk_char(ord(c)) for c in s)
+
+
+def _cjk_char(cp: int) -> bool:
+    return (0x2E80 <= cp <= 0x2FDF or cp in (0x3005, 0x3007) or 0x3021 <= cp <= 0x3029
+            or 0x3038 <= cp <= 0x303B or 0x3041 <= cp <= 0x30FF or 0x3131 <= cp <= 0x318E
+            or 0x31F0 <= cp <= 0x31FF or 0x3400 <= cp <= 0x4DBF or 0x4E00 <= cp <= 0x9FFF
+            or 0xA960 <= cp <= 0xA97F or 0xAC00 <= cp <= 0xD7FF or 0xF900 <= cp <= 0xFAFF
+            or 0xFF66 <= cp <= 0xFFDC or 0x1100 <= cp <= 0x11FF or 0x20000 <= cp <= 0x3FFFF)
+
+
+def words(s: str) -> list[str]:
+    """小寫的詞:連續的字母、組合記號、數字(I'll 拆成 i、ll,兩邊一樣拆就對得上;同手機版 `words`)。"""
+    out: list[str] = []
+    cur = ""
+    for c in s.lower():
+        cat = unicodedata.category(c)
+        if cat[0] in "LM" or cat == "Nd":
+            cur += c
+        elif cur:
+            out.append(cur)
+            cur = ""
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _word_bigrams(w: list[str]) -> list[str]:
+    return [w[i] + " " + w[i + 1] for i in range(len(w) - 1)]
+
+
 # --- 核對內容(手機版 08 §8.12 改版 D、E,2026-10-19)---------------------------------
-# 原句對得上還不夠:模型會引一句真的話、卻寫成相反的意思(「應該往這個方向走」→「需評估後續
-# 影響」),或把「21 號開業」寫成「20 日或 21 日搬遷」。所以句子本身也要大半是原文的字,數字要原文都有
+# 原句對得上還不夠:模型會引一句真的話、卻寫成相反的意思(原文說「就照這個方案」,條目寫成「需評估
+# 後續影響」),或把「5 號上線」寫成「4 日或 5 日遷移」。所以句子本身也要大半是原文的字,數字要原文都有
 
 def support(text: str, context: str) -> float:
     """這句話(去標點)的兩字組有幾成出現在 context;沒有兩字組算 1。"""
@@ -526,6 +594,14 @@ def support(text: str, context: str) -> float:
         return 1.0
     have = set(_bigrams(squash(context)))
     return sum(x in have for x in b) / len(b)
+
+
+def share(text: str, context: str) -> float:
+    """這句話有幾成出自 context:英文會議比實詞(`word_support`),其他比兩字組(`support`)。
+    英文的字母兩字組太常見,編的句子對整段也有 0.74~0.89(2026-10-30 審查;手機版 `005d10d`)。"""
+    if _draft.language == draftvocab.EN.language:
+        return word_support(text, context)
+    return support(text, context)
 
 
 #: 重點、待辦:跟原句所在那一行(連前後各一行)比
@@ -543,13 +619,19 @@ STOP_BIGRAMS = frozenset(
     "我們 這個 可以 一個 就是 那個 然後 他們 你們 的話 沒有 現在 因為 所以 需要 進行 相關 部分 "
     "問題 時候 已經 還是 什麼 這邊 那邊 如果 這樣 比較 應該 大家 自己 目前 是否 以及 並且 關於 "
     "表示 討論 確認 對方 這些 未來 後續 提到 的是 了一 在這 也是 是在 不是 都是 會議".split())
+#: 簡中會議用的(手機版 `458daf8`:52 個裡 33 個簡體寫法不同,只有繁體的話簡中會議的虛詞都算數)。
+#: ⚠️ 寫死手機版 ICU Hant-Hans 轉出來的結果,不在執行期用 OpenCC 轉——兩邊對照組要一樣
+STOP_BIGRAMS_HANS = frozenset(
+    "我们 这个 可以 一个 就是 那个 然后 他们 你们 的话 没有 现在 因为 所以 需要 进行 相关 部分 "
+    "问题 时候 已经 还是 什么 这边 那边 如果 这样 比较 应该 大家 自己 目前 是否 以及 并且 关于 "
+    "表示 讨论 确认 对方 这些 未来 后续 提到 的是 了一 在这 也是 是在 不是 都是 会议".split())
 
 
 def grounded(text: str, quote: str, i: int, lines: list[TimedLine]) -> bool:
     """重點或待辦站得住:字大半出自原句附近(前後各一行)、數字原文都有;不行就看前後
-    `FACT_WINDOW` 輪的事實(`fact_grounded`)。`i` 是 `locate_line` 對上的那一行。"""
+    `FACT_WINDOW` 輪的事實(`fact_grounded`)。`i` 是 `locate_line` 對上的那一行。英文比實詞(`share`)。"""
     near = "\n".join(l.text for l in lines[max(0, i - 1):i + 2]) + "\n" + quote
-    if support(text, near) >= MIN_SUPPORT and numbers_supported(text, near):
+    if share(text, near) >= MIN_SUPPORT and numbers_supported(text, near):
         return True
     wide = "\n".join(l.text for l in lines[max(0, i - FACT_WINDOW):i + FACT_WINDOW + 1]) + "\n" + quote
     return fact_grounded(text, wide)
@@ -559,45 +641,199 @@ def fact_grounded(text: str, context: str) -> bool:
     """看事實:條目裡的英文縮寫、數字 context 都有,而且至少 `MIN_FACT_HITS` 個不是虛詞的
     兩字組出現。用字比例對「用自己的話歸納」太嚴——手機版 10-19 查到 E4B 被丟的條目大多是對的。
     只有虛詞的空話(「需評估後續影響」0 個)照樣擋;用了原文名詞、意思寫反的擋不住(已知風險)。
-    英文會議不用(字母的兩字組太容易對上)。"""
-    if (_draft.language == draftvocab.EN.language or not numbers_supported(text, context)
-            or not latin_terms(text) <= latin_terms(context)):
+    英文會議改看實詞:數字對得上、實詞 `MIN_WORD_FACT` 以上出現在 context(手機版 `bcafb06`)。"""
+    if _draft.language == draftvocab.EN.language:
+        return numbers_supported(text, context) and word_support(text, context) >= MIN_WORD_FACT
+    if not numbers_supported(text, context) or not latin_terms(text) <= latin_terms(context):
         return False
+    stops = STOP_BIGRAMS_HANS if _draft.language == draftvocab.ZH_CN.language else STOP_BIGRAMS
     have = set(_bigrams(squash(context).lower()))
     hits = {b for b in _bigrams(squash(text).lower())
-            if b in have and b not in STOP_BIGRAMS and not all(c.isnumeric() for c in b)}
+            if b in have and b not in stops and not all(c.isnumeric() for c in b)}
     return len(hits) >= MIN_FACT_HITS
 
 
+#: 英文會議看事實的門檻:前後幾輪裡實詞有七成出現
+MIN_WORD_FACT = 0.7
+
+#: 英文虛詞(手機版 `enStop`、Android `EN_STOP` 同一份,改了三邊一起改)
+EN_STOP = frozenset((
+    "a an the and or but if of to in on at by for with from as is are was were be been being it its this "
+    "that these those there here i you he she we they me him her us them my your his our their what which "
+    "who whom whose when where why how all any both each few more most other some such no nor not only own "
+    "same so than too very can will just should would could may might must shall do does did doing have has "
+    "had having about into over under again further then once up down out off also yeah um uh okay ok right "
+    "well like oh mm hmm speaker").split())
+
+
+def word_support(text: str, context: str) -> float:
+    """英文會議的「站得住」比實詞(手機版 `bcafb06`,同 Android 9d9337b):字母兩字組在英文裡太常見,
+    把重點配到 40 行外別段的原句附近也有 117/123 過關。⚠️ 只看話題有沒有跑掉,不看意思:
+    not 是虛詞,寫反了照樣過(中文的字比對也一樣)。沒有實詞算 1。"""
+    t_ = content_words(text)
+    if not t_:
+        return 1.0
+    have = set(content_words(context))
+    return sum(w in have for w in t_) / len(t_)
+
+
+def content_words(s: str) -> list[str]:
+    """實詞:小寫的詞去掉虛詞、單一字母、純數字,粗略去詞尾(ing、ed、es、s,去掉後至少留 3 個字母),
+    再去結尾的 e(超過 3 個字母才去)——不去 e 的話 noises → nois、noise 不變,單複數對不上(手機版 `6350883`)。"""
+    out = []
+    for w in words(s):
+        if w in EN_STOP or len(w) <= 1 or all(c.isnumeric() for c in w):
+            continue
+        v = next((w[:-len(suf)] for suf in ("ing", "ed", "es", "s") if len(w) > len(suf) + 2 and w.endswith(suf)), w)
+        out.append(v[:-1] if len(v) > 3 and v.endswith("e") else v)
+    return out
+
+
+def thin(s: str) -> bool:
+    """沒有內容:去掉標點不到 4 個字(空字串、照抄骨架的「…」、一兩個字的議題),英文另外是一個實詞
+    都沒有("It is.")。`support` / `word_support` 對這些一律回 1,原本會照收(2026-10-30 審查;手機版 `e6de84c`)。"""
+    return len(squash(s)) < 4 or (_draft.language == draftvocab.EN.language and not content_words(s))
+
+
+def topic_stands(topic: str, text: str) -> bool:
+    """議題站得住:有內容、字大半出現在這一段、數字原文都有。站不住的走「用第一個重點當標題」的退路——
+    兩個字的議題原本會過這關,再在 `pick_topics`(標題至少 4 字)連重點一起消失。"""
+    return not thin(topic) and share(topic, text) >= MIN_TOPIC_SUPPORT and numbers_supported(topic, text)
+
+
 def latin_terms(s: str) -> set[str]:
-    """英文縮寫與代號(「LPF」「SP2」「CK」),不分大小寫。"""
+    """英文縮寫與代號(「ABC」「X2」「QA」這類),不分大小寫。"""
     return {m.lower() for m in re.findall(r"[A-Za-z][A-Za-z0-9]+", s)}
 
 
 def numbers_supported(text: str, context: str) -> bool:
-    """句子裡的每個數字 context 都有(中文數字先換成阿拉伯數字:「300 萬」對得上「三百萬」)。"""
+    """句子裡的每個數字 context 都有(中文數字先換成阿拉伯數字:「300 萬」對得上「三百萬」)。
+    英文數字詞只換 context 那邊(手機版 `69f6b43`:逐字稿念 "eighty-two point seven"、草稿寫 82.7%):
+    句子這邊也換的話,"one of"、"two approaches" 都變成要對的數字,會多丟一堆。"""
     need = numbers(text)
-    return not need or need <= numbers(context)
+    return not need or need <= numbers(context) | english_numbers(context)
 
 
 def numbers(s: str) -> set[str]:
-    """文字裡的數字:阿拉伯數字(去千分位)與中文數字。⚠️ 不能寫 `\\d`:它連全形與其他文字的
+    """文字裡的數字:阿拉伯數字(去千分位)與中文數字(繁簡都認)。⚠️ 不能寫 `\\d`:它連全形與其他文字的
     數字都算(手機版 Swift 的 `\\d` 甚至把「三百萬」算進去)。"""
     out = {m.replace(",", "") for m in re.findall(r"[0-9][0-9,]*(?:\.[0-9]+)?", s)}
-    for m in re.findall(r"[零〇一二兩三四五六七八九十百千萬億]+", s):
+    # 两、万、亿:簡中(手機版 `458daf8`;原本「两百」被讀成 100)
+    for m in re.findall(r"[零〇一二兩两三四五六七八九十百千萬万億亿]+", s):
         out |= chinese_number(m)
     return out
 
 
-_CN_DIGIT = {"零": 0, "〇": 0, "一": 1, "二": 2, "兩": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7,
-             "八": 8, "九": 9}
+_EN_UNITS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+_EN_TEENS = ("ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+             "eighteen", "nineteen")
+_EN_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
+            "eighty": 80, "ninety": 90}
+_EN_SCALES = {"thousand": 1000, "million": 1_000_000, "billion": 1_000_000_000}
+_EN_ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7,
+                "eighth": 8, "ninth": 9, "tenth": 10, "eleventh": 11, "twelfth": 12, "thirteenth": 13,
+                "fourteenth": 14, "fifteenth": 15, "sixteenth": 16, "seventeenth": 17, "eighteenth": 18,
+                "nineteenth": 19, "twentieth": 20, "thirtieth": 30}
+
+
+def english_numbers(s: str) -> set[str]:
+    """英文數字詞 → 阿拉伯數字(逐條照手機版 `englishNumbers`):"eighty-two point seven" → 82.7、
+    "three hundred million" → 300 與 300000000(同中文,scale 前面那段也算)、"twenty-first" → 21。
+    連著念的個位數("two three")是兩個數;"and" 只在 hundred／thousand 後面接數字時算在裡面。"""
+    w = words(s)
+    out: set[str] = set()
+    total = cur = 0
+    on = False
+    last = ""   # 剛才那個詞是 unit／teen／ten／hundred／scale
+
+    def flush() -> None:
+        nonlocal total, cur, on, last
+        if on:
+            out.add(str(total + cur))
+        total = cur = 0
+        on, last = False, ""
+
+    def is_number_word(x: str) -> bool:
+        return x in _EN_UNITS or x in _EN_TEENS or x in _EN_TENS or x == "hundred" or x in _EN_SCALES
+
+    i = 0
+    while i < len(w):
+        x = w[i]
+        if x in _EN_UNITS:
+            if on and last in ("unit", "teen"):
+                flush()
+            cur += _EN_UNITS.index(x)
+            on, last = True, "unit"
+        elif x in _EN_TEENS:
+            if on and last in ("unit", "teen", "ten"):
+                flush()
+            cur += 10 + _EN_TEENS.index(x)
+            on, last = True, "teen"
+        elif x in _EN_TENS:
+            if on and last in ("unit", "teen", "ten"):
+                flush()
+            cur += _EN_TENS[x]
+            on, last = True, "ten"
+        elif x in _EN_ORDINALS:
+            if on and last not in ("ten", "hundred", "scale"):
+                flush()
+            cur += _EN_ORDINALS[x]
+            on = True
+            flush()
+        elif x == "hundred" or x in _EN_SCALES:
+            if not on:
+                if i == 0 or w[i - 1] != "a":
+                    i += 1
+                    continue
+                cur, on = 1, True   # "a hundred"
+            if x == "hundred":
+                cur = max(cur, 1) * 100
+                last = "hundred"
+            else:
+                out.add(str(cur))
+                total += max(cur, 1) * _EN_SCALES[x]
+                cur, last = 0, "scale"
+        elif (x == "and" and on and last in ("hundred", "scale") and i + 1 < len(w)
+              and is_number_word(w[i + 1])):
+            pass   # one hundred and five:接著算
+        elif x == "point" and i + 1 < len(w) and w[i + 1] in _EN_UNITS:
+            frac = ""
+            while i + 1 < len(w) and w[i + 1] in _EN_UNITS:
+                frac += str(_EN_UNITS.index(w[i + 1]))
+                i += 1
+            out.add(f"{total + cur}.{frac}")
+            on = False
+            flush()
+        else:
+            flush()
+        i += 1
+    flush()
+    return out
+
+
+_CN_DIGIT = {"零": 0, "〇": 0, "一": 1, "二": 2, "兩": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6,
+             "七": 7, "八": 8, "九": 9}
 _CN_UNIT = {"十": 10, "百": 100, "千": 1000}
 
 
 def chinese_number(s: str) -> set[str]:
     """「三百萬」→ {"300", "3000000"}(萬、億前面那段也算一個數:逐字稿寫「三百萬」、草稿寫
-    「300 萬」)。⚠️ 手機版的怪處照抄、不要順手修(兩邊對照組要一樣):「兩百五」是 205、
-    單獨一個「〇」不算數字。"""
+    「300 萬」)。口語約數:相鄰兩個數字後一個大 1(一兩、三四、五六)兩種讀法都算——「一兩百」→
+    100、200,「三四十」→ 30、40,「十五六」→ 15、16(手機版 `4946414`:原本「一兩百」只讀得出 200,
+    模型寫「一百到兩百」就判數字對不上)。⚠️ 手機版的怪處照抄、不要順手修(兩邊對照組要一樣):
+    「兩百五」是 205、單獨一個「〇」不算數字。"""
+    out = _chinese_number_one(s)
+    for i in range(len(s) - 1):
+        x, y = _CN_DIGIT.get(s[i]), _CN_DIGIT.get(s[i + 1])
+        if x is None or y is None or x < 1 or y != x + 1:
+            continue
+        for keep in (s[i], s[i + 1]):
+            out |= _chinese_number_one(s[:i] + keep + s[i + 2:])
+    return out
+
+
+def _chinese_number_one(s: str) -> set[str]:
+    """一種讀法(`chinese_number` 的原本那一段)。"""
     def small(t: str) -> int | None:
         if not t:
             return None
@@ -616,9 +852,9 @@ def chinese_number(s: str) -> set[str]:
     out: set[str] = set()
     total = 0
     rest = s
-    for mark, mul in (("億", 100_000_000), ("萬", 10_000)):
-        if mark in rest:
-            r = rest.index(mark)
+    for marks, mul in (("億亿", 100_000_000), ("萬万", 10_000)):
+        r = next((k for k, c in enumerate(rest) if c in marks), -1)
+        if r >= 0:
             v = small(rest[:r])
             if v is not None:
                 out.add(str(v))
@@ -636,18 +872,45 @@ def chinese_number(s: str) -> set[str]:
 
 def grounded_sentences(text: str, context: str) -> tuple[str, int]:
     """摘要的每一句:數字要在 context(核對過的重點)裡、字要有三成以上出自 context;
-    站不住的句子丟掉。回 (留下的, 丟了幾句)。"""
-    parts: list[str] = []
+    站不住的句子丟掉。回 (留下的, 丟了幾句)。英文比實詞(`share`)。"""
+    parts = summary_sentences(text)
+    kept = [p for p in parts if numbers_supported(p, context) and share(p, context) >= 0.3]
+    return "".join(kept).strip(), len(parts) - len(kept)
+
+
+def summary_sentences(text: str) -> list[str]:
+    """摘要斷句(手機版 `AISummary.sentences`;這邊另有一支 `sentences` 是「與我相關」切一輪話用的):
+    「。！？!?」;英文會議另外認句點——後面接空白或結尾才算,縮寫(e.g.、Dr.)不算,小數點後面接數字
+    本來就不算。原本英文只認「!?」,整段摘要是一句,一個數字對不上整段摘要就沒了(手機版 `a529ba3`)。
+    每句保留原本的空白,接回去跟原文一樣。"""
+    en = _draft.language == draftvocab.EN.language
+    out: list[str] = []
     cur = ""
-    for c in text:
+    for i, c in enumerate(text):
         cur += c
         if c in "。！？!?":
-            parts.append(cur)
+            out.append(cur)
             cur = ""
+            continue
+        if not en or c != "." or not (i + 1 == len(text) or text[i + 1].isspace()):
+            continue
+        j = i
+        while j > 0 and not text[j - 1].isspace():
+            j -= 1
+        if text[j:i].lower().strip("(\"'") in EN_ABBREVIATIONS:
+            continue
+        out.append(cur)
+        cur = ""
     if cur.strip():
-        parts.append(cur)
-    kept = [p for p in parts if numbers_supported(p, context) and support(p, context) >= 0.3]
-    return "".join(kept).strip(), len(parts) - len(kept)
+        out.append(cur)
+    return out
+
+
+#: 後面的句點不是句尾(比對時去掉最後的句點、轉小寫;同手機版 `enAbbreviations`)。no、co、st、est、ca
+#: 不放(手機版 `f9d59d1`):它們也是一般的字,會出現在句尾("The answer was no.")
+EN_ABBREVIATIONS = frozenset((
+    "e.g", "i.e", "etc", "vs", "dr", "mr", "mrs", "ms", "prof", "jr", "sr", "inc", "ltd",
+    "u.s", "u.k", "a.m", "p.m", "approx", "fig", "dept"))
 
 
 def repetitive(s: str) -> bool:
@@ -671,7 +934,7 @@ def _cjk_ok(cp: int) -> bool:
 
 
 def garbled(s: str) -> bool:
-    """重複,或中文會議的條目混進中英文以外的字(手機版 10-19 E4B 實機:「確認該บุคคล的身份證件」)。"""
+    """重複,或中文會議的條目混進中英文以外的字(手機版 10-19 E4B 實機:中文的待辦中間夾了一個泰文詞)。"""
     if repetitive(s):
         return True
     if _draft.language == draftvocab.EN.language:
@@ -769,19 +1032,36 @@ def is_transition(line: str) -> bool:
 
 def context(before: int, parts: list[list[TimedLine]]) -> str:
     """前文:上一段最後幾輪(最多 3 輪、約 400 字),讓模型看得懂這一段開頭在接什麼話。
-    標明只供參考;原句也對不回這一段,所以不會重複出現在草稿裡。"""
-    if before <= 0:
+    標明只供參考;模型引了前文裡的話照樣核對得上(`quote_pool`),引前文的待辦另外跟上一段去重
+    (`_map_all`)。"""
+    picked = context_lines(before, parts)
+    if not picked:
         return ""
     scale = _draft.char_scale
-    picked: list[str] = []
+    return (_draft.context_label + "\n" + "\n".join(l.text[:200 * scale] for l in picked) + "\n"
+            + _draft.body_label + "\n")
+
+
+def context_lines(before: int, parts: list[list[TimedLine]]) -> list[TimedLine]:
+    """前文是上一段最後幾行(每行截 200 字、合計約 400 字;同手機版 `contextLines`)。"""
+    if before <= 0:
+        return []
+    scale = _draft.char_scale
+    picked: list[TimedLine] = []
     n = 0
     for l in reversed(parts[before - 1][-3:]):
-        t_ = l.text[:200 * scale]
-        if n + len(t_) > 400 * scale and picked:
+        c = min(len(l.text), 200 * scale)
+        if n + c > 400 * scale and picked:
             break
-        picked.insert(0, t_)
-        n += len(t_)
-    return _draft.context_label + "\n" + "\n".join(picked) + "\n" + _draft.body_label + "\n"
+        picked.insert(0, l)
+        n += c
+    return picked
+
+
+def quote_pool(chunk: int, parts: list[list[TimedLine]]) -> list[TimedLine]:
+    """核對原句時拿來比的行:前文 + 這一段。模型會引前文裡的話(手機版 `b11ea16`,2026-10-30 Qwen 實測:
+    原句一字不差,只找這一段就判「原句對不上」)。"""
+    return context_lines(chunk, parts) + parts[chunk]
 
 
 def compact(lines: list[TimedLine]) -> list[TimedLine]:
@@ -1079,7 +1359,10 @@ def _ask(instructions: str, prompt: str) -> str:
     except _Guardrail:
         raise UserFacingError(t("Apple 的安全過濾擋下了這場的內容,沒有產生會議紀錄草稿。")) from None
     except (_Overflow, _CallFailed) as e:
-        raise UserFacingError(t("{v}沒有回覆,請再試一次({v2})。", v=_engine_name(), v2=e or t("超出長度"))) from None
+        # ⚠️ `str(e) or …` 不是 `e or …`:例外物件一律為真,而 `_Overflow()` 不帶訊息——那樣寫畫面上
+        # 就只剩一對空括號「()」(2026-10-30 審查)
+        raise UserFacingError(t("{v}沒有回覆,請再試一次({v2})。", v=_engine_name(),
+                                v2=str(e) or t("超出長度"))) from None
 
 
 # 行首的條列記號:「- 」「* 」「• 」「1. 」「1、」「(1)」「1)」
@@ -1099,7 +1382,7 @@ _label: str = ""
 def _engine_name() -> str:
     """錯誤訊息裡怎麼稱呼回答的那一方。"""
     if _session is not None:
-        return _label or t("地端 AI 模型")
+        return _label   # 跟 `_session` 一起設、一起清(`_generate_session`),一定有名字
     return t("Apple 的語言模型")
 
 
@@ -1116,12 +1399,15 @@ class _ChunkResult:
     failed: bool = False
     #: 點到「與我相關」稱呼的原句(「講者:原話(時間)」):不經模型,一律收(手機版改版 F)
     mine: list[str] = field(default_factory=list)
+    #: `todos` 裡原句在前文(上一段最後幾行)的那幾條:上一段可能已經寫過同一件事(`_map_all` 去重;
+    #: 手機版 `TodoItem.fromContext`)
+    ctx_todos: list[tuple[str, str]] = field(default_factory=list)
 
     def __add__(self, o: "_ChunkResult") -> "_ChunkResult":
         return _ChunkResult(self.topics + o.topics, self.todos + o.todos, self.dropped + o.dropped,
                             self.points_dropped + o.points_dropped,
                             self.topics_dropped + o.topics_dropped, self.skipped + o.skipped,
-                            self.failed and o.failed, self.mine + o.mine)
+                            self.failed and o.failed, self.mine + o.mine, self.ctx_todos + o.ctx_todos)
 
 
 def _valid_notes(msg: dict, lite: bool) -> bool:
@@ -1158,11 +1444,15 @@ def _notes(prompt: str) -> dict:
     raise last
 
 
-def _map_chunk(lines: list[TimedLine], ctx: str = "") -> _ChunkResult:
+def _map_chunk(lines: list[TimedLine], ctx: str = "",
+               pool: list[TimedLine] | None = None) -> _ChunkResult:
     """一段 → 議題、核對過的重點與待辦(同手機版 `mapChunk`)。爆窗就對半切再各問一次;單行還爆
     就跳過這一行;被安全過濾擋下、超時、重問也解不開就跳過這一段(少一點內容,不讓整場失敗:
-    手機版實測一場 44 分鐘的會有一段被擋)。`ctx` 是前文(`context`),只供模型參考、不核對。"""
+    手機版實測一場 44 分鐘的會有一段被擋)。`ctx` 是前文(`context`),只供模型參考;`pool` 是核對
+    原句用的行(`quote_pool`:前文 + 這一段;沒給就是這一段),行號都是 `pool` 的。"""
     text = "\n".join(l.text for l in lines)
+    pool = pool if pool is not None else lines
+    own = len(pool) - len(lines)   # pool 裡前文佔幾行
     try:
         msg = _notes(ctx + text)
     except _Overflow:
@@ -1175,29 +1465,31 @@ def _map_chunk(lines: list[TimedLine], ctx: str = "") -> _ChunkResult:
                     "安全過濾" if isinstance(e, _Guardrail) else e)
         return _ChunkResult(skipped=len(lines), failed=True)
     r = _ChunkResult()
-    scale = _draft.char_scale
     todo = msg.get("todo")
     if isinstance(todo, dict):
         task, quote = _tw(str(todo.get("task", ""))), _tw(str(todo.get("quote", "")))
-        hit = None if garbled(task) or repetitive(quote) else locate_line(quote, lines, scale)
-        if hit and looks_like_task(task, _draft.task_chars) and grounded(task, quote, hit[1], lines):
+        hit = None if garbled(task) or repetitive(quote) else locate_line(quote, pool)
+        if hit and looks_like_task(task, _draft.task_chars) and grounded(task, quote, hit[1], pool):
             r.todos.append((task, hit[0]))
+            if hit[1] < own:
+                r.ctx_todos.append((task, hit[0]))
         else:
             r.dropped += 1
     # 重點:原句對得上、句子本身也大半是原文的字、數字原文都有,才留(對不上的直接丟,手機版
-    # 10-19 使用者選)。原句對不上(Apple 常改寫原句)時改看這句跟整段的吻合度,門檻較高
+    # 10-19 使用者選)。原句對不上(Apple 常改寫原句)時改看這句跟整段的吻合度,門檻較高。
+    # 沒有內容的(照抄骨架的「…」、一兩個字)不收:support 對它們一律回 1(手機版 `e6de84c`)
     points: list[str] = []
     for p in msg.get("points") or []:
         p_text, p_quote = _tw(str(p.get("text", ""))), _tw(str(p.get("quote", "")))
-        if not p_text or garbled(p_text) or repetitive(p_quote):
+        if garbled(p_text) or repetitive(p_quote) or thin(p_text):
             r.points_dropped += 1
             continue
-        hit = locate_line(p_quote, lines, scale)
+        hit = locate_line(p_quote, pool)
         if hit is None:
-            ok = ((support(p_text, text) >= MIN_SUPPORT_NO_QUOTE and numbers_supported(p_text, text))
+            ok = ((share(p_text, text) >= MIN_SUPPORT_NO_QUOTE and numbers_supported(p_text, text))
                   or fact_grounded(p_text, text))
         else:
-            ok = grounded(p_text, p_quote, hit[1], lines)
+            ok = grounded(p_text, p_quote, hit[1], pool)
         if ok:
             points.append(p_text)
         else:
@@ -1205,8 +1497,8 @@ def _map_chunk(lines: list[TimedLine], ctx: str = "") -> _ChunkResult:
     when = clock(lines[0].start)
     topic = _tw(str(msg.get("topic", "")))
     # 議題的字要大半出現在這一段裡(用逐字稿的專有名詞);編出來的議題丟掉,改用這段第一個核對過的
-    # 重點(前 20 字)當名稱——Apple 寫議題常換詞,整個議題不見更糟(手機版 10-19)
-    if support(topic, text) >= MIN_TOPIC_SUPPORT and numbers_supported(topic, text):
+    # 重點(前 20 字)當名稱——Apple 寫議題常換詞,整個議題不見更糟(手機版 10-19);兩個字的議題也走這條
+    if topic_stands(topic, text):
         r.topics.append(Topic(short_title(topic), when, 1, points))
     else:
         r.topics_dropped += 1
@@ -1286,7 +1578,7 @@ def mentions(lines: list[TimedLine], names: list[str]) -> list[str]:
             who, body = "", line.text
         for sent in sentences(body):
             if any(a in sent for a in names):
-                hit = locate_line(sent, lines, _draft.char_scale)
+                hit = locate_line(sent, lines)
                 at = hit[0] if hit else clock(line.start)
                 out.append(f"- {who + ':' if who else ''}{sent}({at})")
     return out
@@ -1295,10 +1587,17 @@ def mentions(lines: list[TimedLine], names: list[str]) -> list[str]:
 def _map_all(parts: list[list[TimedLine]], report: ProgressFn) -> _ChunkResult:
     """逐段做 `_map_chunk`(帶前文);連續 `MAX_STUCK_CHUNKS` 段失敗就丟 `Stuck`(後面的段不做),
     有一段成功就重算。"""
-    total = _ChunkResult()
+    total = prev = _ChunkResult()
     stuck = 0
     for i, p in enumerate(parts):
-        r = _map_chunk(p, context(i, parts))
+        r = _map_chunk(p, context(i, parts), quote_pool(i, parts))
+        # 引前文的待辦:上一段在 90 秒內已經有一條,多半是同一件事換句話說(措辭不同,最後的去重認不出來;
+        # 手機版 `b11ea16`)。上一段沒有就留——上一段漏掉的,靠這一段補回來
+        if r.ctx_todos and prev.todos:
+            dup = [x for x in r.ctx_todos
+                   if any(abs(seconds(y[1]) - seconds(x[1])) <= 90 for y in prev.todos)]
+            r.todos = [x for x in r.todos if x not in dup]
+        prev = r
         # 與我相關:**在這裡收、不在 `_map_chunk` 裡**——那一段寫不出來(被擋、超時)也照樣收得到;
         # 那裡爆窗時會對半切再呼叫自己,放進去還會重複收(手機版是問完才收,這是刻意的改良)
         r.mine = r.mine + mentions(p, _aliases)
@@ -1411,12 +1710,14 @@ def _apply_corrections(lines: list[TimedLine], title: str,
     if _draft.language == draftvocab.ZH_CN.language:
         # 簡中會議:對照表整份轉簡體再換,不混進繁體字(同手機版 2026-10-25)
         corrections = namefix.simplified(corrections)
+    # 整場只排一次、編一次樣式(`namefix.Prepared`:逐行重編的話,表一大就是開頭白等幾十秒)
+    fix = namefix.prepare(corrections)
     for i, line in enumerate(lines):
-        text, n = namefix.apply(line.text, corrections)
+        text, n = fix.apply(line.text)
         if n:
             lines[i] = replace(line, text=text)
             _replaced += n
-    _highlights = [replace(h, text=namefix.apply(h.text, corrections)[0]) for h in _highlights]
+    _highlights = [replace(h, text=fix.apply(h.text)[0]) for h in _highlights]
     _glossary = namefix.glossary("\n".join(line.text for line in lines), corrections)
 
 
@@ -1451,7 +1752,12 @@ def _compose(parts: list[list[TimedLine]], report: ProgressFn, t0: float) -> str
     `_call` 問誰)。"""
     r = _map_all(parts, report)
     notes = ["\n".join("- " + x for x in tp.points) for tp in r.topics if tp.points]
-    if not notes:  # 每段都失敗:可能是安全過濾,也可能是模型出錯(各段的錯誤都被跳過了,分不出是哪個)
+    if not notes:
+        # 每段都失敗(可能是安全過濾,也可能是模型出錯;各段的錯誤都被跳過了,分不出是哪個),**或者每一條
+        # 重點都在核對時被丟掉**(改版 D 之後;段落本身都成功)。⚠️ 下面那行統計在 raise 之後寫不出來,
+        # 這裡先記數字,回報時才分得出是哪一種(2026-10-30 審查;只記數字,不記內容)
+        logger.warning("會議紀錄草稿:沒有留下任何重點(%d 段、重點丟掉 %d 條、待辦 %d 條、跳過 %d 行)",
+                       len(parts), r.points_dropped, len(r.todos), r.skipped)
         raise UserFacingError(t("這場沒有整理出內容(可能被 Apple 的安全過濾擋下),請再試一次。")
                               if _session is None else
                               t("這場沒有整理出內容,請再試一次。"))
@@ -1516,19 +1822,23 @@ def _marked_points(turns: list[MarkedTurn]) -> tuple[str, int]:
     (手機版 10-19 改版 D;這邊連備註一起算,備註本來就是要它優先看的)。"""
     out = []
     dropped = 0
-    for h in turns[:MAX_HIGHLIGHTS]:
+    picked = turns[:MAX_HIGHLIGHTS]
+    for i, h in enumerate(picked):
+        # 心跳:一個重點問一次,Windows 只有 CPU 時一次十幾秒、12 個就是好幾分鐘,進度條這段不動
+        logger.info("會議紀錄草稿:現場重點 %d/%d", i + 1, len(picked))
         prompt = h.text[:_chunk_chars(_used_engine or ENGINE_APPLE)]
         if h.notes:
             prompt += "\n" + _draft.attendee_note + _draft.note_sep.join(h.notes)
         try:
             msg = _call("llm-ask", _draft.highlight_instructions, prompt)
         except (_Guardrail, _Overflow, _CallFailed) as e:
-            logger.info("會議紀錄草稿:跳過一個重點(%s):%s", h.time, e or "超出長度")
+            logger.info("會議紀錄草稿:跳過一個重點(%s):%s", h.time,
+                        "安全過濾" if isinstance(e, _Guardrail) else (str(e) or "超出長度"))
             continue
         line = _BULLET.sub("", " ".join(without_thinking(_tw(msg.get("text", ""))).splitlines()).strip())
         if not line:
             continue
-        if support(line, prompt) < MIN_SUPPORT or not numbers_supported(line, prompt):
+        if share(line, prompt) < MIN_SUPPORT or not numbers_supported(line, prompt):
             dropped += 1
             continue
         out.append(f"- {line}({h.time})")

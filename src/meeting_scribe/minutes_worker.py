@@ -108,6 +108,43 @@ def _prompt(tok, instructions: str, prompt: str) -> str:
                                    extra_context={"enable_thinking": False})
 
 
+#: 換行隔開的相鄰字串常值(`"甲 "` 換行 `"乙"`):jinja2 把它們接成一串,openvino_genai 內建的 minja
+#: 解析不了,而且它**一律先解析整份模板**,走不到的分支也一樣
+_ADJACENT_LITERALS = (re.compile(r'"((?:[^"\\\n]|\\.)*)"\s*\n\s*"'),
+                      re.compile(r"'((?:[^'\\\n]|\\.)*)'\s*\n\s*'"))
+
+
+def _join_adjacent_literals(tpl: str) -> str:
+    """把換行隔開的相鄰字串常值接成一個(jinja2 本來就當成同一串,畫出來的字不變)。"""
+    for pat, quote in zip(_ADJACENT_LITERALS, ('"', "'")):
+        while True:
+            joined = pat.sub(lambda m, q=quote: q + m.group(1), tpl)
+            if joined == tpl:
+                break
+            tpl = joined
+    return tpl
+
+
+def _ensure_template(tok) -> None:
+    """模板要解得開才往下走:解不開就把相鄰字串接起來再試一次;還是不行就讓載入失敗(`ready:false`)。
+
+    ⚠️ **是預防,不是修過的病**:Gemma 4 E4B 釘住的那一版(`models.GEMMA_OV_REVISION`)工具呼叫那段的
+    `raise_exception(...)` 用了相鄰字串,openvino_genai 2026.4.1 拿 `Tokenizer(資料夾)` 載的話每一次
+    `apply_chat_template` 都丟 `Expected closing parenthesis in call args`;但這裡用的
+    `VLMPipeline(...).get_tokenizer()` 載入時**自己就把那三行接成一行**,所以現在這一版走不到改寫
+    (2026-10-30 Windows 實測,見 `docs/dev/minutes.md`)。留著是怕換版本或改走 `LLMPipeline` 後它不再代接:
+    不擋的話是每段重問 4 次全失敗、連 3 段就整場卡住。先試一次再改:解得開的模板一個字都不動。"""
+    try:
+        _prompt(tok, "x", "y")
+        return
+    except RuntimeError:
+        pass
+    tok.set_chat_template(_join_adjacent_literals(tok.chat_template))
+    _prompt(tok, "x", "y")
+    # stderr 進記錄檔(父端 `minutes_ov._drain`);stdout 是 NDJSON 專用,不可以寫在那裡
+    sys.stderr.write("聊天模板的相鄰字串已接成一串(minja 解析不了)\n")
+
+
 def answer(pipe, tok, g, msg: dict, free: bool = False) -> dict:
     """問一次。拆出來是為了測試能換上假的 pipeline。
 
@@ -217,6 +254,7 @@ def _load(model_dir: str, device: str):
 
     pipe = g.VLMPipeline(model_dir, device)
     tok = pipe.get_tokenizer()
+    _ensure_template(tok)
     free = _free_format(model_dir)
     return lambda msg: answer(pipe, tok, g, msg, free=free)
 

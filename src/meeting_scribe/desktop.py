@@ -605,8 +605,6 @@ OPEN_DIR_BUTTON = t("📂 輸出資料夾…")
 # (「正式紀錄請對照逐字稿另行整理」改由草稿檔第一行的警語與使用說明講)
 MINUTES_HINT = (t("挑一份轉好的 .md(建議先替講者命名),整理出摘要、議題、待辦。"
                 "⚠ 地端小模型,品質比不上雲端 AI,只能當草稿。"))
-# 動作列右邊那顆:開草稿資料夾。⚠️ 草稿**不在**逐字稿旁邊(見 `minutes.drafts_dir`),
-# 不給這顆的話使用者找不到它
 # 命名收工之後右邊預覽卡上那顆捷徑(B 案的後半):帶入剛寫好的那份、直接開始
 MINUTES_SHORTCUT = t("✨ 用這份產生會議紀錄草稿")
 # 「地端 AI」那一格的模型選擇(Mac;2026-10-14 使用者選案 A:膠囊二選一 ＋ 底下一行說明;
@@ -663,16 +661,18 @@ def minutes_engine_note(engine: str, can: plat.Outcome | None, downloaded: bool)
     return t("Apple:不必下載;待辦比較常不準。")
 
 
-# 第一次選 Qwen 按下去時的確認框(使用者 2026-10-14 選「先問一次」;實測這台下載花過 24 分鐘)
+# 第一次選要下載的模型按下去時的確認框(Qwen:使用者 2026-10-14 選「先問一次」,實測這台下載花過
+# 24 分鐘;Gemma 2026-10-29 照做,Windows 6.5 GB、Mac 5.2 GB)
 MINUTES_DOWNLOAD_ASK_GEMMA = (t("要先下載 Gemma 4 E4B 模型(約 {gb} GB)。\n\n"
                               "可能要二三十分鐘,下載完接著整理。中斷了再按一次,會接著下載。"))
 MINUTES_DOWNLOAD_ASK = (t("要先下載 Qwen 4B 模型(約 {gb} GB)。\n\n"
                         "可能要二三十分鐘,下載完接著整理。中斷了再按一次,會接著下載。"))
 MINUTES_DOWNLOAD_OK = t("下載並開始")
-# 「進階參數設定」裡那一列(這台有可刪的模型時才有;Mac 的 Qwen 使用者 2026-10-14 選放這裡,
-# Windows 的 Gemma 2026-10-29 W4 選「只有刪除」、不放比較頁的入口)
+# 「地端 AI 進階設定」裡模型那幾列(這台有可刪的模型時才有;Mac 的 Qwen 使用者 2026-10-14 選要能刪,
+# Windows 的 Gemma 2026-10-29 W4 選「只有刪除」;2026-10-29 從「進階參數設定」搬過來,見 `_llm_adv_open`)
 LLM_DELETE = t("刪除模型…")
 LLM_DELETE_ASK = t("要刪除 {name} 模型({gb:.1f} GB)嗎?\n\n刪除後,下次選 {name} 時會重新下載。")
+LLM_DELETE_FAILED = t("沒能刪掉 {name} 模型(檔案可能被別的程式開著),請關掉其他程式再按一次;{LOG_HINT}。")
 
 
 @dataclass(frozen=True)
@@ -687,12 +687,15 @@ class RowModel:
 
 def row_models() -> tuple:
     r"""這台有幾顆可刪的模型(一顆一列):Mac 是 Qwen 4B、Gemma 4(這台能用的那幾顆)、Windows 是
-    Gemma 4 E4B(這台列得出來時)。
+    Gemma 4 E4B(這台列得出來時,或已經下載了東西時)。
     ⚠️ **Windows 的 Qwen 不在這裡**:它是預設那一顆、也是 Gemma 用不了的電腦唯一的一顆,
-    刪了下一場又要重下 3.4 GB。⚠️ Mac 兩顆都**不經 `engines()`**(理由見 `minutes.qwen_available`)。"""
+    刪了下一場又要重下 3.4 GB。⚠️ Mac 兩顆都**不經 `engines()`**(理由見 `minutes.qwen_available`)。
+    ⚠️ **Windows 的 Gemma 用不了但檔案還在也要列**:下載過之後打開「只用 CPU」(會記住)或內顯驅動壞掉,
+    Gemma 就是 `unsupported`,只看能不能用的話那 6.5 GB 就沒有地方刪(2026-10-30 審查)。Mac 不必:
+    那兩顆的條件(Apple 晶片、記憶體、套件)下載之後不會變。"""
     if minutes._backend() == "openvino":
         can = minutes.engines().get(minutes.ENGINE_GEMMA)
-        if can is None or not can.ok:
+        if (can is None or not can.ok) and not models.gemma_ov_size():
             return ()
         return (RowModel("Gemma 4 E4B", lambda: models.gemma_ov_size(),
                          lambda: models.gemma_ov_cached(), lambda: models.delete_gemma_ov()),)
@@ -734,10 +737,10 @@ DRAFTS_INFO = t("草稿存在這裡,不放在逐字稿旁邊")
 DRAFTS_OPEN = t("📂 打開…")
 
 
-# 「各模型比較」(W4 2026-10-29 使用者選:入口在模型說明那一行右邊、版面同手機版的「怎麼選＋
-# 對照表」)。⚠️ **出處一定要寫**(手機版 10-17 使用者:Qwen 是中國的模型,要告知)。⚠️ **還沒有
-# 強項/弱項**:這台 W3 單次的結果跟手機版相反(Gemma 編造反而多),同日使用者選「等 W5 每顆跑 3 次
-# 再補」。數字是這台(Intel 內顯)兩場真實會議量的,見 `docs/spec/mac/05` §5.4b。
+# 「各模型比較」(W4 2026-10-29 使用者選:版面同手機版的「怎麼選＋對照表」;入口同日搬進「地端 AI
+# 進階設定」)。⚠️ **出處一定要寫**(手機版 10-17 使用者:Qwen 是中國的模型,要告知)。⚠️ **強項/弱項
+# 只寫兩場都成立的**:Windows 是 W5 每顆跑 3 次之後補的(W3 單次的結果跟手機版相反,使用者選等 W5),
+# 沒有兩場都成立的那一格寫「—」。數字是那台電腦兩場真實會議量的,見 `docs/spec/mac/05` §5.4b。
 COMPARE_TITLE = t("各模型比較")
 
 
@@ -795,7 +798,7 @@ COMPARE_PICKS_MAC = ((t("不想下載"), "Apple Intelligence"), (t("待辦要準
                      (t("不用中國模型、比 Apple 準"), "Gemma 4 E4B"))
 COMPARE_ROWS = ((t("出處"), None), (t("下載大小"), "size"), (t("跑的時候佔記憶體"), "memory"),
                 (t("一小時的會要等"), "hour"))
-#: 有強弱項(Mac)才多這兩列
+#: 有強弱項才多這兩列(兩個平台現在都有;沒有兩場都成立的那一格寫「—」)
 COMPARE_ROWS_JUDGED = ((t("強項"), "strong"), (t("弱項"), "weak"))
 
 
@@ -1936,9 +1939,8 @@ class App(tk.Tk):
         self._minutes_tab: ttk.Frame | None = None
         self._minutes_jump: ttk.Frame | None = None
         self._minutes_jump_md: Path | None = None
-        # Mac 選了哪個模型整理(`minutes.ENGINE_*`);那一排收著時是 None(見 `_minutes_engine_sync`)
+        # 選了哪個模型整理(`minutes.ENGINE_*`);那一排收著時是 None(見 `_minutes_engine_sync`)
         self._minutes_engine: str | None = None
-        # 「進階參數設定」裡模型那一列(對話框點了才建、這台有可刪的模型才有;見 `_adv_open`)
         # 「地端 AI 進階設定」那扇(點了才建;見 `_llm_adv_open`)與裡面模型那幾列:
         # 每一列是 (那一顆, 說明, 刪除鈕);Mac 最多兩列(Qwen、Gemma)
         self._llm_adv_win: tk.Toplevel | None = None
@@ -2083,6 +2085,12 @@ class App(tk.Tk):
             # 「地端 AI」那一格出不出現也看它(同一支小程式,再零點幾秒)
             try:
                 minutes.capability()
+                # 選模型那一排也在這裡先問好:Windows 的 `capability()` 刻意不問 `engines()`,而 Gemma
+                # 那一格要偵測內顯(import openvino＋列舉裝置約半秒)——有 CUDA 或開了「只用 CPU」的電腦上
+                # 前面的 `predicted_device` 不會順手問到,偵測收尾時就落在主執行緒(2026-10-30 審查)。
+                # Mac 的 `capability()` 本來就經過 `engines()`,不必再問
+                if minutes._backend() == "openvino":
+                    minutes.engines()
             except Exception:
                 logger.debug("背景偵測 Apple Intelligence 失敗", exc_info=True)
             self._probe_result = (device, time.perf_counter() - t0)
@@ -5872,11 +5880,28 @@ class App(tk.Tk):
             self._minutes_engine = None
             self._minutes_engine_row.pack_forget()
             return
+        self._minutes_engine_cells_fit(opts)
         self._minutes_engine = minutes.default_engine()
         self._segment_show(self._minutes_engine_cells, self._minutes_engine)
         self._minutes_engine_note_sync()
         self._minutes_engine_row.pack(fill="x", pady=(self.px(SP_SM), 0),
                                       before=self._minutes_pick_row)
+
+    def _minutes_engine_cells_fit(self, opts: list[str]) -> None:
+        r"""那一排只留列得出的格子(`unsupported` 的不列,同 `minutes.choices`)。
+
+        ⚠️ **三格之後「列得出兩個」不再保證每一格都能用**:Apple 用不了、Qwen 與 Gemma 用得了的 Mac
+        (macOS 26 以前、Apple Intelligence 不支援那一區)整排照樣出現,多一格按了只會報錯的「Apple」
+        (2026-10-30 審查;兩格時這種 Mac 的那一排是收起來的)。⚠️ **欄的等分要一起拿掉**,理由同
+        `_minutes_tab_show`:沒有格子的欄照樣佔一份寬度。欄號照建格子的順序(`_segmented` 照選項排)。"""
+        for col, (key, parts) in enumerate(self._minutes_engine_cells.items()):
+            cell = parts[0]
+            if key in opts:
+                cell.master.columnconfigure(col, weight=1, uniform="seg")
+                cell.grid()
+            else:
+                cell.grid_remove()
+                cell.master.columnconfigure(col, weight=0, uniform="")
 
     def _minutes_engine_note_sync(self) -> None:
         if self._minutes_engine is None:
@@ -5967,6 +5992,8 @@ class App(tk.Tk):
         bar.pack(fill="x", pady=(self.px(CARD_GAP), 0))
         HandButton(bar, text=t("關閉"), style=skin.SKIP_PAGE_STYLE,
                    command=self._compare_close).pack(side="right")
+        # 擺在主視窗上(同另外兩扇):不擺就交給視窗管理員,外接螢幕時可能開在另一個螢幕
+        self._adv_place(win)
 
     def _compare_close(self) -> None:
         win, self._compare_win = self._compare_win, None
@@ -6814,7 +6841,6 @@ class App(tk.Tk):
         # 放開釘死的那顆開關。
         if self._honor_check is not None:
             self._honor_check.configure(state="disabled" if busy else "normal")
-        # 沒有東西可刪(還沒下載)也灰著
 
     def _llm_delete_ask(self, m: RowModel) -> None:
         """「刪除模型…」:問一次再刪;刪完那一列與「地端 AI」那一格的說明一起重寫。"""
@@ -6827,6 +6853,10 @@ class App(tk.Tk):
             m.delete()
         except OSError as e:
             logger.warning("刪除 %s 模型失敗:%s", m.name, e)
+            # ⚠️ 不可以只記一行:Windows 上防毒或檔案總管佔著那個好幾 GB 的檔時,刪到一半就停,畫面上
+            # 只看到那一列變成「下載到一半」,也不知道要先關掉什麼(2026-10-30 審查)
+            self._ask_close(LLM_DELETE_FAILED.format(name=m.name, LOG_HINT=LOG_HINT),
+                            ok_text=t("知道了"), cancel_text=None)
         for row, hint, _ in self._llm_rows:
             if row is m:
                 hint.configure(text=llm_row_info(m))
@@ -6953,6 +6983,13 @@ class App(tk.Tk):
             self._segment_show(self._device_cells, default_device_key())
         # ⚠️ **模型那一排也要重畫**:沒人選過時它的預設跟著裝置變(見 `ModelChoice`)
         self._adv_sync()
+        # ⚠️ **Windows 的 Gemma 也看這個設定**(`minutes._gemma_capability`):能不能用的快取要重問、
+        # 「地端 AI」那一排跟著重排。不然切了之後 Gemma 照樣選著,按下去先問要不要下載 6.5 GB、接著才說
+        # 「需要 Intel 內顯」(其實是只用 CPU),關掉時 Gemma 那一格又要重開程式才回來(2026-10-30 審查)。
+        # Mac 的三個模型都不看它,不清:清了主執行緒就要重起 Apple 的小程式
+        if minutes._backend() == "openvino":
+            minutes.clear_capability_cache()
+            self._minutes_tab_sync()
 
     def _lockable(self, widget):
         r"""登記一個「工作進行中不該能動」的元件,回傳它自己(方便接著 `.pack()`)。

@@ -61,7 +61,7 @@ def parse(text: str) -> Table | None:
     """JSON → 對照表;格式不對回 None(手機版解不開也是當作沒有)。"""
     try:
         doc = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):   # 巢狀太深是 RecursionError,不是 ValueError
         return None
     if not isinstance(doc, dict):
         return None
@@ -86,8 +86,10 @@ def load() -> Table | None:
             logger.warning("名詞對照表太大(%d bytes),這次不套", path.stat().st_size)
             return None
         table = parse(path.read_text(encoding="utf-8-sig"))
-    except OSError as e:
-        # 雲端資料夾的佔位檔可能讀不到:這一場不套,下一場再試
+    except (OSError, ValueError) as e:
+        # 雲端資料夾的佔位檔可能讀不到:這一場不套,下一場再試。⚠️ **解碼失敗是 ValueError**
+        # (UnicodeDecodeError):同步到一半截在中文字中間、被存成 UTF-16/cp950,只接 OSError 的話
+        # 每一份草稿都以「未預期的錯誤」失敗,而這張表沒有設定介面可以關(2026-10-30 審查)
         logger.warning("名詞對照表讀不到:%s", e)
         return None
     if table is None:
@@ -110,36 +112,81 @@ def _ascii_word(s: str) -> bool:
     return s.isascii()
 
 
-def _mask(i: int) -> str:
-    """遮罩:私用區字元 + 編號(編號也用私用區——用數字的話,誤譯「11」會吃到第 11 個遮罩)。"""
-    return "" + chr(0xF0000 + i) + ""
+@dataclass(frozen=True)
+class Prepared:
+    """一場會議的對照表先算好(誤譯排序、編好的樣式),逐行 `apply` 時不必每一行重來。
+
+    ⚠️ **不可以每一行重編**:`minutes._apply_corrections` 一行逐字稿換一次,而相異的樣式一超過 `re`
+    自己的快取(512 個)每一行就全部重編——600 個樣式、3000 行要 30 秒,通用加上所有分組(1,100 多個)
+    要兩分鐘,期間進度條不動、停止鈕也沒反應(2026-10-30 審查實測;真表最大的一組已經 492 個)。"""
+    rights: tuple[str, ...] = ()
+    patterns: tuple[tuple[re.Pattern, str], ...] = ()
+
+    def apply(self, text: str) -> tuple[str, int]:
+        return _apply(self, text)
 
 
-def apply(text: str, entries: list[Entry]) -> tuple[str, int]:
-    """在文字上換掉誤譯,回 (換過的文字, 換了幾處)。三條規則都照手機版:
-    - 長的誤譯先換(「李高珍」要先於「李高」)
-    - 正確寫法先遮起來:誤譯剛好是正確寫法的一部分時(「高升」→「吕高升」),已經寫對的不會再被換一次
-    - 英數字的誤譯不分大小寫、只換整個字(「LE」不能吃掉「LEVEL」)"""
+def prepare(entries: list[Entry]) -> Prepared:
+    """排好誤譯、編好樣式(規則見 `apply`)。"""
     pairs = sorted(((w, e.right) for e in entries if e.right for w in e.wrong if usable(w) and w != e.right),
                    key=lambda p: -len(p[0]))
     if not pairs:
-        return text, 0
+        return Prepared()
     rights = sorted({e.right for e in entries if e.right}, key=lambda r: -len(r))
-    index = {r: i for i, r in enumerate(rights)}
-    t = text
-    for i, r in enumerate(rights):
-        t = t.replace(r, _mask(i))
-    count = 0
+    patterns = []
     for w, r in pairs:
         if _ascii_word(w):
             pattern = re.compile(r"(?<![A-Za-z0-9])" + re.escape(w) + r"(?![A-Za-z0-9])", re.I)
         else:
             pattern = re.compile(re.escape(w))
-        t, n = pattern.subn(lambda _m, r=r: _mask(index[r]), t)
-        count += n
-    for i, r in enumerate(rights):
-        t = t.replace(_mask(i), r)
-    return t, count
+        patterns.append((pattern, r))
+    return Prepared(tuple(rights), tuple(patterns))
+
+
+def _apply(p: Prepared, text: str) -> tuple[str, int]:
+    if not p.patterns or not text:
+        return text, 0
+    # 原文裡每個正確寫法出現的地方(可以互相重疊)
+    correct: list[tuple[int, int]] = []
+    for r in p.rights:
+        k = text.find(r)
+        while k >= 0:
+            correct.append((k, k + len(r)))
+            k = text.find(r, k + 1)
+
+    def overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
+        return max(a[0], b[0]) < min(a[1], b[1])
+
+    def strictly_contains(a: tuple[int, int], b: tuple[int, int]) -> bool:
+        return a[0] <= b[0] and b[1] <= a[1] and a != b
+
+    taken: list[tuple[tuple[int, int], str]] = []
+    for pattern, right in p.patterns:
+        for m in pattern.finditer(text):
+            span = m.span()
+            if any(overlaps(s, span) for s, _ in taken):
+                continue
+            if any(overlaps(c, span) and not strictly_contains(span, c) for c in correct):
+                continue
+            taken.append((span, right))
+    if not taken:
+        return text, 0
+    out = text
+    for (a, b), right in sorted(taken, key=lambda x: -x[0][0]):
+        out = out[:a] + right + out[b:]
+    return out, len(taken)
+
+
+def apply(text: str, entries: list[Entry]) -> tuple[str, int]:
+    """在文字上換掉誤譯,回 (換過的文字, 換了幾處)。規則都照手機版(`4c6b95c`):
+    - 長的誤譯先換(「甲乙丙」要先於「甲乙」);換過的地方不再被別條換
+    - 已經寫對的不再換:一處符合如果碰到某個正確寫法、又沒有整個包住它,就跳過(「大明」→「王大明」時,
+      「王大明」裡的「大明」不換)
+    - 英數字的誤譯不分大小寫、只換整個字(字界看原文:「LE」不能吃掉「LEVEL」)
+    ⚠️ 原本先把所有正確寫法遮起來再換,有兩個副作用(2026-10-30 審查):誤譯裡含別條的正確寫法就永遠換不掉;
+    英數字的正確寫法被遮在字中間,字界跟著壞掉(「LEVEL」被換成「LMEVEL」、「SPEC」該換卻換不到)。
+    同一份對照表要換很多段文字時先 `prepare` 一次(見 `Prepared`)。"""
+    return prepare(entries).apply(text)
 
 
 def glossary(text: str, entries: list[Entry], limit: int = 30) -> list[str]:
