@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 
 from meeting_scribe import (
-    attendees, audio, cancel, diarize, export, pending, pipeline, plat, relabel,
+    attendees, audio, cancel, diarize, export, meetlang, pending, pipeline, plat, relabel,
 )
 from meeting_scribe import audit as audit_mod
 from meeting_scribe import voiceprints as voiceprints_store
@@ -297,7 +297,7 @@ def _audit_payload_from_transcript(transcript, named, media) -> dict:
 _AUDIT_CLOSE_CALLS = 3
 
 
-def _naming_clues(count, voiceprints, audit_flags, has_audit):
+def _naming_clues(count, voiceprints, audit_flags, has_audit, language=meetlang.DEFAULT):
     """自動填名、聲紋分不開的候選、該亮「🔍 核對」的那幾列,以及「誰都不夠像」
     那幾位的聲音最接近者。
 
@@ -322,8 +322,11 @@ def _naming_clues(count, voiceprints, audit_flags, has_audit):
     # 自動辨識的預填名 = 落地草稿的初始值。**整場一起辨識**,不逐位各自
     # recognize:同一個名字只能給一位講者,否則兩群拿到同一個名字,成品
     # 看起來就是「少了一個人」而非「認錯人」(見 voiceprints.recognize_batch)
-    guesses = voiceprints_store.recognize_batch(vecs)
-    close = voiceprints_store.close_calls(vecs, taken=guesses.values())
+    # 門檻跟著會議語言(英文 0.80、中文 0.62,同 iOS);兩支要用同一個值,否則「分不開
+    # 的候選」與「為什麼沒自動填」會用不同的規則
+    threshold = voiceprints_store.match_threshold(language)
+    guesses = voiceprints_store.recognize_batch(vecs, threshold=threshold)
+    close = voiceprints_store.close_calls(vecs, taken=guesses.values(), threshold=threshold)
     rivals = {spk: cc.rivals for spk, cc in close.items()}
     # ⚠️ skip 用 `close` 的鍵、不是「過得了門檻卻差距不夠」的全部:候選全被別人拿走
     # 的那一位不在 close 裡,它該拿到最接近(而最接近照列被拿走的名字,理由見

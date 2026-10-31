@@ -5736,7 +5736,9 @@ class App(tk.Tk):
         say(("named", dict(
             result=SimpleNamespace(
                 outputs=[str(md_path)], speakers=len(named),
-                speaker_hints=hints, voiceprints=voiceprints, quality=None),
+                speaker_hints=hints, voiceprints=voiceprints, quality=None,
+                # 命名區從它讀會議語言(講者標籤怎麼寫、自動填名門檻多高)
+                preview=md_text),
             src=media, audit=payload, clips=clips)))
 
     def _relabel_done(self, error) -> None:
@@ -7702,8 +7704,11 @@ class App(tk.Tk):
         # `nearest` = 誰都不夠像的那幾位聲音最接近誰(2026-10-13,同手機版):只當線索、
         # 絕不自動填名;與 `rivals` 互斥。⚠️ **不交給 `_naming_persist`**——那份 rivals
         # 會進核對的改掛選單、被塗成琥珀底,而琥珀是「分不開」的意思
+        # 門檻跟著這份逐字稿的會議語言(上面 `_naming_vocab` 從 md 讀出來的,四條路都有;
+        # 不問下拉——開頁還原時那一頁可能沒建過,而且收工後它已經回預設)
         guesses, rivals, flags, nearest = naming_core._naming_clues(
-            count, result.voiceprints or {}, seed, has_audit)
+            count, result.voiceprints or {}, seed, has_audit,
+            language=self._naming_vocab.language)
         prefill = dict(guesses) if names is None else dict(names)
         # ⚠️ **存的是 guesses 不是 prefill**:開頁還原時 prefill 是使用者的草稿,
         # 而要比對的基準永遠是「機器原本猜什麼」(候選不落地、兩邊各自重算,
@@ -7898,7 +7903,8 @@ class App(tk.Tk):
         self._naming_show(
             SimpleNamespace(outputs=outputs, speakers=data["count"],
                             speaker_hints=data["hints"],
-                            voiceprints=data["voiceprints"], quality=None),
+                            voiceprints=data["voiceprints"], quality=None,
+                            preview=data["preview"]),
             src, audit=audit_saved, clips=data["clips"] or None,
             names=data["names"], audit_flags=audit_saved.get("flags") or (),
             restored=True)

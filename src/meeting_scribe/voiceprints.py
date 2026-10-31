@@ -30,7 +30,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from meeting_scribe import errors, models, vpsync
+from meeting_scribe import errors, meetlang, models, vpsync
 from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -40,12 +40,19 @@ logger = logging.getLogger(__name__)
 # 實測:原始 embedding 因共用麥克風/房間,同場不同講者相似度也可達 ~0.66,
 # 故門檻取偏高;跨會議(不同場)基線較低,此值可依實際使用再調校。
 _MATCH_THRESHOLD = 0.62
+# **英文會議的自動填名門檻**(2026-10-31 使用者選「跟手機一致」;iOS
+# `MeetingLanguage.voiceprintMatch`、Android 同值,依據在 scribe2md-ios 的
+# docs/spec/09 §9.3)。聲紋模型是中文訓練的,英文講者彼此普遍偏像:公開英文
+# 會議語料「前一場登記、下一場認人」實測,新面孔跟庫裡最像的人就有 0.70~0.78,
+# 0.62 擋不住。只有三場同一批人,可能貼合過頭;本人掉到 0.80 以下是留白,
+# 是安全的那一邊。中文是上面那個校準值,不動。
+_MATCH_THRESHOLD_EN = 0.80
 # 自動填名還要贏「第二個名字」這麼多分才算數(recognize_batch)。
 # **過門檻不等於認出來**:原始 embedding 沒扣通道成分,同一場、同一支
 # 麥克風錄的不同人天然有 0.65~0.85——一段聲紋同時對三個名字都 0.7 的時候,
 # 第一名只是「剛好排在前面」,填上去就是一個會被相信的錯名字。
 #
-# ⚠️ **取 0.10 的理由是使用者的實際流程**(2026-08-08 他明確說明):
+# ⚠️ **往嚴的方向取,理由是使用者的實際流程**(2026-08-08 他明確說明):
 # 「自動識別的我會相信,不會特別去聽;**我只會去聽你沒有設定的講者**。」
 # 這句話讓兩種錯誤的代價完全不對稱:
 #   - **留白** → 他會去聽、會填,成本是多聽幾段
@@ -61,17 +68,25 @@ _MATCH_THRESHOLD = 0.62
 #    0.03   83/90      10/32      89.2%
 #    0.05   76/90       5/32      93.8%
 #    0.07   70/90       2/32      97.2%   ← 舊值
-#    0.10   65/90       0/32     100.0%   ←取這個
-#    0.12   60/90       0/32     100.0%
+#    0.10   65/90       0/32     100.0%   ← 2026-08-08~10-31 的值
+#    0.12   60/90       0/32     100.0%   ←現行值(見下段)
 #    0.15   42/90       0/32     100.0%
-# 0.07→0.10 用 5 個正確填名換掉最後 2 個誤認;再往上完全換不到東西
-# (誤認已經是 0),只是白白多讓使用者填幾格——0.15 更要再賠 23 個。
+# 這張表上 0.10 以上已經看不到誤認,所以當時停在 0.10。
+#
+# **2026-10-31 改成 0.12**(iOS 轉來,使用者要求;三個專案同一個值,
+# 數據詳情在 scribe2md-ios 的 docs/spec/05 §5.5)。iPhone 的真實資料:
+#   - 逐場重播(13 場、130 個有名字的群,每場只用開錄以前的聲紋組庫):
+#     0.10 → 對 71、**錯 1**;0.12 → 對 67、錯 0;0.15 → 對 53、錯 0
+#   - 整庫留一法(360 筆 / 85 人):0.10 錯 3 → 0.12 錯 1 → 0.15 錯 0,
+#     但 0.15 的填對從 139 掉到 85
+# 真實的填錯,領先差都擠在 0.101~0.103——上面那張表的「0.10 已經是 0」
+# 只是那批樣本剛好沒有落在這一段。提高相似度門檻擋不到它們(0.70 照樣錯 1)。
 #
 # ⚠️ **留一法的 100% 不等於實際 100%**:它拿庫裡的樣本互相比,而實際是拿
 # 「新會議的聲紋」比庫裡的,還要多跨一次場次漂移與通道差異(見
 # _MISFILED_MARGIN 註解裡遠端與會者那段)。這個值買到的是「明顯更嚴」,
 # 不是保證不出錯。
-_RUNNER_UP_MARGIN = 0.10
+_RUNNER_UP_MARGIN = 0.12
 # 「分不開」時最多列幾個名字給使用者參考(close_calls)。⚠️ **列一個是不
 # 行的**:2026-08-15 拿 259 份執行記錄回頭查,98 次留白**全部**卡在上面
 # 那條 margin(不是「不夠像」),而其中 54% 的第一名與第二名只差 0.03 以
@@ -380,6 +395,13 @@ def recognize(vec, threshold: float = _MATCH_THRESHOLD) -> str | None:
     sims = vecs @ q
     i = int(np.argmax(sims))
     return names[i] if float(sims[i]) >= threshold else None
+
+
+def match_threshold(language: str) -> float:
+    """這場會議的自動填名門檻(`recognize_batch` 與 `close_calls` 共用,同 iOS)。
+
+    ⚠️ **只換相似度門檻,不換領先差**:`_RUNNER_UP_MARGIN` 三種語言同一個值。"""
+    return _MATCH_THRESHOLD_EN if meetlang.parse(language) == meetlang.EN else _MATCH_THRESHOLD
 
 
 def recognize_batch(
