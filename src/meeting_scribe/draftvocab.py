@@ -53,6 +53,26 @@ class DraftVocab:
     char_scale: int
     #: 待辦的合理長度(`minutes.looks_like_task`;同 iOS `taskChars`)
     task_chars: tuple[int, int]
+    # ---- 五段(使用者 2026-11-03,同 iOS `extras`;設定可關回三段)---- #
+    extras_instructions: str       # 一段逐字稿 → 決議、未決問題、那件待辦的負責人與期限(`llm-extras`)
+    extras_format: str             # 沒有格式約束的那兩條(OpenVINO、MLX)接在後面的欄位說明與骨架
+    found_todo: str                # 多問那次附上已找到的待辦
+    full_summary_heading: str
+    decisions_heading: str
+    questions_heading: str
+    no_decisions: str
+    no_questions: str
+    owner: str
+    deadline: str
+    to_confirm: str
+    #: 短會議一次問(`llm-whole`):雲端提示詞的五段,一行一條、不要表格,好整理成固定格式
+    whole_instructions: str
+    whole_todos_heading: str       # 一次問的待辦沒有時間,標題不寫「約略時間」
+    #: 未決問題要像個問題(有其中一個詞);短的隨口話擋掉(`minutes.looks_like_question`)
+    question_words: tuple[str, ...]
+    casual_questions: tuple[str, ...]
+    #: 不算期限的回答(`minutes.real_deadline`)
+    no_deadline_words: tuple[str, ...]
 
 
 # 一段的欄位說明(段落協定 v2):前半是議題與重點,後半是待辦——格式錯重問兩次之後只問前半
@@ -72,6 +92,29 @@ _EN_NOTES = "\nFields: topic = what this part is mainly about, a 3-to-8-word nou
 # 附一個有內容的範例 → 5 交 1 留,而且三段照抄範例的待辦「下週五前送報價單」;
 # 骨架 → **7 交 6 留**、格式 0 錯。數據在 docs/spec/mac/05 §5.4b
 _SKELETON = '{"topic": "…", "points": [{"text": "…", "quote": "…"}], "todo": {"task": "…", "quote": "…"}}'
+# 多問那次(`llm-extras`)的欄位說明:字照抄 iOS `extrasHints`。⚠️ **OpenVINO 與 MLX 都不帶格式約束**,
+# 骨架接在後面(Android 2026-11-03:schema 每欄可為 null 又不隨機時,Qwen 長會 30 段有 24 段整個回 null、
+# 決議只剩 5 條;拿掉約束、格式寫進指示後回來)
+_EXTRAS_SKELETON = ('{"decision": {"text": "…", "quote": "…"}, "openQuestion": {"text": "…", "quote": "…"}, '
+                    '"owner": "…", "deadline": "…"}')
+_ZH_TW_EXTRAS = ("\n欄位:decision 明確拍板、裁示、同意或否決的一件事,只是討論、報告現況或提出想法的不算;"
+                 "openQuestion 提出來但沒有結論、要再確認或下次再談的一個問題;兩者都是 text(一句話)加 quote"
+                 "(逐字稿裡作為依據的那一句,一字不改照抄,10 到 40 字),沒有就不填。owner 那件待辦逐字稿裡明講交給"
+                 "誰做(說話的人不一定是負責人);deadline 那件待辦明講的期限,照原話;沒講就不填。"
+                 "\n\n只回一個 JSON 物件,形狀像這樣(… 換成這一段的內容,沒有的欄位填 null):\n" + _EXTRAS_SKELETON)
+_ZH_CN_EXTRAS = ("\n字段:decision 明确拍板、裁示、同意或否决的一件事,只是讨论、报告现况或提出想法的不算;"
+                 "openQuestion 提出来但没有结论、要再确认或下次再谈的一个问题;两者都是 text(一句话)加 quote"
+                 "(逐字稿里作为依据的那一句,一字不改照抄,10 到 40 字),没有就不填。owner 那件待办逐字稿里明讲交给"
+                 "谁做(说话的人不一定是负责人);deadline 那件待办明讲的期限,照原话;没讲就不填。"
+                 "\n\n只回一个 JSON 对象,形状像这样(… 换成这一段的内容,没有的字段填 null):\n" + _EXTRAS_SKELETON)
+_EN_EXTRAS = ("\nFields: decision = one thing clearly decided, approved or rejected (just discussing, reporting "
+              "status or suggesting doesn't count); openQuestion = one question raised but not settled, to be "
+              "confirmed or discussed later; both are text (one sentence) plus quote (the transcript sentence it "
+              "is based on, copied word for word, 5 to 30 words); leave out if none. owner = who that action item "
+              "was explicitly given to (the speaker is not necessarily the owner); deadline = the deadline said "
+              "for it, in the original words; leave out if not said."
+              "\n\nReply with one JSON object only, shaped like this (replace … with this part's content; use "
+              "null for what isn't there):\n" + _EXTRAS_SKELETON)
 _EN_TODO = "; todo = the clearest task assigned or promised in this part, leave it out if there is none (don't make one up); if present, task is the thing to do (one sentence) and quote is the transcript sentence it is based on, copied word for word (5 to 30 words)"
 
 
@@ -131,6 +174,38 @@ ZH_TW = DraftVocab(
     title_suffix="會議紀錄草稿",
     char_scale=1,
     task_chars=(4, 60),
+    # 以下照抄 iOS `DraftVocab.zhTW`(c4c9c2f、a831868、56e1f88),只有逐字稿來源不寫「手機」
+    extras_instructions=(
+        "你是會議記錄助理。使用者會給你一段會議逐字稿(語音辨識的結果,有錯字、標點少,每行開頭是講者),"
+        "可能附上一件已找到的待辦。\n"
+        "用繁體中文(台灣用語)找出這一段的決議、未決問題,以及那件待辦的負責人與期限。只寫逐字稿裡明講的,"
+        "不要推測;沒有就不填。"
+    ),
+    extras_format=_ZH_TW_EXTRAS,
+    found_todo="已找到的待辦:",
+    full_summary_heading="## 會議摘要",
+    decisions_heading="## 決議事項",
+    questions_heading="## 未決問題",
+    no_decisions="沒有找到明確的決議",
+    no_questions="沒有找到明確的未決問題",
+    owner="負責人",
+    deadline="期限",
+    to_confirm="待確認",
+    # ⚠️ 待辦用**實例**示範,不要寫「- 事項｜負責人:某某」這種範本:Apple 與 Gemma 會照字面抄出
+    # 「事項｜」(iOS 2026-11-03 實機;`minutes.tidy_todo` 另外再補一道)
+    whole_instructions=(
+        "你是會議記錄助理。使用者會給你一場會議的逐字稿(語音辨識,可能有錯字,講者名字可能不準,每行開頭是講者)。"
+        "請整理成繁體中文(台灣用語)的會議紀錄,依序用這五個標題:\n"
+        "## 會議摘要\n## 主要議題\n## 決議事項\n## 待辦事項\n## 未決問題\n"
+        "會議摘要寫 3~5 句;其他每條用「- 」開頭、一行一條;待辦先寫要做的事、再寫負責人與期限,"
+        "例如「- 準備報價表｜負責人:小王｜期限:下週五」;沒講的寫「待確認」。\n"
+        "只寫逐字稿裡有的內容;不確定的寫「待確認」,不要自己推測。不要開場白、不要表格、不要粗體。"
+    ),
+    whole_todos_heading="## 待辦",
+    question_words=("？", "?", "是否", "嗎", "什麼", "如何", "怎麼", "為什麼", "多少", "哪", "能否", "可否",
+                    "要不要", "有沒有", "還是", "待確認", "尚未", "未定", "再討論", "再確認", "詢問", "質疑"),
+    casual_questions=("有沒有問題", "有沒有要問", "對不對", "好不好", "是不是這樣", "還有沒有"),
+    no_deadline_words=("沒有", "無", "沒講", "未提及", "不明", "待確認", "未定", "不確定"),
 )
 
 ZH_CN = DraftVocab(
@@ -181,6 +256,35 @@ ZH_CN = DraftVocab(
     title_suffix="会议记录草稿",
     char_scale=1,
     task_chars=(4, 60),
+    extras_instructions=(
+        "你是会议记录助理。用户会给你一段会议逐字稿(语音识别的结果,有错字、标点少,每行开头是讲者),"
+        "可能附上一件已找到的待办。\n"
+        "用简体中文找出这一段的决议、未决问题,以及那件待办的负责人与期限。只写逐字稿里明讲的,"
+        "不要推测;没有就不填。"
+    ),
+    extras_format=_ZH_CN_EXTRAS,
+    found_todo="已找到的待办:",
+    full_summary_heading="## 会议摘要",
+    decisions_heading="## 决议事项",
+    questions_heading="## 未决问题",
+    no_decisions="没有找到明确的决议",
+    no_questions="没有找到明确的未决问题",
+    owner="负责人",
+    deadline="期限",
+    to_confirm="待确认",
+    whole_instructions=(
+        "你是会议记录助理。用户会给你一场会议的逐字稿(语音识别,可能有错字,讲者名字可能不准,每行开头是讲者)。"
+        "请整理成简体中文的会议纪要,依序用这五个标题:\n"
+        "## 会议摘要\n## 主要议题\n## 决议事项\n## 待办事项\n## 未决问题\n"
+        "会议摘要写 3~5 句;其他每条用「- 」开头、一行一条;待办先写要做的事、再写负责人与期限,"
+        "例如「- 准备报价表｜负责人:小王｜期限:下周五」;没讲的写「待确认」。\n"
+        "只写逐字稿里有的内容;不确定的写「待确认」,不要自己推测。不要开场白、不要表格、不要粗体。"
+    ),
+    whole_todos_heading="## 待办",
+    question_words=("？", "?", "是否", "吗", "什么", "如何", "怎么", "为什么", "多少", "哪", "能否", "可否",
+                    "要不要", "有没有", "还是", "待确认", "尚未", "未定", "再讨论", "再确认", "询问", "质疑"),
+    casual_questions=("有没有问题", "有没有要问", "对不对", "好不好", "是不是这样", "还有没有"),
+    no_deadline_words=("没有", "无", "没讲", "未提及", "不明", "待确认", "未定", "不确定"),
 )
 
 EN = DraftVocab(
@@ -239,6 +343,39 @@ EN = DraftVocab(
     title_suffix="meeting minutes draft",
     char_scale=3,
     task_chars=(8, 160),
+    extras_instructions=(
+        "You are a meeting minutes assistant. The user gives you part of a meeting transcript (speech "
+        "recognition output, with errors; each line starts with the speaker), possibly with an action item "
+        "already found.\n"
+        "In English, find this part's decision, open question, and the owner and deadline of that action "
+        "item. Only write what is said explicitly; don't guess; leave out what isn't there."
+    ),
+    extras_format=_EN_EXTRAS,
+    found_todo="Action item already found: ",
+    full_summary_heading="## Meeting summary",
+    decisions_heading="## Decisions",
+    questions_heading="## Open questions",
+    no_decisions="No clear decisions found",
+    no_questions="No clear open questions found",
+    owner="Owner",
+    deadline="Due",
+    to_confirm="TBD",
+    whole_instructions=(
+        "You are a meeting minutes assistant. The user gives you a meeting transcript (speech recognition, "
+        "with errors; speaker names may be wrong; each line starts with the speaker). Write the minutes in "
+        "English under these five headings, in order:\n"
+        "## Meeting summary\n## Main topics\n## Decisions\n## Action items\n## Open questions\n"
+        "The summary is 3 to 5 sentences; everything else is one item per line starting with \"- \"; write "
+        "each action item as the task first, then owner and due date, e.g. \"- Prepare the price sheet｜Owner: "
+        "Mr. Wang｜Due: next Friday\"; write \"TBD\" for what wasn't said.\n"
+        "Only write what is in the transcript; write \"TBD\" when unsure; don't guess. No preamble, no tables, "
+        "no bold."
+    ),
+    whole_todos_heading="## Action items",
+    question_words=("?", "whether", "tbd", "to be confirmed", "not yet", "undecided", "open", "unclear",
+                    "how ", "what ", "why ", "which ", "who "),
+    casual_questions=("any questions", "right?", "okay?", "ok?", "anything else"),
+    no_deadline_words=("none", "no deadline", "not said", "not mentioned", "tbd", "n/a", "unknown"),
 )
 
 ALL = (ZH_TW, ZH_CN, EN)

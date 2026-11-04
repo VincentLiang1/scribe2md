@@ -8,9 +8,11 @@ Apple Intelligence 打開時)或 Qwen3.5-4B(MLX 跑在 GPU,16 GB 以上的 Apple
 **邏輯在這裡、Swift 小程式只負責問一次**(`packaging/mac/apple_asr.swift` 的 `llm-*` 子命令;
 2026-10-11 使用者選定:核對原句、推算時間這類「改錯也不會報錯、只會悄悄變差」的東西要有測試守著)。
 
-只產生「摘要 + 主要議題 + 待辦(附約略時間)」。決議、未決問題、負責人都不做:實測它做不來
-(負責人幾乎都填成說話的人);開頭給它自由就會捏造日期、主持人、議題,所以最後一步只准寫兩段、
-標題由程式加。⚠️ **草稿不寫進逐字稿 md**(使用者 2026-10-11:跟手機版一樣,只給自己看、
+預設出雲端提示詞的五段(摘要、主要議題、決議、待辦附負責人與期限、未決問題;使用者 2026-11-03,
+同 iOS `extras`),「⚙ 地端 AI 設定…」可以關回三段(摘要 + 主要議題 + 待辦;五段多花約五到六成時間)。五段在分段
+流程裡每段多問一次決議、未決、那件待辦的負責人與期限(`_extras`),跟待辦、重點同一套核對;塞得進窗的
+短會議整份一次問(`_whole_draft`)。開頭給它自由就會捏造日期、主持人、議題,所以分段流程最後一步只准
+寫摘要、標題由程式加。⚠️ **草稿不寫進逐字稿 md**(使用者 2026-10-11:跟手機版一樣,只給自己看、
 不送進知識庫)——小模型編的東西不能流進下游。
 
 幾件實測出來、拿掉就會壞的事(數據見 `docs/spec/mac/05` §5.4b):
@@ -26,10 +28,14 @@ Apple Intelligence 打開時)或 Qwen3.5-4B(MLX 跑在 GPU,16 GB 以上的 Apple
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import logging
+import math
 import re
 import subprocess
+import threading
 import time
 import unicodedata
 from dataclasses import dataclass, field, replace
@@ -60,22 +66,35 @@ CALL_TIMEOUT_SEC = 90.0
 SECONDS_PER_RECORDED_MINUTE = 2.4
 #: 這麼短的會不提醒(幾十秒就好)
 WAIT_HINT_MIN_SEC = 20 * 60
+#: 五段比三段多花的倍數(`wait_hint`;上面幾個秒數都是三段量的)。2026-11-04 在 M5 上同一版程式、
+#: 3 時 34 分那場長會各跑一次:Apple 552 → 867 秒、Qwen 501 → 732 秒、Gemma 657 → 1037 秒。
+#: Windows(Core Ultra 7 258V 內顯)同一場、電腦閒著、每種之間歇 5 分鐘:Qwen 4B 588 → 787 秒、
+#: Gemma 575 → 755 秒。⚠️ 內顯跟整台共用記憶體,有人在用電腦、複製檔案或連跑半小時都會拖慢
+#: (同一場 Gemma 五段最慢量到 1466 秒),量倍數一定要在電腦閒著時
+FIVE_FACTOR = {"apple": 1.57, "qwen": 1.46, "gemma": 1.58, "openvino": 1.34}
+#: Windows 的 Gemma 跟 Mac 那顆同鍵、倍數不同(`_rate` 照 `_backend()` 挑)
+FIVE_FACTOR_GEMMA_OV = 1.31
 
 # --- Windows(OpenVINO)那條的數字 ------------------------------------------------
 #: 一次呼叫最多等多久。⚠️ **不可以沿用 Apple 的 90 秒**:超時是「這一段悄悄跳過」,而
 #: 純 CPU 跑 2B 一次中位 16 秒(Core Ultra 7 258V),一般公司電腦慢兩三倍、長的那幾次
 #: 就會撞上 90——少掉的段落在草稿上看不出來。Mac 的 Qwen(MLX)也走這一個(一次約 5~10 秒,用不到)
 OV_CALL_TIMEOUT_SEC = 300.0
-#: Gemma 4 E4B 內顯每分鐘錄音要等幾秒(2026-10-29 W3 量:38 分鐘的會 201 秒、3 時 34 分的長會
-#: 900 秒,平均約 4.7;放寬 1.5 倍同上)。比 Qwen 4B 慢約一倍
-GEMMA_OV_SECONDS_PER_RECORDED_MINUTE = 7.0
+#: 等待提示比這台實測放寬多少(一般公司電腦較慢)。2026-11-04 使用者要收窄:原本 1.5,一小時的會
+#: Gemma 五段報 9 分、實測不到 4。⚠️ 不要再往下壓:進度條照同一套秒數爬(`_rate`、永遠到不了目標),
+#: 估得比實際短,慢一點的電腦上進度條就會停在每段的終點附近、看起來像當掉
+OV_WAIT_MARGIN = 1.2
+#: Gemma 4 E4B 內顯每分鐘錄音要等幾秒:2026-11-04 電腦閒著時 3 時 34 分的長會 575 秒 ≈ 2.7,放寬
+#: `OV_WAIT_MARGIN`。⚠️ 10-29 W3 同一場量到 900 秒(≈ 4.7),那次電腦沒閒著(§5.4b:內顯跟整台共用記憶體)
+GEMMA_OV_SECONDS_PER_RECORDED_MINUTE = round(2.7 * OV_WAIT_MARGIN, 1)
 #: 有內顯也要這麼多記憶體才用 4B:**內顯沒有自己的記憶體**,4B 跑起來佔 4.3 GB,
 #: 8 GB 的筆電上等於跟 Windows 搶同一份(16 GB 的機器報出來約 15.7 GB,門檻放在 15)
 OV_4B_MIN_RAM_MB = 15_000
-#: 每分鐘錄音要等幾秒(Core Ultra 7 258V 上量的;一般公司電腦慢,各放寬 1.5 倍)。4B 內顯是
-#: 2026-10-28 段落協定 v2、一段 1800 字之後重量的(38 分鐘的會 99 秒、3 時 34 分的長會 474 秒,
-#: 取 2.6);⚠️ 2B 那兩格還是改版前(一段 900 字)43 分鐘那場的 66 秒與 328 秒,W5 重量
-OV_SECONDS_PER_RECORDED_MINUTE = {("4b", "GPU"): 3.9, ("2b", "GPU"): 2.3, ("2b", "CPU"): 11.4}
+#: 每分鐘錄音要等幾秒(Core Ultra 7 258V 上量的,乘上 `OV_WAIT_MARGIN`)。4B 內顯:2026-10-28 段落協定
+#: v2 之後 38 分鐘的會 99 秒、3 時 34 分的長會 474 秒,取 2.6(11-04 閒著重量 588 秒 ≈ 2.75,吻合);
+#: ⚠️ 2B 那兩格還是改版前(一段 900 字)43 分鐘那場的 66 秒與 328 秒(≈ 1.5、7.6),W5 重量
+OV_SECONDS_PER_RECORDED_MINUTE = {k: round(v * OV_WAIT_MARGIN, 1) for k, v in
+                                  {("4b", "GPU"): 2.6, ("2b", "GPU"): 1.5, ("2b", "CPU"): 7.6}.items()}
 
 # --- Mac 的 Qwen(MLX)那條的數字 ------------------------------------------------------
 #: 記憶體多少以上才給 Qwen 4B(使用者 2026-10-14 選「16 GB 以上」)。跑起來 GPU 佔 3.2 GB,
@@ -109,6 +128,10 @@ _HIGHLIGHT_INSTRUCTIONS = _ZH.highlight_instructions
 _MERGE_INSTRUCTIONS = _ZH.merge_instructions
 _SUMMARY_INSTRUCTIONS = _ZH.summary_instructions
 
+#: 一次問(`llm-whole`)要寫完整份五段,回覆比一段長三倍:超時放寬這麼多倍
+WHOLE_TIMEOUT_FACTOR = 3
+#: 這一場出不出五段(`generate` 開頭照 `five_sections()` 定好,整場不變)
+_five = True
 #: 這一場用哪一份(`generate` 開頭依逐字稿挑;`render` / `draft_notice` 也看它)
 _draft: draftvocab.DraftVocab = _ZH
 #: 這一場的專有名詞(名詞對照表換過之後逐字稿裡有的正確寫法):每次問都接在指示最後(`_call`;
@@ -983,6 +1006,113 @@ def looks_like_task(task: str, chars: tuple[int, int] = (4, 60)) -> bool:
     return chars[0] <= len(t) <= chars[1] and ":" not in t and "：" not in t   # 半形與全形冒號
 
 
+def real_deadline(d: str | None) -> str | None:
+    """期限要是真的期限:「沒有」「無」「待確認」這類回答不算(同 iOS `realDeadline`;2026-11-03 Apple
+    長會收了「沒有」)。"""
+    if d is None:
+        return None
+    s = squash(d).lower()
+    return None if any(squash(w).lower() == s for w in _draft.no_deadline_words) else d
+
+
+def looks_like_question(q: str) -> bool:
+    """未決問題要像個問題:有問號或疑問詞;短的隨口話(「有沒有要問問題?」「對不對」)擋掉
+    (同 iOS `looksLikeQuestion`;2026-11-03 長會 Apple 25 條約一半是這種、Qwen 混了直述句)。"""
+    low = q.lower()
+    if len(squash(low)) < 16 and any(c in low for c in _draft.casual_questions):
+        return False
+    return any(w in low for w in _draft.question_words)
+
+
+def mentioned(word: str | None, quote: str, line: str) -> str | None:
+    """負責人、期限:模型交的字要出現在原句或對上的那一行的**發言內容**裡——不算行首的講者名字,
+    不然又是「說話的人」(同 iOS `mentioned`)。"""
+    if word is None:
+        return None
+    w = word.strip()
+    if len(squash(w)) < 2 or len(w) > 12:
+        return None
+    body = line.split(":", 1)[1] if ":" in line else line
+    return w if squash(w) in squash(quote) or squash(w) in squash(body) else None
+
+
+def tidy_todo(line: str) -> str:
+    """一次問的待辦一行:照抄範本的「事項｜」去掉、冒號統一半形、「未指定」「待定」這類統一寫「待確認」
+    (同 iOS `tidyTodo`;2026-11-03 實機:Apple、Gemma 照抄「- 事項｜…」,Qwen 寫「負責人:未指定」)。"""
+    v = _draft
+    s = line
+    for p in ("- 事項｜", "- 事项｜", "- task｜", "- Task｜"):
+        if s.startswith(p):
+            s = "- " + s[len(p):]
+    for label in (v.owner, v.deadline):
+        s = s.replace(label + "：", label + ":").replace(label + ": ", label + ":")
+    for blank in ("未指定", "待定", "未提及", "未明確", "未明确", "不明", "未知", "無", "无",
+                  "unspecified", "not specified", "none"):
+        for label in (v.owner, v.deadline):
+            s = s.replace(label + ":" + blank, label + ":" + v.to_confirm)
+    return s
+
+
+def _trim(s: str, chars: str = "") -> str:
+    """去頭尾的空白與 `chars` 裡的字(同 Swift `trimmingCharacters(in: …union(.whitespaces))`)。"""
+    i, j = 0, len(s)
+    while i < j and (s[i] in chars or s[i].isspace()):
+        i += 1
+    while j > i and (s[j - 1] in chars or s[j - 1].isspace()):
+        j -= 1
+    return s[i:j]
+
+
+def clean_whole(raw: str, transcript: str) -> str | None:
+    """一次問的回答 → 草稿的五段(同 iOS `cleanWhole`):標題換成固定的(模型會寫「### 3. 決議事項」
+    「**決議事項**」)、表格列轉成「- 事項｜負責人:…｜期限:…」、去掉開場白與粗體;有原文沒有的數字
+    的那一條丟掉。認不出摘要、或議題／決議／待辦一條都沒有就回 None(走分段)。"""
+    v = _draft
+    heads = [(("摘要", "summary"), v.full_summary_heading, None),
+             (("議題", "议题", "topic"), v.topics_heading, None),
+             (("決議", "决议", "decision"), v.decisions_heading, "- " + v.no_decisions),
+             (("待辦", "待办", "action"), v.whole_todos_heading, v.no_todos),
+             (("未決", "未决", "open question"), v.questions_heading, "- " + v.no_questions)]
+    body: list[list[str]] = [[] for _ in heads]
+    cur: int | None = None
+    for raw_line in raw.splitlines():
+        line = _trim(raw_line)
+        plain = _trim(line.replace("**", ""), "#* ")
+        heading_like = (line.startswith("#") or (line.startswith("**") and "**:" not in line[2:])
+                        or (line[:1].isnumeric() and len(line) < 30))
+        if heading_like and len(plain) < 40:
+            i = next((k for k, h in enumerate(heads) if any(key in plain.lower() for key in h[0])), None)
+            if i is not None:
+                cur = i
+                continue
+        if cur is None or not line or all(c in "-|: " for c in line):
+            continue
+        if line.startswith("|"):
+            cells = [_trim(c) for c in line.strip("|").split("|")]
+            if len(cells) < 2 or cells[0] in (v.owner, "負責人", "负责人", "Owner"):
+                continue
+            owner = cells[0] or v.to_confirm
+            due = cells[2] if len(cells) > 2 and cells[2] else v.to_confirm
+            item = f"- {cells[1]}｜{v.owner}:{owner}｜{v.deadline}:{due}"
+        elif line[0] in "-*•":
+            item = "- " + _trim(line[1:])
+        elif cur == 0:
+            item = line
+        else:
+            continue
+        item = item.replace("**", "")
+        if cur == 3:
+            item = tidy_todo(item)
+        if not numbers_supported(item, transcript):
+            continue
+        body[cur].append(item)
+    if not body[0] or cur is None or not (body[1] or body[2] or body[3]):
+        return None
+    sep = " " if v.language == draftvocab.EN.language else ""
+    return "\n\n".join(h[1] + "\n" + ((sep if i == 0 else "\n").join(body[i]) if body[i] else (h[2] or ""))
+                       for i, h in enumerate(heads))
+
+
 def timed_chunks(lines: list[TimedLine], limit: int) -> list[list[TimedLine]]:
     """依字數切段(一行不拆;單行超過上限就自己一段)。"""
     out: list[list[TimedLine]] = []
@@ -1225,9 +1355,19 @@ def save(md_path: Path, text: str) -> Path:
 def wait_hint(recording_sec: float, engine: str | None = None) -> str | None:
     """按之前先說大概要等多久(使用者 2026-10-11 選);20 分鐘以下的會不提醒。
     `engine` 是這一場要用的那個;不給就照記住的(不探測)。"""
+    engine = engine or _preferred()   # ⚠️ 不探測:這一支在主執行緒上、按下去的當下問
+    rate, first_time = _rate(engine, five_sections())
+    if recording_sec < WAIT_HINT_MIN_SEC:
+        return first_time.lstrip(";") or None
+    minutes = max(1, round(recording_sec / 60 * rate / 60))
+    return t("這場 {v} 分鐘,估計約要 {minutes} 分鐘{first_time}", v=int(recording_sec // 60), minutes=minutes, first_time=first_time)
+
+
+def _rate(engine: str | None, five: bool) -> tuple[float, str]:
+    """這一顆每分鐘錄音要等幾秒(五段乘上 `FIVE_FACTOR`),與「第一次要先下載」那半句。
+    等待提示(`wait_hint`)與進度條的預估(`_creep`)用同一套數字(同 iOS `secondsPerRecordedMinute`)。"""
     rate = SECONDS_PER_RECORDED_MINUTE
     first_time = ""
-    engine = engine or _preferred()   # ⚠️ 不探測:這一支在主執行緒上、按下去的當下問
     if engine == ENGINE_OV:
         size, device = _ov_plan()
         rate = OV_SECONDS_PER_RECORDED_MINUTE[(size, device)]
@@ -1245,10 +1385,65 @@ def wait_hint(recording_sec: float, engine: str | None = None) -> str | None:
         rate = MLX_SECONDS_PER_RECORDED_MINUTE
         if not models.mlx_llm_cached():
             first_time = t(";第一次要先下載 AI 模型,約 {MLX_LLM_DOWNLOAD_GB} GB", MLX_LLM_DOWNLOAD_GB=models.MLX_LLM_DOWNLOAD_GB)
-    if recording_sec < WAIT_HINT_MIN_SEC:
-        return first_time.lstrip(";") or None
-    minutes = max(1, round(recording_sec / 60 * rate / 60))
-    return t("這場 {v} 分鐘,估計約要 {minutes} 分鐘{first_time}", v=int(recording_sec // 60), minutes=minutes, first_time=first_time)
+    if five:
+        rate *= (FIVE_FACTOR_GEMMA_OV if engine == ENGINE_GEMMA and _backend() == "openvino"
+                 else FIVE_FACTOR.get(engine or ENGINE_APPLE, 1.0))
+    return rate, first_time
+
+
+# --- 進度條照預估時間走(同 iOS `creep`,2026-11-04)------------------------------------
+# 使用者在手機上發現:一次問只報 5% 就跳到 85%、分段每段跑完才前進一格、重點與摘要都沒有進度,
+# 進度條一開始幾乎不動、後面一下就完成。等模型回答時每 `CREEP_TICK_SEC` 報一次往目標爬的值:
+# a + (b - a) × 0.97 × (1 - e^(-t/τ)),τ = 預估秒數的一半,**永遠到不了 b**,做完才報真的進度
+
+#: 等模型時多久報一次
+CREEP_TICK_SEC = 0.5
+#: 這一場每分鐘錄音要幾秒、整份要幾秒(錄音長度 × `_rate`;`generate` 開頭算好,不在每一步重問——
+#: Windows 那條要探測內顯)。進度條各段的預估都從它們分
+_per_minute = SECONDS_PER_RECORDED_MINUTE
+_expected = 0.0
+
+
+def creep_value(a: float, b: float, elapsed: float, expected: float) -> float:
+    """等了 `elapsed` 秒時進度條該在哪(`a` 往 `b` 爬,永遠不到 `b`)。"""
+    tau = max(expected, 1.0) / 2
+    return a + (b - a) * 0.97 * (1 - math.exp(-elapsed / tau))
+
+
+@contextlib.contextmanager
+def _creep(report: "ProgressFn", a: float, b: float, expected: float):
+    """包住一段要等模型的事:等的期間在另一條執行緒上照 `creep_value` 報進度,做完就停。
+    ⚠️ 報進度的那條執行緒要帶著這條的 contextvars(`copy_context().run`):進度回報靠它,
+    不帶的話會**靜默**丟失(CLAUDE.md 那條)。"""
+    stop = threading.Event()
+    t0 = time.monotonic()
+
+    def tick():
+        while not stop.wait(CREEP_TICK_SEC):
+            report(creep_value(a, b, time.monotonic() - t0, expected))
+
+    ctx = contextvars.copy_context()
+    th = threading.Thread(target=ctx.run, args=(tick,), daemon=True, name="minutes-creep")
+    th.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        th.join()
+
+
+def _forward_only(report: "ProgressFn") -> "ProgressFn":
+    """進度只往前、不倒退(同 iOS):爬的那條執行緒與真的進度交錯時,取大的那個。"""
+    lock = threading.Lock()
+    best = [0.0]
+
+    def out(f: float) -> None:
+        with lock:
+            if f < best[0]:
+                return
+            best[0] = f
+        report(f)
+    return out
 
 
 def _ov_plan() -> tuple[str, str]:
@@ -1286,7 +1481,8 @@ class _CallTimeout(_CallFailed):
 _session = None
 
 
-def _call(kind: str, instructions: str, prompt: str, lite: bool = False, retry: bool = False) -> dict:
+def _call(kind: str, instructions: str, prompt: str, lite: bool = False, retry: bool = False,
+          slow: bool = False) -> dict:
     """問一次(`llm-ask` / `llm-notes`),回覆格式兩條路一樣。`lite`:`llm-notes` 不要待辦;
     `retry`:改用固定種子取樣(格式錯重問時)。
     ⚠️ **這場的專有名詞接在這裡**(唯一的咽喉):分段、重問、重點、合併、摘要每一次問都要帶
@@ -1300,17 +1496,18 @@ def _call(kind: str, instructions: str, prompt: str, lite: bool = False, retry: 
     if terms:
         instructions += "\n" + _draft.glossary_label + _draft.list_sep.join(terms)
     if _session is not None:
-        return _call_ov(kind, instructions, prompt, lite, retry)
-    return _call_apple(kind, instructions, prompt, lite, retry)
+        return _call_ov(kind, instructions, prompt, lite, retry, slow)
+    return _call_apple(kind, instructions, prompt, lite, retry, slow)
 
 
-def _call_ov(kind: str, instructions: str, prompt: str, lite: bool = False, retry: bool = False) -> dict:
+def _call_ov(kind: str, instructions: str, prompt: str, lite: bool = False, retry: bool = False,
+             slow: bool = False) -> dict:
     """Qwen 那兩條:問開著的那支子行程。⚠️ **子行程死掉不是「跳過這一段」**:後面每一段都會
     一樣死,跳過到最後只剩一句「沒有整理出內容」,真正的原因就看不到了。"""
     from meeting_scribe import minutes_ov
 
     try:
-        msg = _session.ask(kind, instructions, prompt, OV_CALL_TIMEOUT_SEC,
+        msg = _session.ask(kind, instructions, prompt, OV_CALL_TIMEOUT_SEC * (WHOLE_TIMEOUT_FACTOR if slow else 1),
                            language=_draft.language, lite=lite, retry=retry)
     except minutes_ov.CallTimeout as e:
         raise _CallTimeout(str(e)) from None
@@ -1323,7 +1520,7 @@ def _call_ov(kind: str, instructions: str, prompt: str, lite: bool = False, retr
 
 
 def _call_apple(kind: str, instructions: str, prompt: str, lite: bool = False,
-                retry: bool = False) -> dict:
+                retry: bool = False, slow: bool = False) -> dict:
     """Mac:叫一次小程式。每問一次起一個行程:實測整支跑完 0.26 秒,
     跟呼叫本身一樣短,換到的是超時直接收掉行程、不必管常駐的那支卡在哪裡。"""
     _, exe = plat.apple_speech_helper()
@@ -1334,7 +1531,8 @@ def _call_apple(kind: str, instructions: str, prompt: str, lite: bool = False,
                             encoding="utf-8", **plat.spawn_kwargs(low_priority=False))
     payload: str | None = json.dumps({"instructions": instructions, "prompt": prompt,
                                       "lite": lite, "retry": retry}, ensure_ascii=False)
-    deadline = time.monotonic() + CALL_TIMEOUT_SEC
+    limit = CALL_TIMEOUT_SEC * (WHOLE_TIMEOUT_FACTOR if slow else 1)
+    deadline = time.monotonic() + limit
     try:
         while True:
             cancel.check()  # 停止響應點:等模型回覆的空檔
@@ -1344,7 +1542,7 @@ def _call_apple(kind: str, instructions: str, prompt: str, lite: bool = False,
             except subprocess.TimeoutExpired:
                 payload = None  # 第一次已經送進去了,重試時不能再送
                 if time.monotonic() > deadline:
-                    raise _CallTimeout(t("{CALL_TIMEOUT_SEC:.0f} 秒沒有回覆", CALL_TIMEOUT_SEC=CALL_TIMEOUT_SEC))
+                    raise _CallTimeout(t("{CALL_TIMEOUT_SEC:.0f} 秒沒有回覆", CALL_TIMEOUT_SEC=limit))
     except BaseException:
         proc.kill()  # 停止鈕(Cancelled 是 BaseException)與超時都要收掉小程式
         proc.wait()
@@ -1424,12 +1622,21 @@ class _ChunkResult:
     #: `todos` 裡原句在前文(上一段最後幾行)的那幾條:上一段可能已經寫過同一件事(`_map_all` 去重;
     #: 手機版 `TodoItem.fromContext`)
     ctx_todos: list[tuple[str, str]] = field(default_factory=list)
+    # ---- 五段才有(`_extras`)---- #
+    decisions: list[tuple[str, str]] = field(default_factory=list)   # (決議, 約略時間)
+    questions: list[tuple[str, str]] = field(default_factory=list)   # (未決問題, 約略時間)
+    extras_dropped: int = 0   # 決議、未決:原句與事實都對不上、不像一件事、不像問題、跟議題太像
+    #: 待辦 → (負責人, 期限)(逐字稿明講的才有;只有每段那一條待辦問得到)
+    owners: dict[tuple[str, str], tuple[str | None, str | None]] = field(default_factory=dict)
 
     def __add__(self, o: "_ChunkResult") -> "_ChunkResult":
+        # ⚠️ 新欄位一定要接進來:漏了就是那幾樣整場加總時悄悄消失
         return _ChunkResult(self.topics + o.topics, self.todos + o.todos, self.dropped + o.dropped,
                             self.points_dropped + o.points_dropped,
                             self.topics_dropped + o.topics_dropped, self.skipped + o.skipped,
-                            self.failed and o.failed, self.mine + o.mine, self.ctx_todos + o.ctx_todos)
+                            self.failed and o.failed, self.mine + o.mine, self.ctx_todos + o.ctx_todos,
+                            self.decisions + o.decisions, self.questions + o.questions,
+                            self.extras_dropped + o.extras_dropped, {**self.owners, **o.owners})
 
 
 def _valid_notes(msg: dict, lite: bool) -> bool:
@@ -1488,11 +1695,13 @@ def _map_chunk(lines: list[TimedLine], ctx: str = "",
         return _ChunkResult(skipped=len(lines), failed=True)
     r = _ChunkResult()
     todo = msg.get("todo")
+    todo_quote: tuple[str, int] | None = None   # 留下的那條待辦的原句與行號(五段問負責人、期限用)
     if isinstance(todo, dict):
         task, quote = _tw(str(todo.get("task", ""))), _tw(str(todo.get("quote", "")))
         hit = None if garbled(task) or repetitive(quote) else locate_line(quote, pool)
         if hit and looks_like_task(task, _draft.task_chars) and grounded(task, quote, hit[1], pool):
             r.todos.append((task, hit[0]))
+            todo_quote = (quote, hit[1])
             if hit[1] < own:
                 r.ctx_todos.append((task, hit[0]))
         else:
@@ -1526,7 +1735,73 @@ def _map_chunk(lines: list[TimedLine], ctx: str = "",
         r.topics_dropped += 1
         if points:
             r.topics.append(Topic(points[0][:20].strip(",。、,. "), when, 1, points))
+    if _five:
+        _extras(r, lines, text, pool, todo_quote)
     return r
+
+
+def _ask_extras(prompt: str) -> dict:
+    """多問那一次;格式錯就換固定種子再問一次(同 iOS `retryOnBadFormat`),超時不重問。"""
+    last: _CallFailed | None = None
+    for retry in (False, True):
+        try:
+            return _call("llm-extras", _draft.extras_instructions, prompt, retry=retry)
+        except _CallTimeout:
+            raise
+        except _CallFailed as e:
+            last = e
+    raise last
+
+
+def _quoted(v) -> tuple[str, str] | None:
+    """`decision` / `openQuestion` 那一格 → (text, quote),轉成這一場的字形;沒填或形狀不對是 None。"""
+    if not isinstance(v, dict) or not isinstance(v.get("text"), str):
+        return None
+    return _tw(v["text"]), _tw(str(v.get("quote") or ""))
+
+
+def _extras(r: _ChunkResult, lines: list[TimedLine], text: str, pool: list[TimedLine],
+            todo_quote: tuple[str, int] | None) -> None:
+    """五段:這一段多問一次決議、未決問題、那條待辦的負責人與期限(同 iOS `mapChunk` 的 extras),
+    結果就地加進 `r`。⚠️ **失敗只少這幾樣**:不算這一段寫不出來(`failed`),不讓整場卡住。
+    核對跟待辦、重點同一套(使用者 2026-11-03):原句對得上就看附近的字與事實;對不上就看整段的事實。"""
+    prompt = text + (f"\n\n{_draft.found_todo}{r.todos[0][0]}" if r.todos else "")
+    try:
+        x = _ask_extras(prompt)
+    except (_Guardrail, _Overflow, _CallFailed) as e:
+        logger.info("會議紀錄草稿:多問決議那次跳過(%d 行):%s", len(lines),
+                    "安全過濾" if isinstance(e, _Guardrail) else (str(e) or "超出長度"))
+        return
+
+    def stands(e: tuple[str, str]) -> str | None:
+        e_text, e_quote = e
+        if garbled(e_text) or repetitive(e_quote) or not looks_like_task(e_text, _draft.task_chars):
+            return None
+        hit = locate_line(e_quote, pool)
+        if hit is not None:
+            return hit[0] if grounded(e_text, e_quote, hit[1], pool) else None
+        return clock(lines[0].start) if fact_grounded(e_text, text) else None
+
+    topic = r.topics[0].title if r.topics else ""
+    d = _quoted(x.get("decision"))
+    if d is not None:
+        at = None if similar(d[0], topic) else stands(d)
+        if at is None:
+            r.extras_dropped += 1
+        else:
+            r.decisions.append((d[0], at))
+    q = _quoted(x.get("openQuestion"))
+    if q is not None:
+        at = stands(q) if looks_like_question(q[0]) else None
+        if at is None:
+            r.extras_dropped += 1
+        else:
+            r.questions.append((q[0], at))
+    if todo_quote is not None and r.todos:
+        quote, i = todo_quote
+        word = lambda k: _tw(x[k]) if isinstance(x.get(k), str) else None   # noqa: E731
+        r.owners[r.todos[0]] = (mentioned(word("owner"), quote, pool[i].text),
+                                real_deadline(mentioned(word("deadline"), quote, pool[i].text)))
 
 
 #: 連續這麼多段寫不出來就整場停下、不往下合併與寫摘要(手機版 2026-10-26:Android 的 Qwen 在
@@ -1554,6 +1829,16 @@ def aliases() -> list[str]:
     if not isinstance(raw, str):
         return []
     return [a.strip() for a in re.split(r"[,，、\n]", raw) if a.strip()]
+
+
+def five_sections() -> bool:
+    """草稿要不要出五段(使用者 2026-11-03:**預設要**,同 iOS `extras`;「⚙ 地端 AI 設定…」可以關回三段)。
+    描述的是用這台電腦的人想要哪一種草稿,所以落地(同 `aliases`)。"""
+    return settings.get(settings.KEY_MINUTES_FIVE) is not False
+
+
+def set_five_sections(on: bool) -> None:
+    settings.set(settings.KEY_MINUTES_FIVE, bool(on))
 
 
 #: 一句最長幾字(太長的照逗號再切;同手機版 `Directives.maxChars`)
@@ -1612,7 +1897,9 @@ def _map_all(parts: list[list[TimedLine]], report: ProgressFn) -> _ChunkResult:
     total = prev = _ChunkResult()
     stuck = 0
     for i, p in enumerate(parts):
-        r = _map_chunk(p, context(i, parts), quote_pool(i, parts))
+        with _creep(report, 0.85 * i / len(parts), 0.85 * (i + 1) / len(parts),
+                    _expected * 0.85 / len(parts)):
+            r = _map_chunk(p, context(i, parts), quote_pool(i, parts))
         # 引前文的待辦:上一段在 90 秒內已經有一條,多半是同一件事換句話說(措辭不同,最後的去重認不出來;
         # 手機版 `b11ea16`)。上一段沒有就留——上一段漏掉的,靠這一段補回來
         if r.ctx_todos and prev.todos:
@@ -1667,8 +1954,11 @@ def _chunk_chars(engine: str) -> int:
 
 
 def generate(md: str, progress: ProgressFn | None = None, engine: str | None = None, *,
-             title: str = "", corrections: list[namefix.Entry] | None = None) -> str:
-    """逐字稿 md → 會議紀錄草稿(Markdown,三段)。進度 0~1:分段佔 85%、合併與收尾佔 15%。
+             title: str = "", corrections: list[namefix.Entry] | None = None,
+             five: bool | None = None, whole: bool = True) -> str:
+    """逐字稿 md → 會議紀錄草稿(Markdown,五段或三段)。進度 0~1:分段佔 85%、合併與收尾佔 15%。
+
+    `five` 不給就照設定(`five_sections`);`whole=False` 不走短會議一次問(評測的對照組用)。
 
     `engine` 不給就用 `default_engine()`(畫面上點了就記進設定,所以就是使用者選的那個)。
     `title` 是逐字稿檔名(名詞對照表的分組照它挑);`corrections` 給了就不讀聲紋同步資料夾那一份
@@ -1684,7 +1974,10 @@ def generate(md: str, progress: ProgressFn | None = None, engine: str | None = N
     if mine is None or not mine.ok:
         raise UserFacingError(t("無法產生會議紀錄草稿:{v}", v=mine.reason if mine else can.reason))
     _used_engine = engine
-    report = progress or (lambda f: None)
+    global _five, _whole_on
+    _five = five_sections() if five is None else five
+    _whole_on = whole
+    report = _forward_only(progress or (lambda f: None))
     t0 = time.monotonic()
     global _highlights, _draft, _aliases
     # 提示詞與草稿的字照**逐字稿的會議語言**(不看介面語言,同 iOS);每一場重挑,不串到下一場
@@ -1694,6 +1987,9 @@ def generate(md: str, progress: ProgressFn | None = None, engine: str | None = N
     _highlights = highlighted_turns(md)
     _apply_corrections(lines, title, corrections)
     _aliases = aliases()
+    global _expected, _per_minute
+    _per_minute = _rate(engine, _five)[0]
+    _expected = duration_sec(md) / 60 * _per_minute
     parts = natural_chunks(lines, _chunk_chars(engine))
     if not parts:
         raise UserFacingError(t("逐字稿是空的,沒有東西可以整理。"))
@@ -1771,7 +2067,11 @@ def _generate_session(model_dir: Path, device: str, label: str,
 
 def _compose(parts: list[list[TimedLine]], report: ProgressFn, t0: float) -> str:
     """分段寫議題與重點 → 合併 → 摘要;議題從各段挑、待辦逐段核對(兩條路共用;差別只在
-    `_call` 問誰)。"""
+    `_call` 問誰)。五段時塞得進窗的短會議先試一次問(`_whole_draft`),不行才分段。"""
+    if _five and _whole_on:
+        whole = _whole_draft([l for p in parts for l in p], report, t0)
+        if whole is not None:
+            return whole
     r = _map_all(parts, report)
     notes = ["\n".join("- " + x for x in tp.points) for tp in r.topics if tp.points]
     if not notes:
@@ -1789,38 +2089,126 @@ def _compose(parts: list[list[TimedLine]], report: ProgressFn, t0: float) -> str
         unique.setdefault(squash(todo[0]), todo)
     # 不設上限:截掉的會是後半場(手機版實測)。照時間排(同一段裡模型給的順序不一定照時間)
     todos = sorted(unique.values(), key=lambda x: seconds(x[1]))
+    # 決議跟待辦同一句的只留在待辦;未決跟待辦、決議同一句的丟掉(使用者 2026-11-03:長會 Apple 的決議
+    # 常是待辦那句;同 iOS)
+    decisions = [d for d in _dedup_sorted(r.decisions) if not any(similar(x, d[0]) for x, _ in todos)]
+    questions = [q for q in _dedup_sorted(r.questions)
+                 if not any(similar(x, q[0]) for x, _ in todos + decisions)]
     # 摘要照舊:各段重點一輪輪合併再問(手機版 10-12 試過只看挑出的議題寫摘要,會混進閒聊、
     # 數字套錯對象,使用者選維持)
     notes, level, truncated = _merge(notes)
     report(0.88)
-    marked, marked_dropped = _marked_points(_highlights)
-    report(0.9)
+    # 剩下的先走一半給現場重點,再給摘要(同 iOS)
+    marked, marked_dropped = _marked_points(_highlights, report, 0.88, 0.935)
+    report(0.935)
     v = _draft
     joined = "\n".join(notes)
     # 摘要先看現場標的重點(同手機版):那是與會者自己講「這個重要」的地方
     summary_input = f"{v.marked_label}\n{marked}\n\n{v.notes_label}\n{joined}" if marked else joined
     # 摘要只看核對過的重點寫;寫出來的每一句,數字要在重點裡、字要大半出自重點(不然丟掉那一句)
-    summary, summary_dropped = grounded_sentences(
-        _tidy_summary(_ask(v.summary_instructions, summary_input)), summary_input)
+    with _creep(report, 0.935, 0.99, _expected * 0.05):
+        summary, summary_dropped = grounded_sentences(
+            _tidy_summary(_ask(v.summary_instructions, summary_input)), summary_input)
     report(0.95)
     picked = pick_topics(r.topics, MAX_TOPICS)
     topics = "\n".join(f"- {tp.title}({tp.time})" + (f":{tp.points[0]}" if tp.points else "")
                        for tp in picked)
-    todo_text = "\n".join(f"- {x}({at})" for x, at in todos) if todos else v.no_todos
+    if _five:
+        def who(todo):
+            owner, due = r.owners.get(todo, (None, None))
+            return f"｜{v.owner}:{owner or v.to_confirm}｜{v.deadline}:{due or v.to_confirm}"
+    else:
+        def who(todo):
+            return ""
+    todo_text = "\n".join(f"- {x}{who((x, at))}({at})" for x, at in todos) if todos else v.no_todos
     mine = _about_me(todos, r)
     logger.info("會議紀錄草稿:%d 段、議題 %d 個(名稱站不住 %d)、重點丟掉 %d 條、合併 %d 層%s、"
                 "待辦 %d 條(丟掉 %d 條)、摘要丟掉 %d 句、重點標記丟掉 %d 個、跳過 %d 行、"
-                "名詞對照換 %d 處(專有名詞 %d 個)、與我相關 %d 條,耗時 %.1f 秒",
+                "名詞對照換 %d 處(專有名詞 %d 個)、與我相關 %d 條%s,耗時 %.1f 秒",
                 len(parts), len(picked), r.topics_dropped, r.points_dropped, level,
                 "(有截短)" if truncated else "", len(todos), r.dropped, summary_dropped,
                 marked_dropped, r.skipped, _replaced, len(_glossary), len(mine),
+                (f";五段:決議 {len(decisions)} 條、未決 {len(questions)} 條(丟掉 {r.extras_dropped} 條)、"
+                 f"負責人 {sum(1 for o in r.owners.values() if o[0])} 條、"
+                 f"期限 {sum(1 for o in r.owners.values() if o[1])} 條") if _five else "",
                 time.monotonic() - t0)
     report(1.0)
     marked_text = f"\n\n{v.highlights_heading}\n{marked}" if marked else ""
     # 與我相關放在草稿最上面(手機版改版 F);沒有就整節不出現
     about = f"{v.about_me_heading}\n" + "\n".join(mine) + "\n\n" if mine else ""
-    return (f"{about}{v.summary_heading}\n{summary}{marked_text}\n\n{v.topics_heading}\n{topics}"
-            f"\n\n{v.todos_heading}\n{todo_text}\n")
+    if not _five:
+        return (f"{about}{v.summary_heading}\n{summary}{marked_text}\n\n{v.topics_heading}\n{topics}"
+                f"\n\n{v.todos_heading}\n{todo_text}\n")
+
+    def items(xs: list[tuple[str, str]], none: str) -> str:
+        return "\n".join(f"- {x}({at})" for x, at in xs) if xs else "- " + none
+
+    # 標題與順序同雲端提示詞(五段)
+    return (f"{about}{v.full_summary_heading}\n{summary}{marked_text}\n\n{v.topics_heading}\n{topics}"
+            f"\n\n{v.decisions_heading}\n{items(decisions, v.no_decisions)}"
+            f"\n\n{v.todos_heading}\n{todo_text}"
+            f"\n\n{v.questions_heading}\n{items(questions, v.no_questions)}\n")
+
+
+def _dedup_sorted(xs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """同一句出現在兩段:留第一次;照時間排(不設上限:截掉的會是後半場)。"""
+    seen: dict[str, tuple[str, str]] = {}
+    for x in xs:
+        seen.setdefault(squash(x[0]), x)
+    return sorted(seen.values(), key=lambda x: seconds(x[1]))
+
+
+#: 短會議一次問的上限:縮短後的逐字稿不超過這麼多字(iOS 2026-11-03:10 分鐘 8,260 字的片段三顆都跑得完)。
+#: 那是 8192 token 的窗;Mac 上 Apple 的窗只有 4096,照扣掉回覆之後的比例縮(`_whole_max_chars`)
+WHOLE_MAX_CHARS = 8000
+#: 一次問的回覆要留的 token(同小程式與子行程的 2000)
+WHOLE_REPLY_TOKENS = 2000
+#: 這一場要不要試一次問(`generate(whole=False)` 是評測的對照組)
+_whole_on = True
+
+
+def _whole_max_chars() -> int:
+    """這一場一次問塞得下幾字。下載的模型窗都比 8192 大,一律 `WHOLE_MAX_CHARS`(長了品質也不見得好,
+    照 iOS);Apple 照小程式回報的窗換算:4096 → 約 2,700 字(使用者 2026-11-03 選「照各模型的窗算」)。"""
+    limit = WHOLE_MAX_CHARS
+    if _session is None and _apple_context < 8192:
+        limit = WHOLE_MAX_CHARS * (_apple_context - WHOLE_REPLY_TOKENS) // (8192 - WHOLE_REPLY_TOKENS)
+    return limit * _draft.char_scale
+
+
+def _whole_draft(lines: list[TimedLine], report: ProgressFn, t0: float) -> str | None:
+    """短會議整份一次問(使用者 2026-11-03 選,同 iOS `wholeDraft`):雲端提示詞的五段,整理成固定格式。
+    塞不下、出錯、格式認不出來回 None(走分段)。iOS 實測大中華 11 分鐘的片段:一次問決議+待辦 recall
+    0.4~0.6、負責人幾乎每條都有;分段只有 0.2~0.3(片段太短,每段只留一兩條)。
+    ⚠️ 一次問**不逐條對原句**,只擋原文沒有的數字(`clean_whole`)。"""
+    text = "\n".join(l.text for l in lines)
+    if len(text) > _whole_max_chars():
+        return None
+    report(0.05)
+    try:
+        # 預估取分段估計的一半(同 iOS)
+        with _creep(report, 0.05, 0.85, _expected / 2):
+            raw = _tw(without_thinking(_call("llm-whole", _draft.whole_instructions, text, slow=True).get("text", "")))
+    except (_Guardrail, _Overflow, _CallFailed) as e:
+        logger.info("會議紀錄草稿:一次問沒有成功,改分段(%s)",
+                    "安全過濾" if isinstance(e, _Guardrail) else (str(e) or "超出長度"))
+        return None
+    body = clean_whole(raw, text)
+    if body is None:
+        logger.info("會議紀錄草稿:一次問的回答認不出格式,改分段")
+        return None
+    report(0.85)
+    marked, marked_dropped = _marked_points(_highlights, report, 0.85, 0.99)
+    v = _draft
+    if marked:
+        body = body.replace(f"\n\n{v.topics_heading}", f"\n\n{v.highlights_heading}\n{marked}\n\n{v.topics_heading}", 1)
+    # 與我相關:點到稱呼的原句照收(跟分段一樣不經模型判斷)
+    mine = mentions(lines, _aliases)
+    logger.info("會議紀錄草稿:一次問(%d 字)、重點標記丟掉 %d 個、名詞對照換 %d 處、與我相關 %d 條,耗時 %.1f 秒",
+                len(text), marked_dropped, _replaced, len(mine), time.monotonic() - t0)
+    report(1.0)
+    about = f"{v.about_me_heading}\n" + "\n".join(mine) + "\n\n" if mine else ""
+    return f"{about}{body}\n"
 
 
 def _about_me(todos: list[tuple[str, str]], r: _ChunkResult) -> list[str]:
@@ -1828,7 +2216,8 @@ def _about_me(todos: list[tuple[str, str]], r: _ChunkResult) -> list[str]:
     names = [a for a in _aliases if len(a) >= 2]
     if not names:
         return []
-    out = [f"- {x}({at})" for x, at in todos if any(a in x for a in names)]
+    out = [f"- {x}({at})" for x, at in todos
+           if any(a in x or a in (r.owners.get((x, at), (None, None))[0] or "") for a in names)]
     out += [f"- {p}({tp.time})" for tp in r.topics for p in tp.points if any(a in p for a in names)]
     out += r.mine
     return list(dict.fromkeys(out))
@@ -1838,7 +2227,8 @@ def _about_me(todos: list[tuple[str, str]], r: _ChunkResult) -> list[str]:
 _highlights: list[MarkedTurn] = []
 
 
-def _marked_points(turns: list[MarkedTurn]) -> tuple[str, int]:
+def _marked_points(turns: list[MarkedTurn], report: "ProgressFn" = lambda f: None,
+                   a: float = 0.0, b: float = 0.0) -> tuple[str, int]:
     """每個重點一句「- …(時間)」;回 (那幾行, 核對沒過丟掉幾個)。一個問不出來就跳過那一個
     (同 `_map_chunk`:少一點,不整場失敗)。寫出來的那句字要有四成出自發言與備註、數字都在
     (手機版 10-19 改版 D;這邊連備註一起算,備註本來就是要它優先看的)。"""
@@ -1851,8 +2241,12 @@ def _marked_points(turns: list[MarkedTurn]) -> tuple[str, int]:
         prompt = h.text[:_chunk_chars(_used_engine or ENGINE_APPLE)]
         if h.notes:
             prompt += "\n" + _draft.attendee_note + _draft.note_sep.join(h.notes)
+        # 進度:[a, b] 平分給每一個重點,一個約「每分鐘秒數 × 1.4」秒(同 iOS)
+        step = (b - a) / len(picked)
         try:
-            msg = _call("llm-ask", _draft.highlight_instructions, prompt)
+            with _creep(report, a + step * i, a + step * (i + 1),
+                        _per_minute * 1.4):
+                msg = _call("llm-ask", _draft.highlight_instructions, prompt)
         except (_Guardrail, _Overflow, _CallFailed) as e:
             logger.info("會議紀錄草稿:跳過一個重點(%s):%s", h.time,
                         "安全過濾" if isinstance(e, _Guardrail) else (str(e) or "超出長度"))

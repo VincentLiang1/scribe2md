@@ -730,6 +730,9 @@ LLM_ADV_BUTTON = t("⚙ 地端 AI 設定…")
 LLM_ADV_OPEN = t("打開…")
 COMPARE_INFO = t("出處、大小、要等多久與強弱項")
 DRAFTS_TITLE = t("草稿資料夾")
+# 五段(使用者 2026-11-03,同 iOS 設定「草稿加上決議與未決問題」):預設勾著,關掉回三段
+FIVE_TITLE = t("草稿加上決議與未決問題")
+FIVE_INFO = t("多花約五到六成時間;不勾只有摘要、議題與待辦")
 # 「與我相關」(會議紀錄草稿第 6 階段,使用者 2026-10-29 選設計稿 A:右邊直接是輸入框)
 ABOUT_ME_TITLE = t("與我相關")
 ABOUT_ME_INFO = t("你的稱呼,用逗號分開;提到的放最上面")
@@ -764,16 +767,23 @@ def compare_cards() -> tuple:
     2~2.4 分、Qwen 約 1.4~1.9、Gemma 約 1.6~2.4;記憶體是 MLX 的配置峰值(Qwen 3.3、Gemma 4.8~5.4 GB)。
     ⚠️ **強弱項只寫兩場都成立的**(M5 使用者 2026-10-29 選):兩場的強弱不一樣(長會 Apple 交辦漏最多、
     短會反而抓最多),那種只在一場成立的不寫。每顆跑 3 次分數一模一樣,差別來自會議、不是運氣。"""
+    # 一小時的會要等多久照設定挑(2026-11-04 五段在 M5 重量:3 時 34 分那場長會 Apple 867 秒、Qwen 732、
+    # Gemma 1037,換成一小時約 4 / 3.4 / 4.8 分;同日 Windows 內顯同一場、電腦閒著 Qwen 787、Gemma 755,約 3.7 / 3.5 分)
+    five = minutes.five_sections()
+
+    def hour(v5, v3) -> str:
+        return t("約 {v} 分鐘", v=v5 if five else v3)
+
     if minutes._backend() == "apple":
         return (
             CompareCard(minutes.ENGINE_APPLE, "Apple Intelligence", t("美國"), "Apple",
-                        t("不用下載"), t("由 macOS 管"), t("約 {v} 分鐘", v="2~3"),
+                        t("不用下載"), t("由 macOS 管"), hour(4, "2~3"),
                         t("不用下載"), t("待辦最常不準")),
             CompareCard(minutes.ENGINE_QWEN, "Qwen3.5 4B", t("中國"), t("阿里巴巴"),
-                        f"{models.MLX_LLM_DOWNLOAD_GB} GB", t("約 {v} GB", v=3.5), t("約 {v} 分鐘", v=2),
+                        f"{models.MLX_LLM_DOWNLOAD_GB} GB", t("約 {v} GB", v=3.5), hour("3~4", 2),
                         t("待辦最準\n長會交辦最全"), t("短會交辦漏得多")),
             CompareCard(minutes.ENGINE_GEMMA, "Gemma 4 E4B", t("美國"), "Google",
-                        f"{models.GEMMA_MLX_DOWNLOAD_GB} GB", t("約 {v} GB", v=5), t("約 {v} 分鐘", v="2~3"),
+                        f"{models.GEMMA_MLX_DOWNLOAD_GB} GB", t("約 {v} GB", v=5), hour(5, "2~3"),
                         t("待辦比 Apple 準"), t("議題涵蓋最少\n檔案最大")),
         )
     if minutes._backend() != "openvino":
@@ -784,10 +794,10 @@ def compare_cards() -> tuple:
     # 0.63),不寫。沒有兩場都成立的那一格寫「—」,不硬湊
     return (
         CompareCard(minutes.ENGINE_OV, "Qwen3.5 4B", t("中國"), t("阿里巴巴"),
-                    f"{models.LLM_DOWNLOAD_GB['4b']} GB", t("約 {v} GB", v=5), t("約 {v} 分鐘", v="3~4"),
+                    f"{models.LLM_DOWNLOAD_GB['4b']} GB", t("約 {v} GB", v=5), hour(4, "3~4"),
                     t("議題較全\n關鍵數字較多"), "—"),
         CompareCard(minutes.ENGINE_GEMMA, "Gemma 4 E4B", t("美國"), "Google",
-                    f"{models.GEMMA_OV_DOWNLOAD_GB} GB", t("約 {v} GB", v=8), t("約 {v} 分鐘", v=4),
+                    f"{models.GEMMA_OV_DOWNLOAD_GB} GB", t("約 {v} GB", v=8), hour(4, 4),
                     "—", t("議題涵蓋較少\n記憶體多用一倍")),
     )
 
@@ -1947,6 +1957,8 @@ class App(tk.Tk):
         # 那扇裡「與我相關」的輸入框與它的值(點了才建、關窗時存檔並清掉;見 `_aliases_save`)
         self._aliases_var: tk.StringVar | None = None
         self._aliases_entry: ttk.Entry | None = None
+        # 同一扇的「草稿加上決議與未決問題」(勾了當下就存,見 `_llm_adv_open`)
+        self._five_var: tk.BooleanVar | None = None
         self._llm_rows: list[tuple[RowModel, ttk.Label, HandButton]] = []
         # 「各模型比較」那扇窗(點了才建;見 `_compare_open`)
         self._compare_win: tk.Toplevel | None = None
@@ -6894,7 +6906,7 @@ class App(tk.Tk):
         body.columnconfigure(1, minsize=self.px(ADV_CTL_W))
         llms = row_models()
         has_compare = bool(compare_cards())
-        rows = has_compare + len(llms) + 2
+        rows = has_compare + len(llms) + 3
         n = 0
 
         def section(title: str, hint: str, text: str, command,
@@ -6935,6 +6947,14 @@ class App(tk.Tk):
             entry.bind("<Return>", lambda _e: self._aliases_save())
             return entry
 
+        self._five_var = tk.BooleanVar(value=minutes.five_sections())
+
+        def five_check(parent):
+            # 勾了就落地(同手機版的開關);正在跑的那一場不受影響——`minutes.generate` 開頭就定好了
+            return ttk.Checkbutton(parent, variable=self._five_var, style="Card.TCheckbutton",
+                                   command=lambda: minutes.set_five_sections(self._five_var.get()))
+
+        section(FIVE_TITLE, FIVE_INFO, "", None, five_check)
         _, self._aliases_entry = section(ABOUT_ME_TITLE, ABOUT_ME_INFO, "", None, aliases_entry)
         section(DRAFTS_TITLE, DRAFTS_INFO, DRAFTS_OPEN, self._minutes_open_dir)
         bar = ttk.Frame(pad, style="Page.TFrame")
@@ -6949,7 +6969,7 @@ class App(tk.Tk):
         self._aliases_save()
         win, self._llm_adv_win = self._llm_adv_win, None
         self._llm_rows = []
-        self._aliases_var = self._aliases_entry = None
+        self._aliases_var = self._aliases_entry = self._five_var = None
         if win is not None and win.winfo_exists():
             win.destroy()
 

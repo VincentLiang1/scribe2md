@@ -650,5 +650,7 @@
  "草稿存在這裡,不放在逐字稿旁邊": "Drafts are kept here, not with transcripts",
  "草稿資料夾": "Drafts folder",
  "與我相關": "Related to me",
- "你的稱呼,用逗號分開;提到的放最上面": "Your names, comma-separated; go on top"
+ "你的稱呼,用逗號分開;提到的放最上面": "Your names, comma-separated; go on top",
+ "草稿加上決議與未決問題": "Add decisions and open questions to drafts",
+ "多花約五到六成時間;不勾只有摘要、議題與待辦": "Takes 50-60% longer; unchecked gives only the summary, topics and action items"
 }
