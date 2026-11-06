@@ -13,6 +13,7 @@ r"""會議紀錄草稿的提示詞與草稿檔的固定字串,跟著**會議語�
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from meeting_scribe import meetlang
@@ -67,12 +68,21 @@ class DraftVocab:
     to_confirm: str
     #: 短會議一次問(`llm-whole`):雲端提示詞的五段,一行一條、不要表格,好整理成固定格式
     whole_instructions: str
+    #: 接在一次問提示詞後面、只給 Qwen(`minutes.whole_prompt`):寫得少而完整(使用者 2026-11-06 選)
+    whole_concise: str
     whole_todos_heading: str       # 一次問的待辦沒有時間,標題不寫「約略時間」
     #: 未決問題要像個問題(有其中一個詞);短的隨口話擋掉(`minutes.looks_like_question`)
     question_words: tuple[str, ...]
     casual_questions: tuple[str, ...]
     #: 不算期限的回答(`minutes.real_deadline`)
     no_deadline_words: tuple[str, ...]
+
+    @property
+    def whole_examples(self) -> list[str]:
+        """一次問提示詞裡的範例(「- …」/"- …",不含「- 無」「- None」),取「｜」前的事項:小模型會照抄進
+        草稿,`minutes.copied_example` 擋。從提示詞抓,改範例不用改兩處(同 iOS `wholeExamples`)。"""
+        found = re.findall(r'[「"]- ([^」"]+)[」"]', self.whole_instructions)
+        return [x for x in (m.split("｜")[0] for m in found) if x not in ("無", "无", "None")]
 
 
 # 一段的欄位說明(段落協定 v2):前半是議題與重點,後半是待辦——格式錯重問兩次之後只問前半
@@ -182,7 +192,7 @@ ZH_TW = DraftVocab(
         "不要推測;沒有就不填。"
     ),
     extras_format=_ZH_TW_EXTRAS,
-    found_todo="已找到的待辦:",
+    found_todo="已找到的待辦(只用來填負責人與期限,不是決議):",
     full_summary_heading="## 會議摘要",
     decisions_heading="## 決議事項",
     questions_heading="## 未決問題",
@@ -192,15 +202,25 @@ ZH_TW = DraftVocab(
     deadline="期限",
     to_confirm="待確認",
     # ⚠️ 待辦用**實例**示範,不要寫「- 事項｜負責人:某某」這種範本:Apple 與 Gemma 會照字面抄出
-    # 「事項｜」(iOS 2026-11-03 實機;`minutes.tidy_todo` 另外再補一道)
+    # 「事項｜」(iOS 2026-11-03 實機;`minutes.tidy_todo` 另外再補一道)。
+    # ⚠️ **範例一律虛構、能不放就不放**(iOS 2026-11-05):取自真實會議的決議範例被抄進別場、也墊高那場的分數;
+    # 虛構的照樣被抄(`minutes.copied_example` 擋),所以決議範例拿掉、只留這一個待辦格式。期限寫「待確認」:
+    # 寫「下週五」時 Qwen 跟著憑空寫「下週一/三/五」(`minutes.ground_deadline` 再擋一次)。
+    # 人名維持「小王」,不用 iOS 那種「姓氏加職稱」的寫法:個資掃描一律當可能的真名
     whole_instructions=(
         "你是會議記錄助理。使用者會給你一場會議的逐字稿(語音辨識,可能有錯字,講者名字可能不準,每行開頭是講者)。"
         "請整理成繁體中文(台灣用語)的會議紀錄,依序用這五個標題:\n"
         "## 會議摘要\n## 主要議題\n## 決議事項\n## 待辦事項\n## 未決問題\n"
-        "會議摘要寫 3~5 句;其他每條用「- 」開頭、一行一條;待辦先寫要做的事、再寫負責人與期限,"
-        "例如「- 準備報價表｜負責人:小王｜期限:下週五」;沒講的寫「待確認」。\n"
-        "只寫逐字稿裡有的內容;不確定的寫「待確認」,不要自己推測。不要開場白、不要表格、不要粗體。"
+        "會議摘要寫 3~5 句;其他每條用「- 」開頭、一行一條。\n"
+        "決議事項:會中同意或定下來的做法、規則、範圍、時程。\n"
+        "待辦事項:有人被要求去做、或自己答應要做的事;先寫要做的事、再寫負責人與期限,"
+        "例如「- 準備報價表｜負責人:小王｜期限:待確認」。負責人、期限只寫會中講到的(期限照原話),"
+        "沒講就寫「待確認」,但事項本身照寫,不要整條只寫「待確認」。\n"
+        "會議中有講到的決議與待辦都要列出來;真的一條都沒有,才寫「- 無」。\n"
+        "只寫逐字稿裡有的內容,不要自己推測;報告裡已經做完的事不算決議、也不算待辦。不要開場白、不要表格、不要粗體。"
     ),
+    whole_concise=("\n寫得少而完整:決議最多 4 條、待辦最多 6 條,只寫主管當場裁示或交辦的事;報告、現況、已經做完的事不寫。"
+                   "每條待辦寫齊誰、對誰、做什麼、做到什麼程度或怎麼做;決議寫結論,不寫過程。"),
     whole_todos_heading="## 待辦",
     question_words=("？", "?", "是否", "嗎", "什麼", "如何", "怎麼", "為什麼", "多少", "哪", "能否", "可否",
                     "要不要", "有沒有", "還是", "待確認", "尚未", "未定", "再討論", "再確認", "詢問", "質疑"),
@@ -263,7 +283,7 @@ ZH_CN = DraftVocab(
         "不要推测;没有就不填。"
     ),
     extras_format=_ZH_CN_EXTRAS,
-    found_todo="已找到的待办:",
+    found_todo="已找到的待办(只用来填负责人与期限,不是决议):",
     full_summary_heading="## 会议摘要",
     decisions_heading="## 决议事项",
     questions_heading="## 未决问题",
@@ -276,10 +296,16 @@ ZH_CN = DraftVocab(
         "你是会议记录助理。用户会给你一场会议的逐字稿(语音识别,可能有错字,讲者名字可能不准,每行开头是讲者)。"
         "请整理成简体中文的会议纪要,依序用这五个标题:\n"
         "## 会议摘要\n## 主要议题\n## 决议事项\n## 待办事项\n## 未决问题\n"
-        "会议摘要写 3~5 句;其他每条用「- 」开头、一行一条;待办先写要做的事、再写负责人与期限,"
-        "例如「- 准备报价表｜负责人:小王｜期限:下周五」;没讲的写「待确认」。\n"
-        "只写逐字稿里有的内容;不确定的写「待确认」,不要自己推测。不要开场白、不要表格、不要粗体。"
+        "会议摘要写 3~5 句;其他每条用「- 」开头、一行一条。\n"
+        "决议事项:会中同意或定下来的做法、规则、范围、时程。\n"
+        "待办事项:有人被要求去做、或自己答应要做的事;先写要做的事、再写负责人与期限,"
+        "例如「- 准备报价表｜负责人:小王｜期限:待确认」。负责人、期限只写会中讲到的(期限照原话),"
+        "没讲就写「待确认」,但事项本身照写,不要整条只写「待确认」。\n"
+        "会议中有讲到的决议与待办都要列出来;真的一条都没有,才写「- 无」。\n"
+        "只写逐字稿里有的内容,不要自己推测;报告里已经做完的事不算决议、也不算待办。不要开场白、不要表格、不要粗体。"
     ),
+    whole_concise=("\n写得少而完整:决议最多 4 条、待办最多 6 条,只写主管当场裁示或交办的事;报告、现况、已经做完的事不写。"
+                   "每条待办写齐谁、对谁、做什么、做到什么程度或怎么做;决议写结论,不写过程。"),
     whole_todos_heading="## 待办",
     question_words=("？", "?", "是否", "吗", "什么", "如何", "怎么", "为什么", "多少", "哪", "能否", "可否",
                     "要不要", "有没有", "还是", "待确认", "尚未", "未定", "再讨论", "再确认", "询问", "质疑"),
@@ -351,7 +377,7 @@ EN = DraftVocab(
         "item. Only write what is said explicitly; don't guess; leave out what isn't there."
     ),
     extras_format=_EN_EXTRAS,
-    found_todo="Action item already found: ",
+    found_todo="Action item already found (only for owner and deadline, not a decision): ",
     full_summary_heading="## Meeting summary",
     decisions_heading="## Decisions",
     questions_heading="## Open questions",
@@ -365,12 +391,21 @@ EN = DraftVocab(
         "with errors; speaker names may be wrong; each line starts with the speaker). Write the minutes in "
         "English under these five headings, in order:\n"
         "## Meeting summary\n## Main topics\n## Decisions\n## Action items\n## Open questions\n"
-        "The summary is 3 to 5 sentences; everything else is one item per line starting with \"- \"; write "
-        "each action item as the task first, then owner and due date, e.g. \"- Prepare the price sheet｜Owner: "
-        "Mr. Wang｜Due: next Friday\"; write \"TBD\" for what wasn't said.\n"
-        "Only write what is in the transcript; write \"TBD\" when unsure; don't guess. No preamble, no tables, "
-        "no bold."
+        "The summary is 3 to 5 sentences; everything else is one item per line starting with \"- \".\n"
+        "Decisions: approaches, rules, scope or timelines agreed or settled in the meeting.\n"
+        "Action items: things someone was asked to do or promised to do; write the task first, then owner and "
+        "due date, e.g. \"- Prepare the price sheet｜Owner: Mr. Wang｜Due: TBD\". Only write an owner or due "
+        "date that was said in the meeting (due date in its original words); write \"TBD\" when it wasn't "
+        "said, but still write the task; never write an item that is only \"TBD\".\n"
+        "List every decision and action item mentioned in the meeting; write \"- None\" only if there really "
+        "are none.\n"
+        "Only write what is in the transcript; don't guess; things a report says are already done are not "
+        "decisions or action items. No preamble, no tables, no bold."
     ),
+    whole_concise=("\nKeep it short and complete: at most 4 decisions and 6 action items, only what a manager "
+                   "decided or assigned in the meeting; don't write reports, status updates or things already done. "
+                   "Each action item says who, for whom, what, and to what extent or how; a decision states the "
+                   "conclusion, not the discussion."),
     whole_todos_heading="## Action items",
     question_words=("?", "whether", "tbd", "to be confirmed", "not yet", "undecided", "open", "unclear",
                     "how ", "what ", "why ", "which ", "who "),

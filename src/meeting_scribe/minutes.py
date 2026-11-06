@@ -9,7 +9,7 @@ Apple Intelligence 打開時)或 Qwen3.5-4B(MLX 跑在 GPU,16 GB 以上的 Apple
 2026-10-11 使用者選定:核對原句、推算時間這類「改錯也不會報錯、只會悄悄變差」的東西要有測試守著)。
 
 預設出雲端提示詞的五段(摘要、主要議題、決議、待辦附負責人與期限、未決問題;使用者 2026-11-03,
-同 iOS `extras`),「⚙ 地端 AI 設定…」可以關回三段(摘要 + 主要議題 + 待辦;五段多花約五到六成時間)。五段在分段
+同 iOS `extras`),「⚙ 地端 AI 設定…」可以關回三段(摘要 + 主要議題 + 待辦;五段最多多花約三成時間)。五段在分段
 流程裡每段多問一次決議、未決、那件待辦的負責人與期限(`_extras`),跟待辦、重點同一套核對;塞得進窗的
 短會議整份一次問(`_whole_draft`)。開頭給它自由就會捏造日期、主持人、議題,所以分段流程最後一步只准
 寫摘要、標題由程式加。⚠️ **草稿不寫進逐字稿 md**(使用者 2026-10-11:跟手機版一樣,只給自己看、
@@ -70,10 +70,14 @@ WAIT_HINT_MIN_SEC = 20 * 60
 #: 3 時 34 分那場長會各跑一次:Apple 552 → 867 秒、Qwen 501 → 732 秒、Gemma 657 → 1037 秒。
 #: Windows(Core Ultra 7 258V 內顯)同一場、電腦閒著、每種之間歇 5 分鐘:Qwen 4B 588 → 787 秒、
 #: Gemma 575 → 755 秒。⚠️ 內顯跟整台共用記憶體,有人在用電腦、複製檔案或連跑半小時都會拖慢
-#: (同一場 Gemma 五段最慢量到 1466 秒),量倍數一定要在電腦閒著時
-FIVE_FACTOR = {"apple": 1.57, "qwen": 1.46, "gemma": 1.58, "openvino": 1.34}
+#: (同一場 Gemma 五段最慢量到 1466 秒),量倍數一定要在電腦閒著時。2026-11-06 五段改成分段一次問,
+#: Windows 同一場量兩次取平均(分母仍是上面那輪三段):Qwen 4B ×1.26/×1.28、Gemma ×1.20/×1.17。
+#: Mac 同日閒著、3 時 34 分與 59 分兩場各跑三段與五段:Apple 1090 → 702 秒、Qwen 773 → 901 秒、
+#: Gemma 899 → 795 秒(分段一次問每段只問一次,比三段的逐段問加合併還省)。Apple 那輪三段比 11-04 慢六成、
+#: 疑似開頭電腦沒閒下來,保守寫 1.0;Gemma 照實
+FIVE_FACTOR = {"apple": 1.0, "qwen": 1.2, "gemma": 0.9, "openvino": 1.27}
 #: Windows 的 Gemma 跟 Mac 那顆同鍵、倍數不同(`_rate` 照 `_backend()` 挑)
-FIVE_FACTOR_GEMMA_OV = 1.31
+FIVE_FACTOR_GEMMA_OV = 1.19
 
 # --- Windows(OpenVINO)那條的數字 ------------------------------------------------
 #: 一次呼叫最多等多久。⚠️ **不可以沿用 Apple 的 90 秒**:超時是「這一段悄悄跳過」,而
@@ -137,6 +141,8 @@ _draft: draftvocab.DraftVocab = _ZH
 #: 這一場的專有名詞(名詞對照表換過之後逐字稿裡有的正確寫法):每次問都接在指示最後(`_call`;
 #: 同手機版 `AISummary.glossary` 那個 TaskLocal)。`generate` 開頭算好
 _glossary: list[str] = []
+#: 分段一次問期間只接這一次問的字裡有的名詞(`_chunk_whole_draft` 開關;同 iOS `a46d80a`)
+_glossary_in_prompt = False
 #: 這一場「與我相關」用的稱呼(`generate` 開頭讀好;見 `aliases`)
 _aliases: list[str] = []
 #: 這一場名詞對照換了幾處(記錄檔用;只記數字,不記名詞——含真名)
@@ -732,17 +738,23 @@ def latin_terms(s: str) -> set[str]:
 def numbers_supported(text: str, context: str) -> bool:
     """句子裡的每個數字 context 都有(中文數字先換成阿拉伯數字:「300 萬」對得上「三百萬」)。
     英文數字詞只換 context 那邊(手機版 `69f6b43`:逐字稿念 "eighty-two point seven"、草稿寫 82.7%):
-    句子這邊也換的話,"one of"、"two approaches" 都變成要對的數字,會多丟一堆。"""
-    need = numbers(text)
+    句子這邊也換的話,"one of"、"two approaches" 都變成要對的數字,會多丟一堆。
+    句子這邊也不算只有百/千/萬/億的字(手機版 `723a79f`:「收費標準(如百分比)」被當成 100 整條丟掉);
+    context 那邊照算:逐字稿說「百萬」、草稿寫「100 萬」要對得上。"""
+    need = numbers(text, bare_units=False)
     return not need or need <= numbers(context) | english_numbers(context)
 
 
-def numbers(s: str) -> set[str]:
+def numbers(s: str, bare_units: bool = True) -> set[str]:
     """文字裡的數字:阿拉伯數字(去千分位)與中文數字(繁簡都認)。⚠️ 不能寫 `\\d`:它連全形與其他文字的
-    數字都算(手機版 Swift 的 `\\d` 甚至把「三百萬」算進去)。"""
+    數字都算(手機版 Swift 的 `\\d` 甚至把「三百萬」算進去)。`bare_units=False` 跳過「百分比」「千萬不要」
+    這種整串都是百千萬億的,並先去掉「萬一」。"""
     out = {m.replace(",", "") for m in re.findall(r"[0-9][0-9,]*(?:\.[0-9]+)?", s)}
+    zh = s if bare_units else s.replace("萬一", "").replace("万一", "")
     # 两、万、亿:簡中(手機版 `458daf8`;原本「两百」被讀成 100)
-    for m in re.findall(r"[零〇一二兩两三四五六七八九十百千萬万億亿]+", s):
+    for m in re.findall(r"[零〇一二兩两三四五六七八九十百千萬万億亿]+", zh):
+        if not bare_units and all(c in "百千萬万億亿" for c in m):
+            continue
         out |= chinese_number(m)
     return out
 
@@ -1006,6 +1018,13 @@ def looks_like_task(task: str, chars: tuple[int, int] = (4, 60)) -> bool:
     return chars[0] <= len(t) <= chars[1] and ":" not in t and "：" not in t   # 半形與全形冒號
 
 
+def looks_like_decision(text: str) -> bool:
+    """決議同一套,只是上限放寬一半(同 iOS `looksLikeDecision`):決議常帶條件,2026-11-05 跟雲端 Claude
+    比對時 60 字以上的真決議被丟了幾條(丟掉的多半是照抄原話、帶「名字:」,那些照擋)。"""
+    lo, hi = _draft.task_chars
+    return looks_like_task(text, (lo, hi * 3 // 2))
+
+
 def real_deadline(d: str | None) -> str | None:
     """期限要是真的期限:「沒有」「無」「待確認」這類回答不算(同 iOS `realDeadline`;2026-11-03 Apple
     長會收了「沒有」)。"""
@@ -1038,7 +1057,8 @@ def mentioned(word: str | None, quote: str, line: str) -> str | None:
 
 def tidy_todo(line: str) -> str:
     """一次問的待辦一行:照抄範本的「事項｜」去掉、冒號統一半形、「未指定」「待定」這類統一寫「待確認」
-    (同 iOS `tidyTodo`;2026-11-03 實機:Apple、Gemma 照抄「- 事項｜…」,Qwen 寫「負責人:未指定」)。"""
+    (同 iOS `tidyTodo`;2026-11-03 實機:Apple、Gemma 照抄「- 事項｜…」,Qwen 寫「負責人:未指定」);
+    負責人是機器標的講者(「講者 3」「未知」)也寫「待確認」:那不是人名(iOS 2026-11-05 Apple 9 條寫「講者 3」)。"""
     v = _draft
     s = line
     for p in ("- 事項｜", "- 事项｜", "- task｜", "- Task｜"):
@@ -1046,35 +1066,143 @@ def tidy_todo(line: str) -> str:
             s = "- " + s[len(p):]
     for label in (v.owner, v.deadline):
         s = s.replace(label + "：", label + ":").replace(label + ": ", label + ":")
+        # 半形「|」當分隔(桌面版 2026-11-06 Mac Qwen「…毛某 | 期限:待確認」):不換的話「 |」黏進負責人
+        s = re.sub(r"\s*\|\s*" + re.escape(label) + ":", lambda _m, lb=label: "｜" + lb + ":", s)
+        # Gemma 寫「- 事項：負責人:…」「- 事項(負責人:…;期限:…)」(Android 2026-11-05 實機):不換成「｜」
+        # 切不出事項,去重失效
+        s = re.sub(r"\s*[：:，,、；;(（]\s*" + re.escape(label) + ":", lambda _m, lb=label: "｜" + lb + ":", s)
+        s = re.sub(r"(?<!｜)\s+" + re.escape(label) + ":", lambda _m, lb=label: "｜" + lb + ":", s)
+    if ("｜" + v.owner + ":" in s or "｜" + v.deadline + ":" in s) and s[-1:] in (")", "）"):
+        s = s[:-1]
     for blank in ("未指定", "待定", "未提及", "未明確", "未明确", "不明", "未知", "無", "无",
                   "unspecified", "not specified", "none"):
         for label in (v.owner, v.deadline):
             s = s.replace(label + ":" + blank, label + ":" + v.to_confirm)
+    owner = re.escape(v.owner)
+    m = (re.search(owner + r":(講者|讲者|Speaker) ?\d+(?=｜|$)", s, re.IGNORECASE)
+         or re.search(owner + r":(未知|Unknown)(?=｜|$)", s, re.IGNORECASE))
+    if m:
+        s = s[:m.start()] + v.owner + ":" + v.to_confirm + s[m.end():]
     return s
 
 
-def _trim(s: str, chars: str = "") -> str:
-    """去頭尾的空白與 `chars` 裡的字(同 Swift `trimmingCharacters(in: …union(.whitespaces))`)。"""
-    i, j = 0, len(s)
-    while i < j and (s[i] in chars or s[i].isspace()):
-        i += 1
-    while j > i and (s[j - 1] in chars or s[j - 1].isspace()):
-        j -= 1
-    return s[i:j]
+#: 一次問的條目只有這些字就不算一條(比對前去掉標點、轉小寫;同 iOS `wholeBlanks`)
+WHOLE_BLANKS = frozenset(("待確認", "待确认", "無", "无", "沒有", "没有", "未提及", "tbd", "none", "na"))
+#: 一次問的回答裡同一條重複這麼多次就當成鬼打牆(正常的回答偶爾重複一兩條;同 iOS `maxWholeRepeats`)
+MAX_WHOLE_REPEATS = 5
+#: 一次問整理時各道關卡擋掉幾條(這一場累計,只記數字進記錄檔;跟雲端 Claude 比對時看是哪一道在丟東西)
+_whole_drops: dict[str, int] = {}
 
 
-def clean_whole(raw: str, transcript: str) -> str | None:
-    """一次問的回答 → 草稿的五段(同 iOS `cleanWhole`):標題換成固定的(模型會寫「### 3. 決議事項」
-    「**決議事項**」)、表格列轉成「- 事項｜負責人:…｜期限:…」、去掉開場白與粗體;有原文沒有的數字
-    的那一條丟掉。認不出摘要、或議題／決議／待辦一條都沒有就回 None(走分段)。"""
+def _drop(why: str) -> None:
+    _whole_drops[why] = _whole_drops.get(why, 0) + 1
+
+
+def whole_task(s: str) -> str:
+    """一次問的一條:「- 」之後、第一個「｜」之前(待辦的事項本身;同 iOS `wholeTask`)。"""
+    return (s[2:] if s.startswith("- ") else s).split("｜", 1)[0]
+
+
+_WEEKDAY_CJK = re.compile(r"(?:週|周|星期|禮拜|礼拜)([一二三四五六日天1-7])")
+_WEEKDAY_EN = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def weekdays(s: str) -> set[int]:
+    """講到的星期幾(1~7;「週日」「禮拜天」都是 7)。"""
+    out = {"一二三四五六".find(c) + 1 if c in "一二三四五六" else 7 if c in "日天" else int(c)
+           for c in _WEEKDAY_CJK.findall(s)}
+    low = s.lower()
+    return out | {i + 1 for i, w in enumerate(_WEEKDAY_EN) if w in low}
+
+
+def ground_deadline(line: str, transcript: str) -> str:
+    """期限是編的就改「待確認」,整條待辦照留。**改寫可以**(使用者 2026-11-06:「只要意思能表達就 OK」;
+    雲端 Claude 也寫「10 月 23 日會議前」「預計兩週內」這種不在原文的說法),只擋兩種編造:期限裡的數字
+    原文沒有、期限講了星期幾而原文沒講到那一天(iOS 2026-11-05 實跡:Qwen 憑空寫「下週一/三/五」,學的是
+    提示詞範例原本的「期限:下週五」)。iOS `e63d54d`、Android `42c031f` 同日跟上;原本要整串字出現在原文,
+    照那樣做時一場 3 時半的長會 119 條待辦只剩 1 條有期限(Claude 27 條有 12 條)。"""
     v = _draft
-    heads = [(("摘要", "summary"), v.full_summary_heading, None),
-             (("議題", "议题", "topic"), v.topics_heading, None),
-             (("決議", "决议", "decision"), v.decisions_heading, "- " + v.no_decisions),
-             (("待辦", "待办", "action"), v.whole_todos_heading, v.no_todos),
-             (("未決", "未决", "open question"), v.questions_heading, "- " + v.no_questions)]
+    mark = "｜" + v.deadline + ":"
+    i = line.find(mark)
+    if i < 0:
+        return line
+    due = line[i + len(mark):].split("｜", 1)[0]
+    if not due or due == v.to_confirm or squash(due) in squash(transcript):
+        return line
+    if numbers_supported(due, transcript) and weekdays(due) <= weekdays(transcript):
+        return line
+    return line.replace(mark + due, mark + v.to_confirm)
+
+
+def mark_owner_guess(line: str) -> str:
+    """一次問寫的負責人標「(推測)」(使用者 2026-11-06 選,同 iOS `markOwnerGuess`):4B 模型的負責人約一半
+    寫錯(常把交辦的人當負責人),提示詞與規則都改不動(iOS `docs/spec/08` §8.12)。待確認不標、已標不重複。
+    分段那條的負責人要出現在原句才收(`mentioned`),不經這裡。"""
+    v = _draft
+    mark = v.owner + ":"
+    guess = (" (inferred)" if v.language == draftvocab.EN.language
+             else "(推测)" if v.language == draftvocab.ZH_CN.language else "(推測)")
+    i = line.find(mark)
+    if i < 0:
+        return line
+    start = i + len(mark)
+    end = line.find("｜", start)
+    end = len(line) if end < 0 else end
+    who = line[start:end].strip()
+    if not who or who == v.to_confirm or who.endswith(guess.strip()):
+        return line
+    return line[:end] + guess + line[end:]
+
+
+def copied_example(item: str, transcript: str) -> bool:
+    """照抄提示詞範例:事項跟範例相近、字又大半不在原文裡(同 iOS `copiedExample`;2026-11-05 iPhone 與
+    Android 都把虛構的範例寫進沒談過這些的會議)。真的談到時字會在原文裡,不會誤丟。"""
+    t_ = whole_task(item)
+    return any(similar(t_, x) for x in _draft.whole_examples) and share(t_, transcript) < 0.5
+
+
+def whole_heads() -> list[tuple[tuple[str, ...], str, str | None]]:
+    """五段的(認標題的字, 固定標題, 沒有內容時的那一行)。"""
+    v = _draft
+    return [(("摘要", "summary"), v.full_summary_heading, None),
+            (("議題", "议题", "topic"), v.topics_heading, None),
+            (("決議", "决议", "decision"), v.decisions_heading, "- " + v.no_decisions),
+            (("待辦", "待办", "action"), v.whole_todos_heading, v.no_todos),
+            (("未決", "未决", "open question"), v.questions_heading, "- " + v.no_questions)]
+
+
+def render_whole(body: list[list[str]]) -> str:
+    """五段 → 草稿的文字(同 iOS `renderWhole`)。"""
+    sep = " " if _draft.language == draftvocab.EN.language else ""
+    return "\n\n".join(h[1] + "\n" + ((sep if i == 0 else "\n").join(body[i]) if body[i] else (h[2] or ""))
+                       for i, h in enumerate(whole_heads()))
+
+
+def drop_cross_repeats(body: list[list[str]]) -> None:
+    """決議跟待辦同一句的只留在待辦,未決跟待辦、決議同一句的丟掉(就地改;同 iOS `dropCrossRepeats`)。"""
+    todos = body[3]
+    body[2] = [d for d in body[2] if not any(similar(whole_task(x), whole_task(d)) for x in todos)]
+    done = todos + body[2]
+    body[4] = [q for q in body[4] if not any(similar(whole_task(x), whole_task(q)) for x in done)]
+
+
+def whole_sections(raw: str, transcript: str, need_summary: bool = True) -> list[list[str]] | None:
+    """一次問的回答 → 五段(摘要、議題、決議、待辦、未決),每段一行一條(同 iOS `wholeSections`):標題換成
+    固定的(模型會寫「### 3. 決議事項」「**決議事項**」)、表格列轉成「- 事項｜負責人:…｜期限:…」、去掉
+    開場白與粗體;有原文沒有的數字、照抄範例的那一條丟掉;期限不在原文改待確認、負責人標推測。
+    認不出格式、議題/決議/待辦一條都沒有、鬼打牆在待辦之前就開始,或(`need_summary`)摘要全被丟掉回 None。
+
+    兩處 2026-11-06 先在桌面版改、iOS `9af3906` 跟上(Windows 初測,一場 3 時半的長會 21 段丟 3 段、一場 1 小時的會 6 段丟 1 段,連帶丟了
+    那幾段已經寫好的決議與待辦):(1) 摘要**逐句**核對數字,只丟對不上的那一句(原本整行核對:模型把摘要
+    寫成一行時,一個數字對不上整段摘要就沒了、整段當成問不出東西);(2) 鬼打牆**從開始打轉的地方截斷**,
+    打轉之前寫好的照收——只有打轉發生在待辦之前(後面幾節都沒寫出來)才整份不要。分段一次問的每一段
+    不要求摘要(`need_summary=False`):有決議、待辦或議題就收。"""
+    v = _draft
+    heads = whole_heads()
     body: list[list[str]] = [[] for _ in heads]
     cur: int | None = None
+    stuck: int | None = None
+    repeats = 0
     for raw_line in raw.splitlines():
         line = _trim(raw_line)
         plain = _trim(line.replace("**", ""), "#* ")
@@ -1085,7 +1213,7 @@ def clean_whole(raw: str, transcript: str) -> str | None:
             if i is not None:
                 cur = i
                 continue
-        if cur is None or not line or all(c in "-|: " for c in line):
+        if cur is None or cur == stuck or not line or all(c in "-|: " for c in line):
             continue
         if line.startswith("|"):
             cells = [_trim(c) for c in line.strip("|").split("|")]
@@ -1095,22 +1223,82 @@ def clean_whole(raw: str, transcript: str) -> str | None:
             due = cells[2] if len(cells) > 2 and cells[2] else v.to_confirm
             item = f"- {cells[1]}｜{v.owner}:{owner}｜{v.deadline}:{due}"
         elif line[0] in "-*•":
-            item = "- " + _trim(line[1:])
+            # 「- - 事項」(iOS 2026-11-05 iPhone Qwen/Apple)去掉多的那個
+            item = "- " + line.lstrip("-*• ")
         elif cur == 0:
-            item = line
+            # 摘要逐句核對數字:一個數字對不上只丟那一句(見 docstring 的刻意不同 (1))
+            said = summary_sentences(line.replace("**", ""))
+            kept = [x for x in said if numbers_supported(x, transcript)]
+            if len(kept) < len(said):
+                _drop("摘要句的數字")
+            if kept:
+                body[0].append((" " if v.language == draftvocab.EN.language else "").join(kept))
+            continue
         else:
             continue
         item = item.replace("**", "")
+        # 整段只寫「- 待確認」「- 無」(iOS 2026-11-05 Gemma 報告型的會三段都這樣):不算一條,讓那段顯示「沒有找到…」
+        if cur > 0 and squash(item[2:]).lower() in WHOLE_BLANKS:
+            continue
         if cur == 3:
-            item = tidy_todo(item)
+            tidied = tidy_todo(item)
+            # 負責人、期限斷到下一行(桌面版 2026-11-06 Mac Qwen「- 發送規劃資料。」接「-｜負責人:…」):
+            # 接回上一條還沒有負責人的;接不上就是空的一條。也有寫成「- 負責人：…」前面沒有「｜」的(iOS `c8bb07e`
+            # 實機),所以拿掉開頭的「-」與「｜」再補一個「｜」,不靠固定切掉兩個字
+            if not squash(whole_task(tidied)):
+                if not body[3] or "｜" in body[3][-1]:
+                    continue
+                tidied = tidy_todo(body[3].pop().rstrip("。.") + "｜" + tidied[1:].lstrip(" ｜"))
+            grounded_due = ground_deadline(tidied, transcript)
+            if grounded_due != tidied:
+                _drop("期限不在原文")
+            item = mark_owner_guess(grounded_due)
+        if cur >= 2 and copied_example(item, transcript):
+            _drop("照抄範例")
+            continue
         if not numbers_supported(item, transcript):
+            _drop("原文沒有的數字")
+            continue
+        # 同一段一模一樣的條目只留一條;重複太多是模型在鬼打牆(iOS 2026-11-05 Qwen 14 分鐘的會:決議段
+        # 4 句輪流寫了 160 行,寫到字數上限,待辦、未決全空)。比「｜」前的事項:Qwen 會同兩件待辦輪流寫、
+        # 每次換期限,整行比不到。打轉之後的都不要;打轉在待辦之前(後面幾節沒寫出來)才整份不要
+        task = squash(whole_task(item))
+        if any(squash(whole_task(x)) == task for x in body[cur]):
+            repeats += 1
+            if repeats >= MAX_WHOLE_REPEATS:
+                _drop("鬼打牆")
+                if cur >= 3:
+                    break
+                # 分段一次問的一段:打轉的這節截斷、跳到下一個標題,其他節照收(iOS `2b96d5d`,iPhone Apple
+                # 2.5 小時會議:一段的決議輪流寫了 34 條,整段連同待辦都丟)。整場一次問照舊回 None,還能退回分段
+                if not need_summary:
+                    stuck, repeats = cur, 0
+                    continue
+                return None
             continue
         body[cur].append(item)
-    if not body[0] or cur is None or not (body[1] or body[2] or body[3]):
+    if cur is None or (need_summary and not body[0]) or not (body[1] or body[2] or body[3]):
         return None
-    sep = " " if v.language == draftvocab.EN.language else ""
-    return "\n\n".join(h[1] + "\n" + ((sep if i == 0 else "\n").join(body[i]) if body[i] else (h[2] or ""))
-                       for i, h in enumerate(heads))
+    # 跟分段一樣:決議跟待辦同一句的只留在待辦,未決跟待辦、決議同一句的丟掉
+    # (iOS 2026-11-05 Apple:11 條待辦有 8 條在決議段一字不差又寫一次)
+    drop_cross_repeats(body)
+    return body
+
+
+def clean_whole(raw: str, transcript: str) -> str | None:
+    """一次問的回答 → 草稿的五段(同 iOS `cleanWhole`);認不出格式、鬼打牆回 None(走分段)。"""
+    body = whole_sections(raw, transcript)
+    return None if body is None else render_whole(body)
+
+
+def _trim(s: str, chars: str = "") -> str:
+    """去頭尾的空白與 `chars` 裡的字(同 Swift `trimmingCharacters(in: …union(.whitespaces))`)。"""
+    i, j = 0, len(s)
+    while i < j and (s[i] in chars or s[i].isspace()):
+        i += 1
+    while j > i and (s[j - 1] in chars or s[j - 1].isspace()):
+        j -= 1
+    return s[i:j]
 
 
 def timed_chunks(lines: list[TimedLine], limit: int) -> list[list[TimedLine]]:
@@ -1488,7 +1676,9 @@ def _call(kind: str, instructions: str, prompt: str, lite: bool = False, retry: 
     ⚠️ **這場的專有名詞接在這裡**(唯一的咽喉):分段、重問、重點、合併、摘要每一次問都要帶
     (同手機版);接在指示的文字後面,子行程再把格式說明接在它後面。"""
     terms = _glossary
-    if _session is None and _apple_context < 8192:
+    # 分段一次問(iOS `a46d80a`,iPhone Apple 2.5 小時會議):整場的名詞附在每一段,模型把那段根本沒談的
+    # 詞寫進摘要與未決(「優化甲、乙、丙…等工具的整合」)
+    if _glossary_in_prompt or (_session is None and _apple_context < 8192):
         # ⚠️ Mac 的 Apple 窗只有 4096、一段又塞 900 字:整場前 30 個名詞全接上去,回答寫到一半就被
         # 截斷、格式解不開(2026-10-29 真機:3 時 34 分那場連續 3 段失敗、整場停掉;不接清單就跑得完)。
         # 只接**這一次問的字裡真的有**的(手機的窗是 8192,照接整場的)
@@ -1773,9 +1963,10 @@ def _extras(r: _ChunkResult, lines: list[TimedLine], text: str, pool: list[Timed
                     "安全過濾" if isinstance(e, _Guardrail) else (str(e) or "超出長度"))
         return
 
-    def stands(e: tuple[str, str]) -> str | None:
+    def stands(e: tuple[str, str], decision: bool = False) -> str | None:
         e_text, e_quote = e
-        if garbled(e_text) or repetitive(e_quote) or not looks_like_task(e_text, _draft.task_chars):
+        shaped = looks_like_decision(e_text) if decision else looks_like_task(e_text, _draft.task_chars)
+        if garbled(e_text) or repetitive(e_quote) or not shaped:
             return None
         hit = locate_line(e_quote, pool)
         if hit is not None:
@@ -1785,7 +1976,7 @@ def _extras(r: _ChunkResult, lines: list[TimedLine], text: str, pool: list[Timed
     topic = r.topics[0].title if r.topics else ""
     d = _quoted(x.get("decision"))
     if d is not None:
-        at = None if similar(d[0], topic) else stands(d)
+        at = None if similar(d[0], topic) else stands(d, decision=True)
         if at is None:
             r.extras_dropped += 1
         else:
@@ -1955,10 +2146,11 @@ def _chunk_chars(engine: str) -> int:
 
 def generate(md: str, progress: ProgressFn | None = None, engine: str | None = None, *,
              title: str = "", corrections: list[namefix.Entry] | None = None,
-             five: bool | None = None, whole: bool = True) -> str:
+             five: bool | None = None, whole: bool = True, chunk_whole: bool = True) -> str:
     """逐字稿 md → 會議紀錄草稿(Markdown,五段或三段)。進度 0~1:分段佔 85%、合併與收尾佔 15%。
 
-    `five` 不給就照設定(`five_sections`);`whole=False` 不走短會議一次問(評測的對照組用)。
+    `five` 不給就照設定(`five_sections`);`whole=False` 不走短會議一次問、`chunk_whole=False` 不走分段一次問
+    (評測的對照組用)。
 
     `engine` 不給就用 `default_engine()`(畫面上點了就記進設定,所以就是使用者選的那個)。
     `title` 是逐字稿檔名(名詞對照表的分組照它挑);`corrections` 給了就不讀聲紋同步資料夾那一份
@@ -1974,9 +2166,11 @@ def generate(md: str, progress: ProgressFn | None = None, engine: str | None = N
     if mine is None or not mine.ok:
         raise UserFacingError(t("無法產生會議紀錄草稿:{v}", v=mine.reason if mine else can.reason))
     _used_engine = engine
-    global _five, _whole_on
+    global _five, _whole_on, _chunk_whole_on
     _five = five_sections() if five is None else five
     _whole_on = whole
+    _chunk_whole_on = chunk_whole
+    _whole_drops.clear()
     report = _forward_only(progress or (lambda f: None))
     t0 = time.monotonic()
     global _highlights, _draft, _aliases
@@ -2072,6 +2266,10 @@ def _compose(parts: list[list[TimedLine]], report: ProgressFn, t0: float) -> str
         whole = _whole_draft([l for p in parts for l in p], report, t0)
         if whole is not None:
             return whole
+    if _five and _chunk_whole_on:
+        whole = _chunk_whole_draft([l for p in parts for l in p], report, t0)
+        if whole is not None:
+            return whole
     r = _map_all(parts, report)
     notes = ["\n".join("- " + x for x in tp.points) for tp in r.topics if tp.points]
     if not notes:
@@ -2165,15 +2363,27 @@ WHOLE_MAX_CHARS = 8000
 WHOLE_REPLY_TOKENS = 2000
 #: 這一場要不要試一次問(`generate(whole=False)` 是評測的對照組)
 _whole_on = True
+#: 分段一次問一段幾字(iOS 2026-11-05 Mac 實測 Qwen 2000/3000/4000 字 = 0.70/0.70/0.50,2000 條目多一半 → 3000;
+#: 8000 反而差,Gemma 長輸入只寫兩三條)
+CHUNK_WHOLE_CHARS = 3000
+#: 這一場塞不進一次問時走不走分段一次問(預設走,使用者 2026-11-06 定,同 iOS;`generate(chunk_whole=False)`
+#: 是評測的對照組:走舊的分段多次問)
+_chunk_whole_on = True
+
+
+def _window_chars(chars: int) -> int:
+    """`chars` 是 8192 token 的窗塞得下的字數;換算成這一場的窗(下載的模型窗都比 8192 大,照原數;
+    Mac 上 Apple 的窗只有 4096,照扣掉回覆之後的比例縮;使用者 2026-11-03 選「照各模型的窗算」)。"""
+    if _session is None and _apple_context < 8192:
+        chars = chars * (_apple_context - WHOLE_REPLY_TOKENS) // (8192 - WHOLE_REPLY_TOKENS)
+    return chars * _draft.char_scale
 
 
 def _whole_max_chars() -> int:
-    """這一場一次問塞得下幾字。下載的模型窗都比 8192 大,一律 `WHOLE_MAX_CHARS`(長了品質也不見得好,
-    照 iOS);Apple 照小程式回報的窗換算:4096 → 約 2,700 字(使用者 2026-11-03 選「照各模型的窗算」)。"""
-    limit = WHOLE_MAX_CHARS
-    if _session is None and _apple_context < 8192:
-        limit = WHOLE_MAX_CHARS * (_apple_context - WHOLE_REPLY_TOKENS) // (8192 - WHOLE_REPLY_TOKENS)
-    return limit * _draft.char_scale
+    """這一場一次問塞得下幾字:8000 字(長了品質也不見得好,照 iOS);分段一次問開著時降到一段的長度——
+    5000~8000 字的會議切段也比較好(iOS 2026-11-05 Mac:7,600 字 Qwen 0.56→0.83、Gemma 0→0.39)。
+    Mac 的 Apple 照窗換算:8000 → 約 2,700 字、3000 → 約 1,000 字(跟舊分段的一段 900 字差不多)。"""
+    return _window_chars(CHUNK_WHOLE_CHARS if _chunk_whole_on else WHOLE_MAX_CHARS)
 
 
 def _whole_draft(lines: list[TimedLine], report: ProgressFn, t0: float) -> str | None:
@@ -2186,9 +2396,9 @@ def _whole_draft(lines: list[TimedLine], report: ProgressFn, t0: float) -> str |
         return None
     report(0.05)
     try:
-        # 預估取分段估計的一半(同 iOS)
-        with _creep(report, 0.05, 0.85, _expected / 2):
-            raw = _tw(without_thinking(_call("llm-whole", _draft.whole_instructions, text, slow=True).get("text", "")))
+        # 五段的每分鐘秒數就是一次問那一類的速度,不再除以 2(iOS 2026-11-06 `17286df`:除了會跑太快、後段卡住)
+        with _creep(report, 0.05, 0.85, _expected):
+            raw = _tw(without_thinking(_call("llm-whole", whole_prompt(), text, slow=True).get("text", "")))
     except (_Guardrail, _Overflow, _CallFailed) as e:
         logger.info("會議紀錄草稿:一次問沒有成功,改分段(%s)",
                     "安全過濾" if isinstance(e, _Guardrail) else (str(e) or "超出長度"))
@@ -2204,8 +2414,150 @@ def _whole_draft(lines: list[TimedLine], report: ProgressFn, t0: float) -> str |
         body = body.replace(f"\n\n{v.topics_heading}", f"\n\n{v.highlights_heading}\n{marked}\n\n{v.topics_heading}", 1)
     # 與我相關:點到稱呼的原句照收(跟分段一樣不經模型判斷)
     mine = mentions(lines, _aliases)
-    logger.info("會議紀錄草稿:一次問(%d 字)、重點標記丟掉 %d 個、名詞對照換 %d 處、與我相關 %d 條,耗時 %.1f 秒",
-                len(text), marked_dropped, _replaced, len(mine), time.monotonic() - t0)
+    logger.info("會議紀錄草稿:一次問(%d 字)、重點標記丟掉 %d 個、名詞對照換 %d 處、與我相關 %d 條、整理時擋掉 %s,"
+                "耗時 %.1f 秒", len(text), marked_dropped, _replaced, len(mine), _whole_drops or "0", time.monotonic() - t0)
+    report(1.0)
+    about = f"{v.about_me_heading}\n" + "\n".join(mine) + "\n\n" if mine else ""
+    return f"{about}{body}\n"
+
+
+def _ask_whole_part(part: list[TimedLine], depth: int = 0) -> list[list[list[str]]]:
+    """分段一次問的一段:回這段整理出的五段(認不出格式是空的);爆窗就對半切再問,最多兩層(同 iOS
+    `askWholePart`;Qwen 中文 token 比較多,Android 實測過爆窗)。安全過濾、格式錯、超時往上拋。"""
+    text = "\n".join(l.text for l in part)
+    try:
+        raw = _tw(without_thinking(_call("llm-whole", whole_prompt(), text, slow=True).get("text", "")))
+    except _Overflow:
+        if depth >= 2 or len(part) < 2:
+            return []
+        half = len(part) // 2
+        return _ask_whole_part(part[:half], depth + 1) + _ask_whole_part(part[half:], depth + 1)
+    body = whole_sections(raw, text, need_summary=False)
+    return [] if body is None else [body]
+
+
+#: 分段一次問每段最多收幾條(五段的索引 → 條數;同 iOS `chunkQuota`,`f534ab6`,使用者 2026-11-06 選):
+#: Qwen 的未決多半是「某某是否…」,有用的通常是每段第一條(iPhone 2.5 小時會議,子代理逐條對 Claude:
+#: 212 → 164 條,得分 0.62 → 0.61)。決議、待辦不限;段長跟 iOS 一樣 3000 字,照搬。Windows 的 Qwen 鍵是 openvino
+#: Apple 也只限未決每段 1 條(iOS `e1bec5f`,使用者 2026-11-07 選):Mac 同一輪兩場未決少二三成、決議+待辦在擾動內;
+#: iOS 原本的 2/3/1 Mac 實測不採用(一段只有約 1,000 字,砍掉的有答對的;數據在 docs/dev/minutes.md)
+CHUNK_QUOTA: dict[str, dict[int, int]] = {ENGINE_QWEN: {4: 1}, ENGINE_OV: {4: 1}, ENGINE_APPLE: {4: 1}}
+
+
+#: 一次問接上 `whole_concise` 的引擎(使用者 2026-11-06 選「只給 Qwen」):Mac 四場 Qwen 條數少四到七成、
+#: 語意比對 0.72 → 0.70、有用條目比例 0.63 → 0.75;Gemma 0.64 → 0.43(分不出報告與交辦,真交辦被擠回議題),
+#: 所以不給。數據在 docs/dev/minutes.md
+CONCISE_ENGINES = frozenset((ENGINE_QWEN, ENGINE_OV))
+
+
+def whole_prompt() -> str:
+    """一次問(整場與分段)的提示詞:Qwen 再接「寫得少而完整」。"""
+    return _draft.whole_instructions + (_draft.whole_concise if _used_engine in CONCISE_ENGINES else "")
+
+
+def glossary_dump(s: str) -> bool:
+    """照抄專有名詞清單:一句裡有 4 個以上不同的專有名詞(同 iOS `glossaryDump`;iPhone Apple 2.5 小時會議
+    摘要寫成「優化甲、乙、丙、丁…等工具的整合」,詞多半是那段沒談的)。正常的一條很少同時點到 4 個。"""
+    return len(_glossary) >= 4 and sum(g in s for g in _glossary) >= 4
+
+
+def _chunk_whole_draft(lines: list[TimedLine], report: ProgressFn, t0: float) -> str | None:
+    global _glossary_in_prompt
+    _glossary_in_prompt = True
+    try:
+        return _chunk_whole_parts(lines, report, t0)
+    finally:
+        _glossary_in_prompt = False
+
+
+def _chunk_whole_parts(lines: list[TimedLine], report: ProgressFn, t0: float) -> str | None:
+    """分段一次問(預設,使用者 2026-11-06 定;同 iOS `chunkWholeDraft`、Android `DraftText.mergeWhole`):
+    塞不進一次問的會議切成每段約 `CHUNK_WHOLE_CHARS` 字,每段都用一次問的提示詞問五段,再合併——單趟
+    (不跑舊的重點與多問那兩問)、跨段同一件事只留第一次、議題每段平均分名額、摘要用各段摘要再問一次並核對。
+    iOS 跟雲端 Claude 比對(決議+待辦 recall):Qwen 0.15~0.42 → 0.50~0.86、Gemma 0~0.44 → 0.17~0.65,
+    而且比較快。⚠️ 跟一次問一樣**不逐條對原句**(擋的是原文沒有的數字、照抄範例、鬼打牆)。
+    只切得出一段、或連續好幾段問不出東西回 None(走舊的分段)。"""
+    global _glossary_in_prompt
+    parts = timed_chunks(lines, _window_chars(CHUNK_WHOLE_CHARS))
+    if len(parts) < 2:
+        return None
+    per = 0.85 / len(parts)
+    merged: list[list[str]] = [[] for _ in range(5)]
+    topics_per: list[list[str]] = []
+    summaries: list[str] = []
+    failed = dumped = 0
+    v = _draft
+    sep = " " if v.language == draftvocab.EN.language else ""
+    for i, part in enumerate(parts):
+        logger.info("會議紀錄草稿:分段一次問 %d/%d", i + 1, len(parts))   # 心跳(一段可能要一兩分鐘)
+        try:
+            with _creep(report, per * i, per * (i + 1), _expected * per):
+                got = _ask_whole_part(part)
+        except (_Guardrail, _CallFailed) as e:
+            logger.info("會議紀錄草稿:分段一次問第 %d 段跳過:%s", i + 1,
+                        "安全過濾" if isinstance(e, _Guardrail) else str(e))
+            got = None
+        if not got:
+            failed += 1
+        for body in got or []:
+            said = [x for x in summary_sentences(sep.join(body[0])) if not glossary_dump(x)]
+            dumped += len(summary_sentences(sep.join(body[0]))) - len(said)
+            if said:
+                summaries.append(sep.join(said))
+            topics_per.append([x for x in body[1] if not glossary_dump(x)])
+            quota = CHUNK_QUOTA.get(_used_engine or "", {})
+            for k in (2, 3, 4):
+                for item in body[k][:quota.get(k, len(body[k]))]:
+                    if glossary_dump(item):
+                        dumped += 1
+                        continue
+                    if not any(similar(whole_task(x), whole_task(item)) for x in merged[k]):
+                        merged[k].append(item)
+        report(per * (i + 1))
+        # 連續好幾段都問不出東西:模型出狀況,不要整場空等,改走原本的分段
+        if failed >= MAX_STUCK_CHUNKS and not (summaries or any(merged[2:]) or any(topics_per)):
+            logger.info("會議紀錄草稿:分段一次問前 %d 段都問不出東西,改走分段", failed)
+            return None
+    if not (summaries or any(merged[2:]) or any(topics_per)):
+        return None
+    drop_cross_repeats(merged)
+    # 議題:每段平均分名額(至少 1),整份最多 MAX_TOPICS,相近的只留一條
+    quota = max(1, MAX_TOPICS // max(1, len(topics_per)))
+    for ts in topics_per:
+        for tp in ts[:quota]:
+            if len(merged[1]) < MAX_TOPICS and not any(similar(x, tp) for x in merged[1]):
+                merged[1].append(tp)
+    summary, summary_dropped = "", 0
+    if summaries:
+        # ⚠️ 各段摘要太長先分批合併(同三段那條的 `_merge`):Mac 的 Apple 一段只有約 1,000 字,3 時 34 分的
+        # 長會切成六十幾段,各段摘要接起來超出 4096 的窗、整份草稿報「超出長度」(2026-11-06 實測;iPhone 的窗
+        # 8192、一段 3000 字,手機版沒遇到)。合成還是失敗就用第一段的摘要,不讓已經整理好的五段整份沒了
+        try:
+            with _creep(report, 0.85, 0.92, _expected * 0.05):
+                notes, _, _ = _merge(summaries)
+                joined = "\n".join(notes)
+                summary, summary_dropped = grounded_sentences(
+                    _tidy_summary(_ask(v.summary_instructions, joined)), joined)
+            # 合成那一問也會照抄(iOS `2b96d5d`:各段已濾過,合成後又寫出一串 8 個名詞)
+            kept = [x for x in summary_sentences(summary) if not glossary_dump(x)]
+            dumped += len(summary_sentences(summary)) - len(kept)
+            summary = sep.join(kept).strip()
+        except UserFacingError as e:
+            logger.info("會議紀錄草稿:分段一次問的摘要合成沒有成功,用第一段的摘要(%s)", e)
+    merged[0] = [summary or (summaries[0] if summaries else "")]
+    if dumped:
+        _whole_drops["照抄名詞清單"] = _whole_drops.get("照抄名詞清單", 0) + dumped
+    body = render_whole(merged)
+    report(0.92)
+    _glossary_in_prompt = False   # 重點標記照接整場的(同 iOS)
+    marked, marked_dropped = _marked_points(_highlights, report, 0.92, 0.99)
+    if marked:
+        body = body.replace(f"\n\n{v.topics_heading}", f"\n\n{v.highlights_heading}\n{marked}\n\n{v.topics_heading}", 1)
+    mine = mentions(lines, _aliases)
+    logger.info("會議紀錄草稿:分段一次問 %d 段(問不出 %d 段)、議題 %d 個、決議 %d 條、待辦 %d 條、未決 %d 條、"
+                "摘要丟掉 %d 句、重點標記丟掉 %d 個、名詞對照換 %d 處、與我相關 %d 條、整理時擋掉 %s,耗時 %.1f 秒",
+                len(parts), failed, len(merged[1]), len(merged[2]), len(merged[3]), len(merged[4]),
+                summary_dropped, marked_dropped, _replaced, len(mine), _whole_drops or "0", time.monotonic() - t0)
     report(1.0)
     about = f"{v.about_me_heading}\n" + "\n".join(mine) + "\n\n" if mine else ""
     return f"{about}{body}\n"
