@@ -1,4 +1,4 @@
-r"""在桌面與「開始功能表」放上「AI 文件.MD 轉換器」的捷徑。
+r"""在桌面與「開始功能表」放上「會議助手電腦版」的捷徑。
 
 由「Install.bat」在環境建好、而且實際 import 過一次之後呼叫(事後要重建也可以
 直接 `uv run python scripts/make_shortcut.py`)。
@@ -33,19 +33,26 @@ from ctypes import POINTER, byref, c_int, c_void_p, c_wchar_p
 from pathlib import Path
 from uuid import UUID
 
+from meeting_scribe import brand
 from meeting_scribe.paths import desktop_dir, start_menu_programs_dir
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# 對使用者顯示的名稱(2026-08-09 定名)。⚠️ 這個字串在 repo 裡有好幾處,
-# 要改名就 grep -rn 全 repo,別只改這裡——見 CLAUDE.md 開頭那條。
-APP_NAME = "AI 文件.MD 轉換器"
+# 捷徑名 = 對使用者顯示的名稱,照**安裝當下**的介面語言挑一個(`app_name()`;2026-11-07 改名:
+# 會議助手電腦版 / 会议助手电脑版 / Notetaker Desktop,值在 `brand`)。
+APP_NAME = brand.APP_NAME
+ZH_CN_APP_NAME = brand.APP_NAME_ZH_CN
+EN_APP_NAME = brand.APP_NAME_EN
+# ⚠️ 裝新的那一顆時,這些名字的捷徑一律刪掉:換語言重裝、或從舊名(`brand.LEGACY_NAMES`)更新
+# 上來,不刪就是桌面上兩顆一樣的圖示
+NAMES = (APP_NAME, ZH_CN_APP_NAME, EN_APP_NAME, *brand.LEGACY_NAMES)
 # ⚠️ **2026-09-05 從「啟動.bat」換過來**(使用者:「啟動.bat 已經沒有用了,現在是要
 # 執行Launch.vbs 才對」):`.bat` 起的是 gradio 版,而這條線的入口是原生視窗。
 LAUNCHER = "Launch.vbs"
 ICON = Path("src") / "meeting_scribe" / "assets" / "icon.ico"
 # 滑鼠停在圖示上會看到這句。寫「不會上傳」是因為那是同仁最常問的第一個問題
 DESCRIPTION = "把錄音、影片、文件轉成 Markdown(全程在這台電腦上跑,不會上傳)"
+EN_DESCRIPTION = "Turns recordings, videos and documents into Markdown (runs entirely on this computer, nothing is uploaded)"
 
 def _say(zh_tw: str, zh_cn: str, en: str) -> str:
     """挑介面語言那一句(與工具介面同一套:🌐 選過的優先,否則跟系統)。
@@ -177,20 +184,35 @@ def write_shortcut(dest: Path, target: Path, args: str, workdir: Path,
         ole32.CoUninitialize()
 
 
-def install_to(folder: Path) -> Path:
+def app_name() -> str:
+    """捷徑名:照介面語言(會議助手電腦版 / 会议助手电脑版 / Notetaker Desktop)。"""
+    return _say(APP_NAME, ZH_CN_APP_NAME, EN_APP_NAME)
+
+
+def install_to(folder: Path, name: str | None = None) -> Path:
     """在 folder 底下建立(或覆寫)捷徑,回傳落地的 .lnk 路徑。
 
     同名一律覆寫:同仁被教的第一件事就是「搬過資料夾就重跑Install.bat」,而
-    那句話要成立,這裡就得真的把舊捷徑那條指到別處的路徑改回來。"""
+    那句話要成立,這裡就得真的把舊捷徑那條指到別處的路徑改回來。
+    `name` 給了就用它;沒給照介面語言(`app_name`)。
+    ⚠️ `NAMES` 裡其他名字的那一顆刪掉:換語言重裝或從舊名更新上來,不刪就是桌面上兩顆一樣的圖示。"""
     folder.mkdir(parents=True, exist_ok=True)
-    dest = folder / f"{APP_NAME}.lnk"
+    name = name or app_name()
+    dest = folder / f"{name}.lnk"
+    for other in NAMES:
+        if other != name:
+            try:
+                (folder / f"{other}.lnk").unlink(missing_ok=True)
+            except OSError:
+                pass
     vbs = ROOT / LAUNCHER
     if host := script_host():
         # 參數要自己加引號:工具資料夾的路徑含中文、也可能含空格
         target, args = host, f'"{vbs}"'
     else:
         target, args = vbs, ""
-    write_shortcut(dest, target, args, ROOT, ROOT / ICON, DESCRIPTION)
+    write_shortcut(dest, target, args, ROOT, ROOT / ICON,
+                   EN_DESCRIPTION if name == EN_APP_NAME else DESCRIPTION)
     return dest
 
 
@@ -225,8 +247,8 @@ def main() -> int:
         return 3
 
     print(_say(f"已經在桌面放上「{APP_NAME}」,以後雙擊它就能啟動。",
-               f"已经在桌面放上「{APP_NAME}」,以后双击它就能启动。",
-               f"“{APP_NAME}” is now on your desktop. Double-click it to start the tool from now on."))
+               f"已经在桌面放上「{ZH_CN_APP_NAME}」,以后双击它就能启动。",
+               f"“{EN_APP_NAME}” is now on your desktop. Double-click it to start the tool from now on."))
 
     # 開始功能表是備援,不是主角:桌面被公司政策鎖住時它通常還寫得進去,
     # 而且同仁可以按 Windows 鍵直接搜尋名字。失敗就安靜跳過——為了一個

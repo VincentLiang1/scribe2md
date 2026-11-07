@@ -40,6 +40,7 @@ from pathlib import Path
 
 from meeting_scribe import cancel, plat, power
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -154,10 +155,10 @@ def _await_reply(timeout: float) -> dict:
             raw = _replies.get(timeout=_POLL_SEC)
         except queue.Empty:
             if time.monotonic() > deadline:
-                raise _WorkerGone(f"等待回應超過 {timeout:.0f} 秒")
+                raise _WorkerGone(t("等待回應超過 {sec} 秒", sec=f"{timeout:.0f}"))
             continue
         if raw is None:
-            raise _WorkerGone("子行程已結束")
+            raise _WorkerGone(t("子行程已結束"))
         try:
             return json.loads(raw)
         except ValueError:
@@ -193,16 +194,15 @@ def _start_locked() -> None:
     if not reply.get("ready"):
         detail = reply.get("error", "")
         _kill_locked()
-        raise _WorkerGone(f"引擎啟動失敗:{detail}")
+        raise _WorkerGone(t("引擎啟動失敗:{detail}", detail=detail))
 
 
 def _fail(detail: str) -> UserFacingError:
     global _disabled
     _disabled = True
-    return UserFacingError(
-        f"文字辨識(OCR)無法運作,已停用:{detail}。"
-        "掃描檔與圖片這次不會有文字內容,其他格式仍可正常轉換。"
-    )
+    return UserFacingError(t(
+        "文字辨識(OCR)無法運作,已停用:{detail}。"
+        "掃描檔與圖片這次不會有文字內容,其他格式仍可正常轉換。", detail=detail))
 
 
 def _with_worker(work, why: str):
@@ -227,7 +227,7 @@ def _with_worker(work, why: str):
             if attempt == 2 or _restarts > _MAX_RESTARTS:
                 raise _fail(str(e)) from None
             logger.warning("OCR 子行程異常(%s),重啟後重試一次", e)
-    raise _fail("重試後仍無法完成")  # pragma: no cover - 迴圈必 return 或 raise
+    raise _fail(t("重試後仍無法完成"))  # pragma: no cover - 迴圈必 return 或 raise
 
 
 def ensure_ready() -> None:
@@ -237,7 +237,7 @@ def ensure_ready() -> None:
     **第一秒**炸出來,不能跑到第 47 個檔才發現——那時前面的時間已經花掉,
     而使用者以為整批都會成功。"""
     with _lock:
-        _with_worker(lambda: None, "先前已啟動失敗")
+        _with_worker(lambda: None, t("先前已啟動失敗"))
 
 
 def recognize(image_path: Path | str, timeout: float = _PAGE_TIMEOUT) -> list[OcrLine]:
@@ -247,7 +247,7 @@ def recognize(image_path: Path | str, timeout: float = _PAGE_TIMEOUT) -> list[Oc
     path = str(image_path)
     with _lock:
         return _with_worker(
-            lambda: _request_locked(path, timeout), "先前已停用",
+            lambda: _request_locked(path, timeout), t("先前已停用"),
         )
 
 
@@ -257,7 +257,7 @@ def _request_locked(path: str, timeout: float) -> list[OcrLine]:
         _proc.stdin.write(json.dumps({"image": path}, ensure_ascii=False) + "\n")
         _proc.stdin.flush()
     except OSError as e:
-        raise _WorkerGone(f"送不出請求:{e}") from e
+        raise _WorkerGone(t("送不出請求:{e}", e=e)) from e
     reply = _await_reply(timeout)
     if not reply.get("ok"):
         # 單張圖辨識失敗(壞圖、格式不支援)不代表引擎壞了:回空結果,

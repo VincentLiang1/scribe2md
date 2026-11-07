@@ -5,9 +5,13 @@ r"""逐字稿 md 裡的固定字串,跟著**會議語言**(`meetlang`)——段�
 `App/Transcript/TranscriptVocab.swift`)共用的契約,三份一起改:
 - ⚠️ **繁體中文那份一個字都不能動**:知識庫裡已經有的幾百份逐字稿都是這樣寫的,下游的攝入規則
   靠它;`tests/test_vocab.py` 逐字比對 iOS 那一份
-- 英文、簡中**只換字、結構不變**:講者行照舊 `**名字**〔標記〕(00:12:34)`、標記照舊用〔〕與・、
+- 簡中**只換字、結構不變**:講者行照舊 `**名字**〔標記〕(00:12:34)`、標記照舊用〔〕與・、
   診斷表欄數不變——下游的正規式只要多認幾個字
-- **讀回 md 的地方三種都要認得**(`ALL`、`is_unknown`、`detect`):手機版錄的英文逐字稿也會進來
+- ⚠️ **英文的括號與分隔改半形**(使用者 2026-11-07,四台一起改:英文的 md 不出現任何全形字):
+  `**Speaker 1** [highlight · auto-named] (00:12:34)`,暫停行、重點說明、診斷說明同樣用 [ ]。
+  方括號前後各一個空白:`[x](00:12:34)` 會被當成 Markdown 連結
+- **讀回 md 的地方三種都要認得**(`ALL`、`is_unknown`、`detect`):手機版錄的英文逐字稿也會進來;
+  ⚠️ **英文的舊寫法(〔〕與・)也要認**,已經產生的不重產(`_EN_LEGACY`)
 
 ⚠️ 這裡的字**不經過 `t()`**:那是畫面的介面語言,而這些字寫進檔案、跟會議語言走——英文介面的人
 錄的繁中會議,逐字稿照樣是繁中。
@@ -54,6 +58,10 @@ class Vocab:
     reassign_note: str           # 診斷區塊裡「這份人工改掛過」的抬頭
     reassign_bullet: str         # {who} {moved} {new}
     reassign_group: str          # 沒有標籤時的「這一群」
+    # ---- 講者行標記的括號與分隔(英文是半形,見模組 docstring)----
+    mark_open: str = "〔"
+    mark_close: str = "〕"
+    mark_sep: str = "・"
 
     def speaker_label(self, speaker: int) -> str:
         """0 起的編號 → 「講者 1」/「Speaker 1」;未知(<0)→「未知」/「Unknown」。"""
@@ -200,7 +208,7 @@ ZH_CN = Vocab(
     reassign_group="这一群",
 )
 
-# ---- English(iOS `TranscriptVocab.en` 照抄;標記照舊用〔〕)------------------------- #
+# ---- English(iOS `TranscriptVocab.en` 照抄;括號與分隔是半形)--------------------- #
 
 EN = Vocab(
     language=meetlang.EN,
@@ -212,13 +220,13 @@ EN = Vocab(
     mark_crosstalk="crosstalk",
     mark_uncertain="identity unsure",
     mark_highlight="highlight",
-    highlight_legend=('> 〔highlight〕= someone at the meeting tapped "Highlight" during this turn. '
+    highlight_legend=('> [highlight] = someone at the meeting tapped "Highlight" during this turn. '
                       'Give it priority when writing minutes.'),
     note_prefix="> Note: ",
     note_legend=('> "Note:" = a comment typed by an attendee when marking the highlight. '
                  'It is not part of what was said.'),
-    pause_head="〔Recording paused here for ",
-    pause_tail="; nothing said during this time was recorded〕",
+    pause_head="[Recording paused here for ",
+    pause_tail="; nothing said during this time was recorded]",
     name_source_auto="auto-named",
     name_source_confirmed="confirmed",
     name_source_none="unnamed",
@@ -243,14 +251,14 @@ EN = Vocab(
         "recordings are not comparable.",
         '- **Name source**: "confirmed" = typed or changed by a person; "auto-named" = filled in '
         "by voiceprint matching and **not confirmed by anyone** (it can be the wrong person; those "
-        'turns are also marked 〔auto-named〕); "unnamed" = still "Speaker N", meaning this person '
+        'turns are also marked [auto-named]); "unnamed" = still "Speaker N", meaning this person '
         "has no voiceprint on file.",
         '- "Unknown" is not listed: those are short fragments that don\'t match any speaker well '
         "enough, and they don't represent one person.",
         "",
-        "⚠️ **Inline marks in the transcript**: 〔auto-named〕= the name was guessed by machine; "
-        "〔identity unsure〕= this label's cohesion is clearly below the meeting's median, so it "
-        "may cover more than one person; 〔crosstalk〕= **this turn falls in a stretch where "
+        "⚠️ **Inline marks in the transcript**: [auto-named] = the name was guessed by machine; "
+        "[identity unsure] = this label's cohesion is clearly below the meeting's median, so it "
+        "may cover more than one person; [crosstalk] = **this turn falls in a stretch where "
         "several people talked over each other** and the machine couldn't separate them, so who "
         "said it is a guess. **Don't state who said a marked turn when quoting it.**",
     ),
@@ -274,10 +282,18 @@ EN = Vocab(
                    "ranking below are **what the machine clustered**, and no longer match the text:"),
     reassign_bullet='> - {moved} turns of {who} were moved to "{new}"',
     reassign_group="this group",
+    mark_open=" [",
+    mark_close="] ",
+    mark_sep=" · ",
 )
 
 ALL = (ZH_TW, ZH_CN, EN)
 _BY_LANG = {v.language: v for v in ALL}
+
+# 英文在 2026-11-07 之前的寫法(全形〔〕):**只用來讀**,已經產生的 md 不重產
+_EN_LEGACY_PAUSE_HEAD = "〔Recording paused here for "
+_EN_LEGACY_LEGEND = ('> 〔highlight〕= someone at the meeting tapped "Highlight" during this turn. '
+                     'Give it priority when writing minutes.')
 
 
 def of(language: str) -> Vocab:
@@ -322,7 +338,14 @@ def note_text(line: str) -> str:
 
 def is_legend(line: str) -> bool:
     """重點與備註那兩行說明(三種語言)。"""
-    return any(line in (v.highlight_legend, v.note_legend) for v in ALL)
+    return line == _EN_LEGACY_LEGEND or any(line in (v.highlight_legend, v.note_legend) for v in ALL)
+
+
+def is_pause_line(line: str) -> bool:
+    """暫停那一行(三種語言,含英文的舊寫法)。"""
+    s = line.strip()
+    heads = [v.pause_head for v in ALL] + [_EN_LEGACY_PAUSE_HEAD]
+    return s.endswith(("〕", "]")) and any(s.startswith(h) for h in heads)
 
 
 def is_marker(text: str) -> bool:
@@ -331,6 +354,40 @@ def is_marker(text: str) -> bool:
 
 
 _LANG_RE = re.compile(r'^language:\s*"?([A-Za-z_-]+)"?\s*$')
+
+# ---- 逐字稿 md 的格式版本(2026-11-07,跨專案契約:電腦版、手機版、wiki-feeder 都讀)--------- #
+#
+# ⚠️ **為什麼要有**:同一份逐字稿可能由較新的程式寫、較舊的程式讀(手機版或單獨安裝的 Scribe2MD
+# 核心比電腦版新)。2026-11-07 英文會議改半形 `[auto-named]` 時,舊版的講者行正則整行抓不到——
+# 沒有版號的話,舊版只會**安靜地讀錯**(重設講者少了幾個人、草稿漏掉重點)。
+# ⚠️ **規矩是「先讀後寫」**:格式要改的那一版只先發「新舊都認」,下一版才開始寫新格式並加一。
+# 沒有這一欄 = 1(2026-11-07 以前的全部);2 = 英文會議的半形標記。
+FORMAT_VERSION = 2
+_FORMAT_RE = re.compile(r"^format_version:\s*\"?(\d+)\"?\s*$")
+
+
+def format_version(md_text: str) -> int:
+    """這份 md 自報的格式版本(frontmatter 的 `format_version:`;沒有就是 1)。"""
+    lines = md_text.splitlines()
+    if lines and lines[0].strip() == "---":
+        for line in lines[1:]:
+            if line.strip() == "---":
+                break
+            m = _FORMAT_RE.match(line.strip())
+            if m:
+                return int(m.group(1))
+    return 1
+
+
+def check_readable(md_text: str) -> None:
+    """這份逐字稿比這一版程式新就明講,不硬讀(硬讀就是安靜地讀錯,見 `FORMAT_VERSION`)。"""
+    n = format_version(md_text)
+    if n > FORMAT_VERSION:
+        from meeting_scribe.errors import UserFacingError
+        from meeting_scribe.i18n import t
+
+        raise UserFacingError(t("這份逐字稿是較新版本的程式產生的(格式 {n}),這一版讀不懂。"
+                                "請先把這個工具更新到最新版再開。", n=n))
 
 
 def detect(md_text: str) -> Vocab:

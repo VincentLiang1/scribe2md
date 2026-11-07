@@ -62,6 +62,7 @@ from meeting_scribe import i18n
 from meeting_scribe import meetlang
 from meeting_scribe import vocab
 from meeting_scribe import transcribe_apple
+from meeting_scribe import brand
 from meeting_scribe import minutes
 from meeting_scribe import draftlayout
 from meeting_scribe import export
@@ -202,9 +203,17 @@ BRAND_ICON_PT = 20
 # Label,把 emoji 寫進句子裡反而對不上那一排。
 # ⚠️ **「檔案不外傳」不可省**:那是隱私規格對使用者的承諾(spec §7),也是他敢把
 # 會議錄音丟進來的唯一理由;網頁版那邊測試守著,這邊由 `tests/test_desktop.py` 守。
-APP_SUBTITLE = (t("本系統係將聲音、文字、圖像轉換成適合 AI 閱讀的 Markdown 格式"
-                "(以節省 Token)。全部在本機轉換,檔案不外傳;"
-                "第一次使用請先看「使用說明」(首次轉檔需下載模型)。"))
+# ⚠️ **第一句講它是手機 App「會議助手」的電腦版**(2026-11-07 改名,使用者選 B+C 案:副標併進、左上角
+# 另有「ⓘ 關於」)。⚠️ **兩句之間是刻意的硬斷行**:不斷的話視窗寬度一變就斷在「請先 / 看」
+# 這種地方(設計稿實拍),`break_lines` 會照留這個換行。
+APP_SUBTITLE = (t("手機 App「會議助手」的電腦版:把聲音、文字、圖像轉換成適合 AI 閱讀的 Markdown"
+                "(以節省 Token),聲紋與名單跟手機同步。\n"
+                "全部在本機轉換,檔案不外傳;第一次使用請先看「使用說明」(首次轉檔需下載模型)。"))
+# 「ⓘ 關於」:頁首左上角(右上角是 🌐 語言選單),點了開 `App._about_open`。
+ABOUT_BUTTON = t("ⓘ 關於")
+# 關於視窗裡的說明(使用者 2026-11-07 選定的文案)。⚠️ 跟 `APP_SUBTITLE` 第一句講同一件事,改一句要改兩句
+ABOUT_TEXT = t("手機 App「會議助手」的電腦版:聲紋與名單跟手機同步、逐字稿格式一致;"
+               "內含 Scribe2MD 核心(文件與錄音轉 Markdown)。")
 
 # 頁首三行(大標、副標、頂層分頁列)之間的行距(邏輯 px),**量網頁版得到的**
 # (2026-09-03 使用者:「AP 最上面幾行字的行距,請依照 WEB 的行距調整」;@150% 逐列掃
@@ -229,11 +238,11 @@ HEAD_GAP_SUB, HEAD_GAP_NAV = 17, 20
 # 圖),格式照 `ADV_BUTTON`。⚠️ **「記錄」不是「紀錄」**:log 的繁中譯名全 repo 統一
 # 成「記錄」(同日使用者裁定,444 處一起改),別又寫回去。
 LOG_BUTTON = t("📂 記錄檔…")
-# **畫面上**的程式名(視窗標題、頁首、對話框)。⚠️ 英文是 Scribe2MD(使用者 2026-10-21 定;
-# 網址與下載檔名照舊全小寫 scribe2md)。⚠️ **不可以拿它取代 `brand.APP_TITLE`**:那一個同時是 `.app`
-# 的資料夾名、捷徑名與記錄檔標頭,跟著語言變的話,換了語言 App 就找不到自己(換版也是)。
-# 兩者的繁中必須一字不差,`test_畫面上的程式名_繁中就是_APP_TITLE` 守著。
-WINDOW_TITLE = t("AI 文件.MD 轉換器")
+# **畫面上**的程式名(視窗標題、頁首、對話框)。⚠️ 2026-11-07 改名:繁中「會議助手電腦版」、英文
+# Notetaker Desktop(手機 App「會議助手」/ Notetaker 的電腦版)。⚠️ **不可以拿它取代 `brand.APP_TITLE`**:
+# 那一個是 `.app` 的資料夾名與換版找自己的依據,跟著語言變的話換了語言 App 就找不到自己。
+# 繁中與 `brand.APP_NAME` 一字不差,`test_畫面上的程式名跟_brand_一致` 守著。
+WINDOW_TITLE = t("會議助手電腦版")
 # 頁首右上角的介面語言選單(`App._lang_button`)。⚠️ 按鈕上寫的是**目前**語言的名字,用它
 # 自己的字寫(`i18n.NATIVE_NAMES`),所以這一串本身不翻。
 LANG_BUTTON = "🌐 {name}"
@@ -882,6 +891,32 @@ TABS = (
 )
 
 
+def default_stem(now: datetime) -> str:
+    r"""現場收音的預設名(錄音檔、逐字稿的檔名與標題):**跟介面語言**,英文介面
+    「Untitled-yyMMdd-HHmm」、中文介面「未命名-yyMMdd-HHmm」,不管會議語言。
+
+    ⚠️ 四台一致(使用者 2026-11-07,iOS b94b66b、Android 4836ef1 同日改):英文介面時
+    App 產出的東西不可以有任何中文字,檔名也算。簡中的「未命名」與繁中同字。"""
+    name = "Untitled" if i18n.current() == i18n.EN else "未命名"
+    return f"{name}-{now:%y%m%d-%H%M}"
+
+
+def bullet(lg: str = "") -> str:
+    r"""項目符號:繁中、簡中是「・」,英文是「· 」。
+
+    ⚠️ 「・」(U+30FB)是全形的片假名中點,英文介面不能出現(使用者 2026-11-07:「英文介面時,
+    畫面上與 App 產出的內容都不可以出現任何中文字」,全形標點也算)。"""
+    return t("・", in_=lg)
+
+
+def device_name(key: str) -> str:
+    """執行裝置的顯示名。⚠️ `types.DEVICE_NAMES` 是模組層常數、不能在 import 時翻譯,
+    唯一帶中文的那一個(Apple 語音辨識)在這裡換成介面語言。"""
+    if key == "apple":
+        return t("Apple 語音辨識")
+    return DEVICE_NAMES.get(key, key)
+
+
 def nav_tabs() -> tuple:
     r"""這個介面語言畫得出來的頂層分頁:**「用詞替換表」只在繁中介面出現**(使用者 2026-10-21)。
 
@@ -1324,7 +1359,8 @@ def configure_styles(root: tk.Misc, fam: str, pal: dict) -> None:
 # Segoe UI Emoji 裡沒有彩色字形)。其餘開頭的符號(▶ ⏹ 🔍 🔀)是彩色 emoji,
 # `HandButton` 會畫成彩色圖片。⚠️ **四組主要動作鈕的記號一律走這兩個**(2026-09-12
 # 使用者指定:開始一律 ●、停止一律 ■),不可以改用 ⏹——那顆會被畫成藍色方塊。
-BUTTON_TEXT_MARKS = "●■★"
+BUTTON_TEXT_MARKS = "●■★ⓘ"
+# ⚠️ **「ⓘ」也照文字畫**(2026-11-07「ⓘ 關於」):它不是 emoji,彩色 emoji 字型裡沒有字形
 # ⚠️ **「★」也照文字畫**(2026-10-17 錄音中的「★ 重點」):它落在 `is_symbol` 那一段碼位,
 # 不擋的話會走彩色 emoji 那條路,而它在 emoji 字型裡沒有字形(Apple 的只有 ⭐)
 # 上面那兩個裡,**改成程式自己畫**的記號(加上暫停的「‖」;2026-10-07 使用者看實拍指出
@@ -2066,6 +2102,19 @@ class App(tk.Tk):
         # 「英文版怎麼一半是中文」這類回報,先要知道他選的是哪一種、還是跟著系統
         logger.info("介面語言:%s(%s)", i18n.current(),
                     "使用者選的" if i18n.chosen() else "跟著系統")
+        # App 改名(Notetaker Desktop.app)之後,Dock 裡指向舊路徑的釘選改指過來(只有 Mac 有事做;
+        # 見 `plat.migrate_dock`)。麥克風權限也記一行:改名換版後權限有沒有跟著走,查記錄檔就知道
+        plat.migrate_dock()
+        # 記下這一份完整 App 在哪、把固定入口 `meeting-scribe/bin/doc2md` 指向較新的那一份(核心或這裡;
+        # 見 `entry`)。開發用的資料夾不登記
+        from meeting_scribe import entry as fixed_entry
+
+        fixed_entry.register_desktop()
+        try:
+            perm = plat.microphone_permission()
+            logger.info("麥克風權限:%s%s", perm.state, f"({perm.reason})" if perm.reason else "")
+        except Exception:  # noqa: BLE001 - 只是記錄
+            logger.debug("麥克風權限問不到", exc_info=True)
         self._probe_start()
         self._update_check(manual=False)
 
@@ -3676,7 +3725,47 @@ class App(tk.Tk):
         self._wrap(ttk.Label(head, text=APP_SUBTITLE, style="BrandSub.TLabel",
                              justify="center")).pack(pady=(self.px(HEAD_GAP_SUB), 0))
         self._lang_menu = self._lang_button(head)
+        # 「ⓘ 關於」放左上角、跟右上角的 🌐 對稱;同樣 `place` 不進那一排 `pack`(理由見 `_lang_button`)。
+        # ⚠️ 樣式是**頁底色那張**(`SMALL_PAGE_STYLE`):頁首坐在灰底上,用白卡那張四角會露出白色方塊
+        # (2026-11-07 設計稿實拍)
+        self._about_btn = HandButton(head, text=ABOUT_BUTTON, style=skin.SMALL_PAGE_STYLE,
+                                     command=self._about_open)
+        self._about_btn.place(relx=0.0, x=self.px(SP_SM), y=0, anchor="nw")
         return head
+
+    def _about_open(self) -> tk.Toplevel:
+        r"""「關於」小視窗:程式名、版號、它是手機 App 的電腦版、核心名與版號(使用者 2026-11-07 選 C 案)。
+
+        ⚠️ **說明那句自己斷行**(`break_lines`):Label 的 `wraplength` 只在空白處斷,設計稿上第一行
+        只剩「手機」兩個字就是這樣來的。⚠️ 核心跟完整 App 是同一份程式,版號相同。"""
+        from meeting_scribe import update
+
+        win = tk.Toplevel(self)
+        win.title(t("關於"))
+        win.configure(bg=self.pal["page"])
+        win.resizable(False, False)
+        body = ttk.Frame(win, style="Page.TFrame", padding=self.px(SP_MD))
+        body.pack(fill="both", expand=True)
+        line = ttk.Frame(body, style="Page.TFrame")
+        line.pack(anchor="w")
+        photo = self._brand_image(BRAND_ICON_PT)
+        if photo is not None:
+            ttk.Label(line, image=photo, style="Brand.TLabel").pack(side="left", padx=(0, self.px(SP_SM)))
+        ttk.Label(line, text=WINDOW_TITLE, style="Brand.TLabel").pack(side="left")
+        version = update.current_version() or t("不明")
+        ttk.Label(body, text=f"v{version}", style="BrandSub.TLabel").pack(anchor="w", pady=(self.px(SP_XS), 0))
+        text = ttk.Label(body, style="BrandSub.TLabel", justify="left")
+        width = self.px(440)
+        text.configure(text=break_lines(ABOUT_TEXT, width, self._label_font(text).measure), wraplength=width)
+        text.pack(anchor="w", pady=(self.px(SP_SM), 0))
+        ttk.Label(body, text=t("核心:{name} {version}", name=brand.CORE_NAME, version=version),
+                  style="BrandSub.TLabel").pack(anchor="w", pady=(self.px(SP_SM), 0))
+        HandButton(body, text=t("關閉"), style=skin.SMALL_PAGE_STYLE, command=win.destroy).pack(
+            anchor="e", pady=(self.px(SP_MD), 0))
+        win.transient(self)
+        win.bind("<Escape>", lambda _e: win.destroy())
+        self._about_win = win
+        return win
 
     def _lang_button(self, head) -> ttk.Menubutton:
         r"""頁首右上角的 🌐 介面語言選單(使用者 2026-10-21 選 A 案,docs/dev/i18n.md)。
@@ -6106,7 +6195,7 @@ class App(tk.Tk):
         header = minutes.layout_header(md_path, md_text)
         out = minutes.save_layout(md_path, minutes.layout_text(md_path, md_text, body))
         say(("minutes_preview", (minutes.draft_notice(), draftlayout.lines(body, header),
-                                 out.read_text(encoding="utf-8"))))
+                                 out.read_text(encoding="utf-8"), draftlayout.lang_of(header))))
         say(("run_stage", (t("完成。草稿存在:{out}", out=out), 1.0)))
 
     def _minutes_done(self, error) -> None:
@@ -7338,7 +7427,7 @@ class App(tk.Tk):
         scene_label = self._rec_scene.get()
         stamp = datetime.now().strftime("%Y%m%d_%H%M")
         rec_dir = appdata_root() / "recordings" / stamp
-        stem = f"錄音_{stamp}"
+        stem = default_stem(datetime.now())
         if not self._rec_device_has_sound():
             return
         try:
@@ -7558,7 +7647,7 @@ class App(tk.Tk):
             self._stage(t("已依要求停止。"))
         elif isinstance(error, UserFacingError):
             # 自家的錯誤照原話講。「錄音太短」在保音軌之前就擋下,`note` 是空的
-            self._rec_say(f"{error}。{note}", "err")
+            self._rec_say(f"{error}{t('。')}{note}", "err")
         else:
             logger.exception("錄音收尾失敗", exc_info=error)
             self._rec_say(REC_FAILED + note, "err")
@@ -8764,13 +8853,14 @@ class App(tk.Tk):
         self._run_preview.insert("1.0", helpmd.flatten(text))
         self._run_preview.configure(state="disabled")
 
-    def _minutes_set_preview(self, notice: str, rows: list, md: str) -> None:
+    def _minutes_set_preview(self, notice: str, rows: list, md: str, lg: str = "") -> None:
         r"""會議紀錄草稿畫進右邊的預覽:照 Claude 會議紀錄的樣子(`draftlayout.lines`;同 iOS `DetailView`)。
 
         ⚠️ **待辦是真的三欄表格**(負責人｜事項｜期限):Text 的定位點遇到事項折行就對不齊
         (`_render_table` 那種只適合說明頁一行一格的短表),所以表格是嵌進去的一組 Label,
         事項那欄照預覽框當下的寬度折行;約略時間用灰色小字放在事項下面。
-        `_preview_md` 存排好的 Markdown(就是另存的那一份)。"""
+        `_preview_md` 存排好的 Markdown(就是另存的那一份)。
+        ⚠️ 整頁跟**會議語言** `lg`(`draftlayout.lang_of`;使用者 2026-11-07),冒號、項目符號、表頭也是。"""
         self._preview_md = md
         box = self._run_preview
         pal, fam = self.pal, self.fam
@@ -8791,7 +8881,7 @@ class App(tk.Tk):
             if kind == "title":
                 box.insert("end", row[1] + "\n", "mt_title")
             elif kind == "field":
-                box.insert("end", row[1] + t("："), "mt_b")
+                box.insert("end", row[1] + t("：", in_=lg), "mt_b")
                 box.insert("end", row[2] + "\n")
             elif kind == "note":
                 box.insert("end", row[1] + "\n", "mt_dim")
@@ -8802,23 +8892,24 @@ class App(tk.Tk):
             elif kind in ("topic", "item"):     # 議題也不粗體(使用者 2026-11-07)
                 box.insert("end", f"{row[1]}. {row[2]}\n")
             elif kind == "sub":
-                box.insert("end", f"\u3000・{row[1]}\n")
+                indent = "  " if (lg or i18n.current()) == i18n.EN else "\u3000"   # 英文不能有全形空白
+                box.insert("end", f"{indent}{bullet(lg)}{row[1]}\n")
             elif kind == "bullet":
-                box.insert("end", f"・{row[1]}\n")
+                box.insert("end", f"{bullet(lg)}{row[1]}\n")
             elif kind == "todos":
-                box.window_create("end", window=self._minutes_todo_table(box, row[1], wide))
+                box.window_create("end", window=self._minutes_todo_table(box, row[1], wide, lg))
                 box.insert("end", "\n")
             else:
                 box.insert("end", row[1] + "\n")
         box.configure(state="disabled")
 
-    def _minutes_todo_table(self, parent, todos: list, wide: int) -> tk.Frame:
+    def _minutes_todo_table(self, parent, todos: list, wide: int, lg: str = "") -> tk.Frame:
         """待辦的三欄表格(`_minutes_set_preview`)。沒填的寫「待確認」,同 iOS `TodoTable`。"""
         pal, fam = self.pal, self.fam
         grid = tk.Frame(parent, bg=pal["card_line"], bd=0)
-        tbc = t("待確認")
+        tbc = t("待確認", in_=lg)
         side = self.px(84)
-        cells = [(t("負責人"), t("事項"), t("期限"), None)] + [
+        cells = [(t("負責人", in_=lg), t("事項", in_=lg), t("期限", in_=lg), None)] + [
             (x.owner or tbc, x.task, x.deadline or tbc, x.time) for x in todos]
         for r, (owner, task, due, when) in enumerate(cells):
             font = (fam, 9, "bold") if r == 0 else (fam, 9)
@@ -8917,7 +9008,7 @@ class App(tk.Tk):
                 on_stage=lambda stage, frac: say(
                     ("run_stage", (f"{src.name}:{stage}", frac))),
             )
-            device = DEVICE_NAMES.get(result.device, result.device)
+            device = device_name(result.device)
             preview = t("(執行裝置:{device})\n\n{preview}", device=device, preview=result.preview)
             # 有成品、卻連一位講者都沒有 = 整段沒聽到人說話。**一定要明講**(同網頁版
             # `_present_result`):命名卡這時不會出現,不講的話畫面上只有一份空稿子。
@@ -9452,7 +9543,7 @@ class App(tk.Tk):
         # 濾掉最後一篇「全部內容」:照**位置**,不比篇名(篇名跟著介面語言換,繁中的常數在
         # 英文介面裡一篇都比不到,見 `help_text.help_pages`)
         pages = help_text.help_pages(
-            DEVICE_NAMES[transcribe.predicted_device()], MAX_SPEAKERS)[:-1]
+            device_name(transcribe.predicted_device()), MAX_SPEAKERS)[:-1]
         # 灰槽:寬高都釘死、關掉傳播(同 segmented 那條規矩)。高度由**篇數**算,不量 widget
         # (`_wrap_width` 那條回授的規矩);槽的左右內距扣掉 `TOC_INSET`——那一圈畫在每一條
         # 的圖裡,加起來才是網頁版的 4。
@@ -9821,7 +9912,7 @@ class App(tk.Tk):
                 # 選項讀的是該行第一個字(或圖)的 tag,只掛尾巴等於沒掛。
                 gap = self._help_gap(block, nxt)
                 if block.kind == "bullet":
-                    body.insert("end", "・", (tag, gap))
+                    body.insert("end", bullet(), (tag, gap))
                 for span in block.spans:
                     tags = tuple(t for t in (tag, gap, span.style) if t)
                     start = body.index("end-1c")
@@ -10034,7 +10125,7 @@ class App(tk.Tk):
         if can.reason == UPDATE_DEV:
             return UPDATE_DEV_HINT
         if can.state == "failed":
-            return f"{can.reason}。"
+            return can.reason + t("。")
         return self._update_manual()
 
     @staticmethod

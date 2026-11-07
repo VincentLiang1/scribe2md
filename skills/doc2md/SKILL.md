@@ -20,11 +20,15 @@ description: 把 PDF / Word / PowerPoint / Excel / 掃描件 / 影像 / Outlook 
 ## 指令
 
 ```bash
-uv run --directory "{{MEETING_SCRIBE_DIR}}" doc2md "<檔案或資料夾>"
+"{{DOC2MD}}" "<檔案或資料夾>"
 ```
 
+這是 **Scribe2MD 的固定入口**:只裝了 Scribe2MD 核心、或裝了會議助手電腦版(它內含核心),都是這一個位置;兩份都裝時自動指向版本較新的那一份。
+
 > [!IMPORTANT]
-> **`--directory` 後面那對雙引號不要拆掉,也不要把路徑改寫成反斜線。** Bash 工具是 POSIX shell,`\SOURCE5\Python\meeting-scribe` 這種反斜線寫法裸放進指令時,反斜線會被當成跳脫字元吃掉(`\S`、`\P`、`\m` 都會消失、路徑整條塌掉),uv 只回一句 **`error: 系統找不到指定的檔案。 (os error 2)`、離開碼 2**——那看起來像轉檔失敗,其實指令根本沒跑到。真的轉檔失敗一定伴隨檔名與原因,而且離開碼是 `1`。
+> **路徑外面那對雙引號不要拆掉,也不要把路徑改寫成反斜線。** Bash 工具是 POSIX shell,反斜線會被當成跳脫字元吃掉、路徑整條塌掉;路徑也可能含空格。指令根本沒跑到時是 `No such file or directory`(離開碼 127)或沒有任何「執行記錄:」那一行——那不是轉檔失敗,真的轉檔失敗一定伴隨檔名與原因,而且離開碼是 `1`。
+>
+> **找不到這個入口**(`No such file or directory`):核心沒裝、或裝好之後被移動過(venv 寫死絕對路徑,`meeting-scribe/core/` 不能搬)。請使用者重新安裝 Scribe2MD(或開一次會議助手電腦版,它會把入口指回來)。`"{{DOC2MD}}" --version` 印得出版號就代表入口是好的。
 
 可以一次給多個路徑。常用選項:
 
@@ -42,7 +46,7 @@ uv run --directory "{{MEETING_SCRIBE_DIR}}" doc2md "<檔案或資料夾>"
 > [!WARNING]
 > **這跟文件不是同一個量級。** 一份 PDF 幾秒鐘,**一場兩小時的會議要跑一小時上下**(沒有 GPU 更久)。把使用者的資料夾整個指過去之前,先用 `--dry-run` 看看裡面有沒有錄音檔;真的要轉,**先告訴使用者會跑多久再動手**,不要讓一個「看一下這個資料夾」變成一小時沒有回應。工具自己也會先在 stderr 提醒有幾個錄音檔。
 
-要**真實姓名**(而不是「講者 1」)的話,命令列做不到——講者編號每個檔案獨立分群,命名必須一檔一檔當場做。請叫使用者開工具視窗(Windows 的桌面捷徑或 Mac 的 App「AI 文件.MD 轉換器」,或 `uv run --directory "{{MEETING_SCRIBE_DIR}}" python -m meeting_scribe.desktop`)、一次選一個檔案。
+要**真實姓名**(而不是「講者 1」)的話,命令列做不到——講者編號每個檔案獨立分群,命名必須一檔一檔當場做。請叫使用者開會議助手電腦版(Windows 的桌面捷徑或 Mac 的 App「會議助手電腦版」)、一次選一個檔案;只裝了 Scribe2MD 核心的機器沒有這個視窗,要先裝會議助手電腦版。
 - `--no-recursive` — 給資料夾時不往子資料夾找。
 
 ## 輸出契約
@@ -89,5 +93,5 @@ ocr_used: true
 ## 其他
 
 - 全程**地端離線**,不上傳任何內容;隱私敏感的文件可以放心用。
-- 同一台機器上這個工具還有桌面視窗(Windows 的桌面捷徑或 Mac 的 App「AI 文件.MD 轉換器」,或 `uv run --directory "{{MEETING_SCRIBE_DIR}}" python -m meeting_scribe.desktop`),使用者要自己操作、批次挑檔時可以建議他用那個。
+- 有裝會議助手電腦版的話(Windows 的桌面捷徑或 Mac 的 App「會議助手電腦版」),使用者要自己操作、批次挑檔、替講者取真名時可以建議他用那個;只裝了 Scribe2MD 核心的機器沒有視窗。
 - 工具視窗正在轉檔時不要同時跑這支 CLI,兩邊會搶 CPU(擋是不會擋,所以別以為沒報錯就是沒事)。

@@ -68,8 +68,8 @@ cd "$(dirname "$0")" || { say "找不到工具資料夾,請確認這個檔沒有
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
 
 if ! command -v uv >/dev/null 2>&1; then
-    say "[錯誤] 找不到 uv(Python 環境管理工具)。請先雙擊一次「AI 文件.MD 轉換器」App(第一次開啟時會自動安裝執行環境),再回來執行這個檔案。" \
-        "[错误] 找不到 uv(Python 环境管理工具)。请先双击一次「AI 文件.MD 轉換器」App(第一次打开时会自动安装运行环境),再回来运行这个文件。" \
+    say "[錯誤] 找不到 uv(Python 環境管理工具)。請先雙擊一次「會議助手電腦版」App(第一次開啟時會自動安裝執行環境),再回來執行這個檔案。" \
+        "[错误] 找不到 uv(Python 环境管理工具)。请先双击一次「会议助手电脑版」App(第一次打开时会自动安装运行环境),再回来运行这个文件。" \
         "[Error] uv (the Python environment manager) not found. Open the App once first (the first launch sets up the environment), then run this file again."
     echo
     say "(按 Enter 關閉這個視窗)" "(按 Enter 关闭这个窗口)" "(Press Enter to close this window)"
@@ -81,8 +81,8 @@ say "正在把 Claude Code Skill 安裝到這台電腦..." "正在把 Claude Cod
     "Installing the Claude Code Skills on this computer..."
 if ! uv run python scripts/install_skill.py; then
     echo
-    say "[錯誤] Skill 安裝失敗。最常見的原因是執行環境還沒建好:先雙擊一次「AI 文件.MD 轉換器」App,等它開起來之後再執行這個檔案。其他情況請參考上方訊息。" \
-        "[错误] Skill 安装失败。最常见的原因是运行环境还没建好:先双击一次「AI 文件.MD 轉換器」App,等它打开之后再运行这个文件。其他情况请参考上方信息。" \
+    say "[錯誤] Skill 安裝失敗。最常見的原因是執行環境還沒建好:先雙擊一次「會議助手電腦版」App,等它開起來之後再執行這個檔案。其他情況請參考上方訊息。" \
+        "[错误] Skill 安装失败。最常见的原因是运行环境还没建好:先双击一次「会议助手电脑版」App,等它打开之后再运行这个文件。其他情况请参考上方信息。" \
         "[Error] Skill installation failed. Usually the environment is not ready yet: open the App once, wait for its window, then run this file again. Otherwise see the messages above."
     echo
     say "(按 Enter 關閉這個視窗)" "(按 Enter 关闭这个窗口)" "(Press Enter to close this window)"

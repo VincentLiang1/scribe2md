@@ -4,6 +4,9 @@ r"""會議紀錄草稿的「顯示格式」:照雲端 Claude 會議紀錄的樣�
 層次一律三層(使用者 2026-11-07):**段落標題不編號**(沒東西的段整段不放,編號會跳)、段落裡的每一條 1. 2.(議題也不粗體,使用者同日改)、議題底下的重點才用項目符號;待辦是「負責人｜事項｜期限」表格。表頭從**逐字稿**取(Claude 拿到的也只有逐字稿),
 顯示時才讀,所以舊草稿也有、改了講者名字會跟著變。
 
+⚠️ **整頁跟會議語言、不跟介面語言**(使用者 2026-11-07,四台一起改):中文會議在英文介面時表頭也是中文、
+英文會議整頁英文(機器辨識的記號是 * 不是 ※)。語言從逐字稿讀(`Header.language`),一律 `t(…, in_=lg)`。
+
 不是會議不硬套:1 位講者 →「內容紀錄」,只有內容摘要與重點、不寫與會者;2 位 →「對談紀錄」「對談者」;
 不論幾人,沒找到東西的段(只有「沒有找到明確的…」)整段不顯示。
 
@@ -18,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from meeting_scribe import draftvocab, export, vocab
+from meeting_scribe import draftvocab, export, i18n, vocab
 from meeting_scribe.i18n import t
 
 CONTENT, CONVERSATION, MEETING = "content", "conversation", "meeting"
@@ -38,6 +41,7 @@ class Header:
     seconds: float | None = None
     speakers: int | None = None       # 檔頭 speakers(講者分析的人數);沒有就數講者行
     attendees: list[Attendee] = field(default_factory=list)
+    language: str = ""                # 逐字稿的會議語言(`vocab.detect`);空字串 = 介面語言
 
     @property
     def format(self) -> str:
@@ -82,8 +86,11 @@ def speakers(md: str) -> int | None:
     return n if n > 0 else None
 
 
-# 桌面版錄音的檔名「錄音_20261002_1011」:逐字稿檔頭沒有 recorded_at(手機版才有),開始時間只能從檔名看
+# 桌面版錄音的檔名:逐字稿檔頭沒有 recorded_at(手機版才有),開始時間只能從檔名看。兩種都認:
+# 2026-11-07 以前的「錄音_20261002_1011」,與之後跟手機版一致的「未命名-261002-1011」「Untitled-261002-1011」
+# (`desktop.default_stem`;舊檔名的錄音還在使用者的 output 裡)
 _STEM_TIME = re.compile(r"(?<!\d)(20\d{6})_(\d{4})(?!\d)")
+_STEM_TIME_SHORT = re.compile(r"(?<!\d)(\d{6})-(\d{4})(?!\d)")
 
 
 def header(md: str, name: str = "", seconds: float | None = None,
@@ -93,17 +100,18 @@ def header(md: str, name: str = "", seconds: float | None = None,
     import minutes,它 import 這裡),開始時間用逐字稿檔案的修改時間 `modified`——但檔名有「_20261002_1011」
     這種錄音時間就先用檔名:命名、重設講者都會重寫逐字稿,修改時間會變成改名那一刻。"""
     fm = _frontmatter(md)
-    h = Header(speakers=speakers(md))
+    h = Header(speakers=speakers(md), language=vocab.detect(md).language)
     if fm.get("recorded_at"):
         try:
             h.start = datetime.fromisoformat(fm["recorded_at"]).astimezone()
         except ValueError:
             pass
-    if h.start is None and (m := _STEM_TIME.search(name)):
-        try:
-            h.start = datetime.strptime(m[1] + m[2], "%Y%m%d%H%M")
-        except ValueError:
-            pass
+    for pattern, fmt in ((_STEM_TIME, "%Y%m%d%H%M"), (_STEM_TIME_SHORT, "%y%m%d%H%M")):
+        if h.start is None and (m := pattern.search(name)):
+            try:
+                h.start = datetime.strptime(m[1] + m[2], fmt)
+            except ValueError:
+                pass
     if h.start is None:
         h.start = modified
     try:
@@ -123,8 +131,7 @@ def header(md: str, name: str = "", seconds: float | None = None,
         if not m or vocab.is_unknown(m["name"]) or m["name"] in seen:
             continue
         seen.add(m["name"])
-        marks = m["marks"] or ""
-        h.attendees.append(Attendee(m["name"], any(a in marks for a in autos)))
+        h.attendees.append(Attendee(m["name"], any(a in autos for a in export.split_marks(m))))
     return h
 
 
@@ -132,35 +139,45 @@ def _cjk(s: str) -> bool:
     return any("一" <= c <= "鿿" for c in s)
 
 
-def display_name(name: str) -> str:
+def lang_of(header: Header | None) -> str:
+    """草稿整頁用的語言:逐字稿的會議語言;找不到逐字稿(或讀不出)就是介面語言。"""
+    return (header.language if header else "") or i18n.current()
+
+
+def display_name(name: str, lg: str = "") -> str:
     """「小林 總務組」→「小林（總務組）」(Claude 的寫法);英文名字中間的空白不動,沒命名的「講者 2」不拆。"""
     if not _cjk(name) or " " not in name:
         return name
     who, role = name.split(" ", 1)
     role = role.strip()
-    return name if not role or role.isdigit() else f"{who}（{role}）"
+    # 括號跟草稿的語言(英文不能出現全形標點,使用者 2026-11-07)
+    return name if not role or role.isdigit() else t("{who}（{role}）", in_=lg, who=who, role=role)
 
 
 def _header_lines(h: Header) -> list[Line]:
     title = h.title or ""
-    fmt = h.format
+    fmt, lg = h.format, lang_of(h)
     if fmt == MEETING:
-        head = t("會議紀錄 — {v}", v=title) if title else t("會議紀錄")
+        head = t("會議紀錄 — {v}", in_=lg, v=title) if title else t("會議紀錄", in_=lg)
     elif fmt == CONVERSATION:
-        head = t("對談紀錄 — {v}", v=title) if title else t("對談紀錄")
+        head = t("對談紀錄 — {v}", in_=lg, v=title) if title else t("對談紀錄", in_=lg)
     else:
-        head = t("內容紀錄 — {v}", v=title) if title else t("內容紀錄")
+        head = t("內容紀錄 — {v}", in_=lg, v=title) if title else t("內容紀錄", in_=lg)
     out: list[Line] = [("title", head)]
     minutes_ = max(1, round(h.seconds / 60)) if h.seconds else None
     if h.start is not None:
         when = h.start.strftime("%Y-%m-%d %H:%M")
-        out.append(("field", t("時間"), t("{when} 起，約 {n} 分鐘", when=when, n=minutes_) if minutes_ else when))
+        out.append(("field", t("時間", in_=lg),
+                    t("{when} 起，約 {n} 分鐘", in_=lg, when=when, n=minutes_) if minutes_ else when))
     if h.attendees and fmt != CONTENT:   # 一個人講的(影片、演講)不寫與會者
-        key = t("對談者（依逐字稿標籤）") if fmt == CONVERSATION else t("與會者（依逐字稿標籤）")
-        out.append(("field", key, t("、").join(display_name(a.name) + ("※" if a.machine else "")
-                                             for a in h.attendees)))
+        key = (t("對談者（依逐字稿標籤）", in_=lg) if fmt == CONVERSATION
+               else t("與會者（依逐字稿標籤）", in_=lg))
+        # 機器辨識的記號:英文是 *(外國人不熟 ※,使用者 2026-11-07)
+        star = t("※", in_=lg)
+        out.append(("field", key, t("、", in_=lg).join(display_name(a.name, lg) + (star if a.machine else "")
+                                                      for a in h.attendees)))
         if any(a.machine for a in h.attendees):
-            out.append(("note", t("※ 標示者為機器聲紋辨識、未經人工確認，身分待確認。")))
+            out.append(("note", t("※ 標示者為機器聲紋辨識、未經人工確認，身分待確認。", in_=lg)))
     out.append(("divider",))
     return out
 
@@ -230,6 +247,7 @@ def lines(md: str, header: Header | None = None) -> list[Line]:
         else:
             body.append(("bullet", item))
     fmt = header.format if header else MEETING
+    lg = lang_of(header)
     out = (_header_lines(header) if header else []) + lead
     for sec in sections:
         if not sec["found"]:
@@ -239,27 +257,28 @@ def lines(md: str, header: Header | None = None) -> list[Line]:
             continue
         name = sec["key"]
         if fmt == CONTENT and name in _SUMMARY_KEYS:
-            name = t("內容摘要")
+            name = t("內容摘要", in_=lg)
         elif fmt == CONTENT and name in _TOPIC_KEYS:
-            name = t("內容重點")
+            name = t("內容重點", in_=lg)
         out.append(("heading", name))
         out += sec["body"]
     return out
 
 
-def _cell(s: str) -> str:
-    return s.replace("|", "／").replace("\n", " ")
+def _cell(s: str, lg: str) -> str:
+    return s.replace("|", t("／", in_=lg)).replace("\n", " ")   # 英文不能出現全形斜線(使用者 2026-11-07)
 
 
 def markdown(md: str, header: Header | None = None) -> str:
     """排好的 Markdown(另存的那一份,同 iOS `shareText`):標題、粗體欄位、分隔線、各段、待辦表格。"""
     out: list[str] = []
+    lg = lang_of(header)
     for line in lines(md, header):
         kind = line[0]
         if kind == "title":
             out += ["# " + line[1], ""]
         elif kind == "field":
-            out.append(f"**{line[1]}**{t('：')}{line[2]}  ")   # 行尾兩個空白:Markdown 換行,不併成一段
+            out.append(f"**{line[1]}**{t('：', in_=lg)}{line[2]}  ")   # 行尾兩個空白:Markdown 換行,不併成一段
         elif kind == "note":
             out.append(line[1])
         elif kind == "divider":
@@ -273,10 +292,10 @@ def markdown(md: str, header: Header | None = None) -> str:
         elif kind == "bullet":
             out.append("- " + line[1])
         elif kind == "todos":
-            tbc = t("待確認")
-            out += [f"| {t('負責人')} | {t('事項')} | {t('期限')} |", "|---|---|---|"]
-            out += [f"| {_cell(x.owner or tbc)} | {_cell(x.task + (f'({x.time})' if x.time else ''))} "
-                    f"| {_cell(x.deadline or tbc)} |" for x in line[1]]
+            tbc = t("待確認", in_=lg)
+            out += [f"| {t('負責人', in_=lg)} | {t('事項', in_=lg)} | {t('期限', in_=lg)} |", "|---|---|---|"]
+            out += [f"| {_cell(x.owner or tbc, lg)} | {_cell(x.task + (f'({x.time})' if x.time else ''), lg)} "
+                    f"| {_cell(x.deadline or tbc, lg)} |" for x in line[1]]
         else:
             out.append(line[1])
     return "\n".join(out).strip()
@@ -314,7 +333,8 @@ def todo_parts(item: str) -> Todo:
         s = parts[0].strip()
         for p in parts[1:]:
             if not labeled(p):
-                s += "｜" + p
+                # 認不得的段接回事項:英文內容用半形「 / 」(英文不出現全形字,使用者 2026-11-07;同 iOS 85b3eca)
+                s += "｜" + p if _cjk(s + p) else " / " + p.strip()
     elif (m := _PAREN_TAIL.search(s)) and labeled(m[1]):
         s = s[:m.start()].strip()
     return Todo(s, found.get("owner"), found.get("deadline"), time_)

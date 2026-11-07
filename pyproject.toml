@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "1.10.1"
+version = "1.11.0"
 description = "AI 文件.MD 轉換器:地端的會議逐字稿(含講者分離)與文件轉 Markdown"
 # AGPL 不是自己挑的,是**相依帶來的**:PDF 解析用的 PyMuPDF 是 AGPL-3.0,
 # 而 AGPL 具傳染性——散布一份 import 它的作品,整個作品就必須以相容授權
@@ -38,10 +38,6 @@ dependencies = [
     # 看不出優劣(2026.2 重跑逐字相同,差異確實來自換版),見 docs/dev/pipeline.md
     "openvino-genai>=2026.4",
     "huggingface_hub>=0.20",
-    # 會議紀錄草稿的 Qwen3.5-4B(Mac;GPU 跑,同手機版那一份模型)。只在 `minutes_worker`
-    # 子行程裡 import。⚠️ **只掛 Apple Silicon 的 Mac**:MLX 只有那裡有,Windows 走上面的
-    # OpenVINO。實測與「repetition_context_size 要放大」見 docs/spec/mac/05 §5.4b
-    "mlx-lm>=0.32; sys_platform == 'darwin' and platform_machine == 'arm64'",
     # ---- 公司網路的 HTTPS 憑證(見 __init__._trust_bundled_certificates 與
     # models.with_tls_rescue;兩者治的是不同的壞法,缺一台就有一種機器裝不起來)----
     # certifi:公開根憑證包。已是 requests 的傳遞相依,但**直接用就必須明寫**
@@ -50,10 +46,6 @@ dependencies = [
     # truststore:把驗證交給作業系統原生 API(公司代理做 TLS 攔截時唯一的解)。
     # 純 Python、零相依;uv 自己的 --native-tls 走的也是它
     "truststore>=0.10",
-    # 現場收音:麥克風+系統聲音(WASAPI loopback)。選 soundcard 不選
-    # sounddevice 的原因見 record.py 模組 docstring(sounddevice 內建的
-    # PortAudio 沒有 loopback,2026-07-21 本機實測)
-    "soundcard>=0.4.6",
     # ---- Windows 桌面外殼(2026-08-29,原生介面遷移的階段 3)----
     # 路徑、色票、Windows 整合、皮膚、捷徑、無黑框啟動器的共用層。
     # ⚠️ **相對路徑相依是看不見的**:只把這個專案傳給別人時 `uv sync` 會失敗,
@@ -127,12 +119,40 @@ dependencies = [
 # token(見 doccli 模組 docstring 與使用者層級的 doc2md Skill)
 doc2md = "meeting_scribe.doccli:main"
 
+[tool.uv]
+# ⚠️ **dev 群組預設不裝**(2026-11-07 查到:每個使用者的環境都裝了 playwright、pytest 等,
+# Mac 實測 .venv 多出約 150 MB;Windows 實測 v1.10.1 換版後 896.5 → 788.6 MB、107 → 98 個套件,
+# 與全新安裝一樣)。使用者那端跑的 `uv sync`(Install.bat、Install.command、
+# Mac 的 setup、換版小程式)與 `uv run`(啟動器的退路、doc2md 技能)全吃這一行,不必各加
+# `--no-dev`——winkit 的啟動器樣板也不用動。`uv sync` 是精確同步,舊版裝過的 dev 套件
+# 換版時會被移除;`uv run` 不刪也不補。⚠️ **開發機建環境改用 `uv sync --group dev`**
+# (只打 `uv sync` 會把 pytest 拿掉)。dev 裡的套件沒有任何正式功能在用:
+# `make_icon.py` 的 playwright 與 `make_skin.py` 的 oxipng 都只在產生資產時跑(後者裝不到就跳過)
+#
+# ⚠️ **desktop 群組預設要裝**(2026-11-07 拆包):核心 Scribe2MD 不含介面才用得到的依賴,完整 App
+# (會議助手電腦版)照舊全裝。用群組不用 extras 是因為 uv 有「預設群組」而沒有「預設 extras」——
+# 這樣使用者那端的 `uv sync`/`uv run` 一個字都不必改;只有核心的安裝程式加 `--no-default-groups`。
+default-groups = ["desktop"]
+
 [tool.uv.sources]
 # ⚠️ **winkit 在哪只寫在這一行**:搬家或改名就只改這裡(啟動器的守門清單
 # 由產生器從這裡算出來,不准再抄第二份字面值)
 winkit = { path = "winkit", editable = true }
 
 [dependency-groups]
+# 只有完整 App(會議助手電腦版)才用得到的依賴;核心 Scribe2MD(`doc2md` 命令列)不裝(見上面的
+# `default-groups`)。⚠️ 正式程式 import 它們一律要惰性、找不到時有退路:`record.py` 在錄音
+# 那一刻才 import soundcard,`minutes.py` 先 `find_spec("mlx_lm")`,`tests/test_package.py` 守著
+desktop = [
+    # 現場收音:麥克風+系統聲音(WASAPI loopback)。選 soundcard 不選
+    # sounddevice 的原因見 record.py 模組 docstring(sounddevice 內建的
+    # PortAudio 沒有 loopback,2026-07-21 本機實測)
+    "soundcard>=0.4.6",
+    # 會議紀錄草稿的 Qwen3.5-4B(Mac;GPU 跑,同手機版那一份模型)。只在 `minutes_worker`
+    # 子行程裡 import。⚠️ **只掛 Apple Silicon 的 Mac**:MLX 只有那裡有,Windows 走上面的
+    # OpenVINO。實測與「repetition_context_size 要放大」見 docs/spec/mac/05 §5.4b
+    "mlx-lm>=0.32; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 dev = [
     # 圖示產生器(`scripts/make_icon.py`)拿它把 SVG 渲染成 PNG——**不是為了測網頁**。
     # ⚠️ 2026-09-05 移除 gradio 時差點跟著拿掉(那一輪它看起來只跟 `measure_ui.py`

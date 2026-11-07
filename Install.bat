@@ -100,7 +100,7 @@ echo %M_BROKEN3%
 pause
 exit /b 1
 
-rem ---- 介面語言(Install.bat 與 Install-Skill.bat 各一份,test_bat.py 釘著一字不差)----
+rem ---- 介面語言(Install.bat、Install-Skill.bat、Troubleshooting\Launch-DEBUG.bat 各一份,test_bat.py 釘著一字不差)----
 rem 讀「設定 - 時間與語言」的語言清單(與工具介面的 plat_win.preferred_languages 同一份),
 rem 第一個認得的勝出:zh 開頭 = 中文、en 開頭 = 英文,都不認得就英文(同 i18n.match)。
 rem 讀不到清單就照舊印中文。MEETING_SCRIBE_UI_LANG 同 i18n.ENV_OVERRIDE(測試用)。

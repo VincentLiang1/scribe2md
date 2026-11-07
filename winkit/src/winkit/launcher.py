@@ -27,7 +27,15 @@ r"""無黑框啟動器(`.vbs`)的骨架與產生器。
    /匯入錯誤——那份訊息照樣會被攔下來跳出來,但它說不出「你少複製了東西」,而那正是
    這種部署方式唯一的失敗模式。清單由下游給(⚠️ 列的路徑必須真的存在,否則守門會在
    **正常的安裝**上誤報,而那時使用者照著訊息重新複製也不會好)。
+
+7. **英文介面的訊息框**(2026-11-07,為了 meeting-scribe-native 的「英文介面不得出現
+   任何中文字,全形標點也算」):由 `render(english=English(...))` 開啟,不給就完全是
+   舊行為。`.vbs` 跑在 Python **之前**、問不到程式的 i18n,所以語言照程式自己的順序
+   在 VBScript 裡再判一次(見 `English`)。⚠️ **中文那一份一個字都沒動**:英文是插在
+   每個中文訊息框**前面**的一段「是英文就跳英文框、收工」,所以讀不到語言設定、或沒有
+   接這個功能的下游,看到的都是原本的繁中。
 """
+from dataclasses import dataclass
 from pathlib import Path
 
 TEMPLATE = Path(__file__).with_name("launcher.vbs.tmpl")
@@ -48,6 +56,40 @@ FRESH_INPUTS = ("pyproject.toml", "uv.lock")
 # 文字欄位剛好相反:`app_noun`、`no_output_hint`、`debug_launcher` 各家真的不同。
 # ⚠️ 仍然是 opt-in:沒有相對路徑相依的下游不該拿到它,所以由呼叫端傳、不是預設值。
 PATH_DEP_GUARD_NOTE = "（上面若列出 .. 開頭的路徑，那是隔壁的共用資料夾，要跟專案一起複製。）"
+# 同一句的英文(傳給 `English(guard_note=...)`)。理由同上。
+PATH_DEP_GUARD_NOTE_EN = ("(Paths starting with .. are the shared folder next to the "
+                          "project; copy it together with the project.)")
+
+
+@dataclass(frozen=True)
+class English:
+    r"""英文介面的訊息框要用的字,以及「現在是不是英文介面」怎麼判(opt-in)。
+
+    語言的判斷順序照下游程式自己的那一套(meeting-scribe 的 `i18n.current()`):
+    (1) 環境變數 `env_var`;(2) `%LOCALAPPDATA%\<settings_file>` 這份 JSON 的
+    `settings_key`;(3) 系統的顯示語言。前兩項的值**不在 `chinese_values` ∪
+    `english_values` 裡就當沒設**、往下一項問(檔案裡是不認得的值 = 沒選過)。
+
+    ⚠️ **系統那一項問的是登錄檔,不是 `GetUserPreferredUILanguages`**(VBScript 叫不到
+    Win32 API):先 `HKCU\Control Panel\Desktop\PreferredUILanguages`(使用者改過顯示
+    語言才有),沒有再 `...\MuiCached\MachinePreferredUILanguages`(安裝時的語言)。
+    規則同 meeting-scribe 的 `i18n.match`:清單裡**第一個** `zh` 或 `en` 勝出,一個都沒有
+    就英文(日文、韓文…的人看英文);**讀不到登錄檔就繁中**——那是加這個功能之前的
+    行為,失效方向往舊的倒。
+
+    ⚠️ **簡中介面看到的是繁中**:`.vbs` 是 cp950,寫不出簡體字(同 `.bat` 的裁定)。
+    ⚠️ **每個欄位只准 ASCII**(`render` 當場檢查):規則是「英文介面不得出現任何中文字,
+    全形標點也算」,而全形括號、引號混進來,cp950 編得出來、測試也照樣綠。
+    """
+    app_title: str
+    app_noun: str
+    no_output_hint: str
+    env_var: str
+    settings_file: str
+    settings_key: str
+    english_values: tuple = ("en",)
+    chinese_values: tuple = ()
+    guard_note: str = ""
 
 
 def _quoted(field: str, value: str) -> str:
@@ -190,19 +232,207 @@ End Function
     }
 
 
-def guard_block(paths) -> str:
+def guard_block(paths, *, indent_var: str = "") -> str:
     r"""把「這幾個檔案必須在」變成守門用的 VBScript 片段。
 
     ⚠️ 縮排用的是**全形空格**(訊息框裡列出來才對得齊,半形在比例字型下會歪)。
     ⚠️ 路徑一律寫 Windows 的反斜線形式——它會原樣進 `fso.BuildPath`,也會原樣顯示
-    給使用者看,而使用者要拿它去檔案總管裡找。"""
+    給使用者看,而使用者要拿它去檔案總管裡找。
+    ⚠️ **`indent_var` 給了,縮排改由那個 VBScript 變數在執行期決定**(英文介面那條:
+    全形空格也算全形字,英文介面不准出現)。不給就是原本那一行、逐位元組不變。"""
     out = []
     for rel in paths:
         rel = _quoted("guards", rel)
         out.append(f'If Not fso.FileExists(fso.BuildPath(here, "{rel}")) Then')
-        out.append(f'    missing = missing & vbCrLf & "　　{rel}"')
+        if indent_var:
+            out.append(f'    missing = missing & vbCrLf & {indent_var} & "{rel}"')
+        else:
+            out.append(f'    missing = missing & vbCrLf & "　　{rel}"')
         out.append("End If")
     return "\n".join(out)
+
+
+def _ascii(field: str, value: str) -> str:
+    r"""英文欄位只准 ASCII,再照一般欄位跳脫(見 `English` 的說明)。"""
+    if not value.isascii():
+        bad = next(ch for ch in value if not ch.isascii())
+        raise ValueError(f"英文欄位 {field} 混了非 ASCII 的字 {bad!r}:"
+                         "英文介面不准出現中文字與全形標點")
+    return _quoted(field, value)
+
+
+_EN_EMPTY = {"EN_CONST": "", "EN_DIM": "", "EN_SETUP": "", "EN_GUARD_BOX": "",
+             "EN_START_BOX": "", "EN_FAIL_BOX": "", "EN_CAPTURED": "", "EN_FUNCS": ""}
+
+
+def _vbs_cases(values) -> str:
+    return ", ".join(f'"{_ascii("values", v)}"' for v in values)
+
+
+def _english_blocks(en: "English | None", *, install_bat: str) -> dict[str, str]:
+    r"""英文介面那幾段 VBScript。`en` 沒給就全部空字串——**產物與加這個功能之前逐位元組
+    相同**(另外兩個下游靜默地拿到新版骨架,見 `render` 的說明)。
+
+    ⚠️ **每一段都是「插在中文那段前面、是英文就自己做完並收工」**,不改中文那段:
+    收工的方式要跟中文那段**做一樣的副作用**(刪暫存檔、同一個結束碼),否則英文介面的
+    人拿到的是另一套行為。
+    ⚠️ `uiEn` 是**模組層**變數(`Dim` 在最外層):`Captured` 裡要用它,而 VBScript 的
+    函式看得到最外層的變數。
+    """
+    if en is None:
+        return dict(_EN_EMPTY)
+    if not en.chinese_values:
+        raise ValueError("English.chinese_values 不可以是空的:那樣使用者選了中文也會被當成"
+                         "「沒選過」、改問系統語言")
+    title = _ascii("app_title", en.app_title)
+    noun = _ascii("app_noun", en.app_noun)
+    hint = _ascii("no_output_hint", en.no_output_hint)
+    env_var = _ascii("env_var", en.env_var)
+    settings_file = _ascii("settings_file", en.settings_file)
+    key = _ascii("settings_key", en.settings_key)
+    bat = _ascii("install_bat", install_bat)
+    note = (f' & vbCrLf & _\n               "{_ascii("guard_note", en.guard_note)}"'
+            if en.guard_note else "")
+    # ⚠️ 單獨組:VBScript 的引號跳脫是 `""`,三個連在一起會把 Python 的三引號字串提早收尾。
+    pattern = 're.Pattern = """' + key + r'""\s*:\s*""([^""]*)"""'
+    return {
+        "EN_CONST": f'\nConst APP_TITLE_EN = "{title}"',
+        "EN_DIM": "\nDim uiEn, ind",
+        "EN_SETUP": """' 【英文介面】跟程式自己同一套順序判斷介面語言（見檔尾的 UiEnglish）。英文介
+' 面的訊息框一個中文字都不准有，連全形空格也算，所以守門清單的縮排也跟著換。
+uiEn = UiEnglish(sh, fso)
+If uiEn Then
+    ind = "    "
+Else
+    ind = "　　"
+End If
+
+""",
+        "EN_GUARD_BOX": f"""If uiEn And Len(missing) > 0 Then
+    MsgBox "Some required files are missing from this folder:" & vbCrLf & missing & vbCrLf & vbCrLf & _
+           here & vbCrLf & vbCrLf & _
+           "Copy the whole project folder again, then run ""{bat}"" once more."{note}, _
+           vbCritical, APP_TITLE_EN
+    WScript.Quit 1
+End If
+""",
+        "EN_START_BOX": f"""    If uiEn Then
+        MsgBox "Could not start the program (" & Err.Description & ")." & vbCrLf & vbCrLf & _
+               "Make sure uv is installed (https://docs.astral.sh/uv/)," & vbCrLf & _
+               "then run ""{bat}"" to set up the environment.", vbCritical, APP_TITLE_EN
+        Cleanup fso, capPath
+        WScript.Quit 1
+    End If
+""",
+        "EN_FAIL_BOX": f"""If uiEn And rc <> 0 Then
+    out = Captured(fso, capPath)
+    msg = "{noun} did not exit normally (exit code " & rc & ")." & vbCrLf & vbCrLf
+    If Len(out) > 0 Then
+        msg = msg & out
+    Else
+        msg = msg & "No message was captured. If this is the first run, run ""{bat}"" first; " & _
+              "{hint}"
+    End If
+    MsgBox msg, vbCritical, APP_TITLE_EN
+    Cleanup fso, capPath
+    WScript.Quit
+End If
+""",
+        "EN_CAPTURED": """    If uiEn And Len(text) > MAX_MSG Then
+        Captured = "(The message is long; only the last " & MAX_MSG & " characters are shown.)" & _
+                   vbCrLf & vbCrLf & Right(text, MAX_MSG)
+        Exit Function
+    End If
+""",
+        "EN_FUNCS": rf"""' 介面是不是英文：跟程式自己同一套順序——環境變數、使用者在程式裡選過的語言、
+' 系統的顯示語言。前兩項的值不認得就當沒設，往下一項問。
+' 【注意】任何一步讀不到都不可以讓這支啟動器停下來：它只決定訊息框用哪一種語言。
+Function UiEnglish(sh, fso)
+    Dim v, text, re, found
+    On Error Resume Next
+    v = sh.Environment("PROCESS")("{env_var}")
+    If LangChoice(v) >= 0 Then
+        UiEnglish = (LangChoice(v) = 1)
+        Exit Function
+    End If
+    text = ReadUtf8(fso, sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\{settings_file}")
+    Set re = New RegExp
+    {pattern}
+    Set found = re.Execute(text)
+    If Err.Number = 0 And found.Count > 0 Then
+        v = found(0).SubMatches(0)
+        If LangChoice(v) >= 0 Then
+            UiEnglish = (LangChoice(v) = 1)
+            Exit Function
+        End If
+    End If
+    Err.Clear
+    UiEnglish = SystemEnglish(sh)
+End Function
+
+
+' 1 = 英文、0 = 中文、-1 = 不認得（當沒設）。
+Function LangChoice(v)
+    LangChoice = -1
+    Select Case v
+        Case {_vbs_cases(en.english_values)}
+            LangChoice = 1
+        Case {_vbs_cases(en.chinese_values)}
+            LangChoice = 0
+    End Select
+End Function
+
+
+' 系統的顯示語言是不是英文。清單裡第一個 zh 或 en 勝出，一個都沒有就英文（日文、
+' 韓文的人看英文）。
+' 【注意】讀不到登錄檔就回 False（繁中）：那是加英文之前的行為，失效往舊的倒。
+' 【注意】問的是登錄檔，不是程式用的 GetUserPreferredUILanguages（VBScript 叫不
+' 到）：使用者改過顯示語言才有 PreferredUILanguages，沒有就看安裝時的語言。
+Function SystemEnglish(sh)
+    Dim langs, i, tag, seen
+    SystemEnglish = False
+    On Error Resume Next
+    langs = sh.RegRead("HKCU\Control Panel\Desktop\PreferredUILanguages")
+    If Err.Number <> 0 Or Not IsArray(langs) Then
+        Err.Clear
+        langs = sh.RegRead("HKCU\Control Panel\Desktop\MuiCached\MachinePreferredUILanguages")
+    End If
+    If Err.Number <> 0 Or Not IsArray(langs) Then Exit Function
+    seen = False
+    For i = LBound(langs) To UBound(langs)
+        tag = LCase(Replace(Trim(langs(i)), "_", "-"))
+        If Len(tag) > 0 Then
+            seen = True
+            If tag = "zh" Or Left(tag, 3) = "zh-" Then Exit Function
+            If tag = "en" Or Left(tag, 3) = "en-" Then
+                SystemEnglish = True
+                Exit Function
+            End If
+        End If
+    Next
+    SystemEnglish = seen
+End Function
+
+
+' 讀一個 UTF-8 文字檔（設定檔就是 UTF-8 寫的）；讀不到回空字串，等於「沒選過」。
+' 【注意】不共用上面那支 Captured：它只留最後 MAX_MSG 個字，設定檔裡別的值一長，
+' 語言那一項就被切掉了。
+Function ReadUtf8(fso, path)
+    Dim st
+    ReadUtf8 = ""
+    If Not fso.FileExists(path) Then Exit Function
+    On Error Resume Next
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 2 : st.Charset = "utf-8" : st.Open
+    st.LoadFromFile path
+    ReadUtf8 = st.ReadText
+    st.Close
+    If Err.Number <> 0 Then ReadUtf8 = ""
+    Err.Clear
+End Function
+
+""",
+    }
 
 
 def _self_blocks(self_reported_rc) -> tuple[dict[str, str], str]:
@@ -267,7 +497,8 @@ def render(*, app_title: str, app_noun: str, launcher_name: str,
            no_output_hint: str, guards, debug_launcher: str = "",
            guard_note: str = "", self_reported_rc: int | None = None,
            generator: str = "scripts/make_launcher.py", run_target: str = "",
-           fast_exe: str = FAST_EXE, fresh_inputs=FRESH_INPUTS) -> bytes:
+           fast_exe: str = FAST_EXE, fresh_inputs=FRESH_INPUTS,
+           english: English | None = None) -> bytes:
     r"""套上欄位,回傳可以直接寫成 `.vbs` 的位元組(**cp950、CRLF、無 BOM**)。
 
     ⚠️ **那三條編碼規則沒有一條會在存檔時抱怨,而症狀都不像編碼問題**:UTF-8 存的
@@ -328,7 +559,8 @@ def render(*, app_title: str, app_noun: str, launcher_name: str,
         "DEBUG_DOC": (f"\n' 與「{_quoted('debug_launcher', debug_launcher)}」的"
                       "差別只在後者留一個主控台視窗顯示啟動訊息；"
                       if debug_launcher else ""),
-        "GUARDS": guard_block(guards),
+        # 英文介面(opt-in)要的縮排是執行期才知道的,見 `guard_block` 的 `indent_var`。
+        "GUARDS": guard_block(guards, indent_var="ind" if english else ""),
         # 守門訊息的補充句(opt-in)。⚠️ 走相對路徑相依的專案需要它:清單裡那條
         # `..\某某` 不在專案資料夾底下,前一句「請把整個專案資料夾完整複製過來」
         # 照做也不會好。整句由 `PATH_DEP_GUARD_NOTE` 供應,見那裡。
@@ -338,6 +570,7 @@ def render(*, app_title: str, app_noun: str, launcher_name: str,
                        fast_exe=fast_exe, fresh_inputs=fresh_inputs,
                        self_ok=self_ok),
         **self_blocks,
+        **_english_blocks(english, install_bat=install_bat),
     }
     # 佔位符名就是參數名的大寫,所以錯誤訊息裡那個欄位名不必再手寫第二份。
     fields = {**{k: _quoted(k.lower(), v) for k, v in values.items()}, **blocks}

@@ -29,6 +29,7 @@ import numpy as np
 
 from meeting_scribe import audio, cancel, filelog, models, plat
 from meeting_scribe.errors import UserFacingError, native_engine_error
+from meeting_scribe.i18n import t
 from meeting_scribe.types import (
     MAX_SPEAKERS,
     UNKNOWN_SPEAKER,
@@ -1157,25 +1158,24 @@ def load_features(path: str | Path) -> Features:
     """讀回分群特徵檔。讀不動一律拋繁中的 UserFacingError(見各分支)。"""
     p = Path(path)
     if not p.exists():
-        raise UserFacingError(f"找不到分群檔「{p.name}」。")
+        raise UserFacingError(t("找不到分群檔「{name}」。", name=p.name))
     try:
         with np.load(p, allow_pickle=False) as z:
             fmt = int(z["fmt"])
             if fmt != _FEATURES_FORMAT:
-                raise UserFacingError(
-                    f"分群檔「{p.name}」是舊版格式(第 {fmt} 版,"
-                    f"這個版本讀第 {_FEATURES_FORMAT} 版),不能用來改人數;"
-                    "要改人數請把這個錄音重轉一次。"
-                )
+                raise UserFacingError(t(
+                    "分群檔「{name}」是舊版格式(第 {fmt} 版,這個版本讀第 {want} 版),"
+                    "不能用來改人數;要改人數請把這個錄音重轉一次。",
+                    name=p.name, fmt=fmt, want=_FEATURES_FORMAT))
             model = str(z["model"])
             current = models.embedding_model().name
             if model != current:
                 # 換過聲紋模型:舊向量在新模型的空間裡沒有意義,而重分群
                 # 照樣算得出東西——成品上看不出錯,所以這裡必須擋掉
-                raise UserFacingError(
-                    f"分群檔「{p.name}」是用另一個聲紋模型產生的"
-                    f"({model}),不能用來改人數;要改人數請把這個錄音重轉一次。"
-                )
+                raise UserFacingError(t(
+                    "分群檔「{name}」是用另一個聲紋模型產生的({model}),"
+                    "不能用來改人數;要改人數請把這個錄音重轉一次。",
+                    name=p.name, model=model))
             return Features(
                 spans=[(float(a), float(b)) for a, b in z["spans"]],
                 emb_idx=[int(i) for i in z["emb_idx"]],
@@ -1187,10 +1187,9 @@ def load_features(path: str | Path) -> Features:
     except UserFacingError:
         raise
     except Exception as e:
-        raise UserFacingError(
-            f"分群檔「{p.name}」讀不開,可能已經損壞;"
-            "要改人數請把這個錄音重轉一次。"
-        ) from e
+        raise UserFacingError(t(
+            "分群檔「{name}」讀不開,可能已經損壞;要改人數請把這個錄音重轉一次。",
+            name=p.name)) from e
 
 
 def block_vectors(feat: Features, spans) -> np.ndarray:
@@ -1229,7 +1228,7 @@ def recluster(
     read 給不出東西:它只在「所有區段都短於門檻」的退化路徑用得到,而那種
     檔案 save_features 根本不會落檔(vecs 為空就直接 return)。"""
     if not feat.emb_idx:
-        raise UserFacingError("這個分群檔沒有可用的聲紋資料,不能改人數。")
+        raise UserFacingError(t("這個分群檔沒有可用的聲紋資料,不能改人數。"))
     accum = _ChunkAccum(feat.chunk_sec)
     accum.spans = list(feat.spans)
     accum.emb_idx = list(feat.emb_idx)

@@ -16,8 +16,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from meeting_scribe import docimage, docmd
-from meeting_scribe.docmd import AssetsDir, Block, Heading, Image, Note, Para, Table
+from meeting_scribe.docmd import AssetsDir, Block, Heading, Image, Note, Para, Table, md_t
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -164,12 +165,12 @@ def _open(src: Path):
         doc = mod.open(str(src))
     except Exception as e:
         raise UserFacingError(
-            f"無法開啟 PDF「{src.name}」:檔案可能已損壞或不是真正的 PDF"
+            t("無法開啟 PDF「{name}」:檔案可能已損壞或不是真正的 PDF", name=src.name)
         ) from e
     if doc.needs_pass:
         doc.close()
         raise UserFacingError(
-            f"PDF「{src.name}」有密碼保護,請先用 PDF 軟體移除密碼再轉換"
+            t("PDF「{name}」有密碼保護,請先用 PDF 軟體移除密碼再轉換", name=src.name)
         )
     return doc
 
@@ -540,10 +541,10 @@ def _page_images(
         seen.add(digest)
         link = assets.add_bytes(data, ".png")
         if link:
-            out.append(Image(link, f"第 {page.number + 1} 頁的圖片"))
+            out.append(Image(link, md_t("第 {n} 頁的圖片", n=page.number + 1)))
         # 內嵌圖的文字才是給 AI 用的重點:只留一個連結等於什麼都沒給
         out.extend(docimage.ocr_image_bytes(
-            data, f"第 {page.number + 1} 頁的圖片", ocr_enabled,
+            data, md_t("第 {n} 頁的圖片", n=page.number + 1), ocr_enabled,
         ))
     return out
 
@@ -580,21 +581,17 @@ def _ocr_page(
     的檢索(整本「AWAIT) FA1745」照樣會被切塊、被嵌入),而強制 OCR 本來就是
     「那一層不可信」的意思。捨棄一定伴隨一個標記,不會無聲。"""
     no = page.number + 1
-    if layer == LAYER_GARBLED:
-        why, kind = "的文字層判定為亂碼、已捨棄", docmd.KIND_GARBLED_TEXT_LAYER
-    elif layer == LAYER_FORCED:
-        why, kind = "已依要求捨棄文字層、改用文字辨識", docmd.KIND_FORCED_OCR
-    else:
-        why, kind = "抽不出文字層", docmd.KIND_SCANNED_PAGE
+    kind = {LAYER_GARBLED: docmd.KIND_GARBLED_TEXT_LAYER,
+            LAYER_FORCED: docmd.KIND_FORCED_OCR}.get(layer, docmd.KIND_SCANNED_PAGE)
     try:
         data = page.get_pixmap(dpi=_OCR_PAGE_DPI).tobytes("png")
     except Exception:
         logger.debug("第 %d 頁渲染失敗", no, exc_info=True)
-        return [Note(f"第 {no} 頁{why},而且無法渲染內容", kind)]
+        return [Note(_ocr_page_note(no, layer, _UNRENDERABLE), kind)]
     out: list[Block] = []
     link = assets.add_bytes(data, ".png")
     if link:
-        out.append(Image(link, f"第 {no} 頁(整頁影像)"))
+        out.append(Image(link, md_t("第 {n} 頁(整頁影像)", n=no)))
     # **文字層也要留**:被判成掃描頁只代表「字少又有大圖」,不代表那幾個字
     # 不是內容(常見的是圖說或頁碼標題)。OCR 關著時它更是這一頁唯一的文字
     # ——自我稽核 2026-08-02 就是先抓到這個落差,才發現這條路會無聲吃掉它
@@ -603,13 +600,41 @@ def _ocr_page(
         if text:
             out.append(Para(text))
     if not ocr_enabled:
-        out.append(Note(
-            f"第 {no} 頁{why},而文字辨識(OCR)沒有啟用,這一頁的文字尚未取出", kind,
-        ))
+        out.append(Note(_ocr_page_note(no, layer, _OCR_OFF), kind))
         return out
-    found = docimage.ocr_image_bytes(data, f"第 {no} 頁的整頁影像", True)
-    out.extend(found or [Note(f"第 {no} 頁{why},也沒有辨識出文字", kind)])
+    found = docimage.ocr_image_bytes(data, md_t("第 {n} 頁的整頁影像", n=no), True)
+    out.extend(found or [Note(_ocr_page_note(no, layer, _NO_TEXT), kind)])
     return out
+
+
+# `_ocr_page_note` 的三種結局
+_UNRENDERABLE, _OCR_OFF, _NO_TEXT = "unrenderable", "ocr_off", "no_text"
+
+
+def _ocr_page_note(no: int, layer: str, outcome: str) -> str:
+    """整頁 OCR 那一頁的標記:「為什麼走整頁」× 「結局」九句,**每句整句翻**。
+
+    原本是「第 N 頁」+ 原因片段 + 結局片段拼起來的;英文的語序跟中文不同,
+    拼片段翻不出通順的句子(英文介面的 md 要整句英文,使用者 2026-11-07)。"""
+    if layer == LAYER_GARBLED:
+        if outcome == _UNRENDERABLE:
+            return md_t("第 {n} 頁的文字層判定為亂碼、已捨棄,而且無法渲染內容", n=no)
+        if outcome == _OCR_OFF:
+            return md_t("第 {n} 頁的文字層判定為亂碼、已捨棄,而文字辨識(OCR)沒有啟用,"
+                        "這一頁的文字尚未取出", n=no)
+        return md_t("第 {n} 頁的文字層判定為亂碼、已捨棄,也沒有辨識出文字", n=no)
+    if layer == LAYER_FORCED:
+        if outcome == _UNRENDERABLE:
+            return md_t("第 {n} 頁已依要求捨棄文字層、改用文字辨識,而且無法渲染內容", n=no)
+        if outcome == _OCR_OFF:
+            return md_t("第 {n} 頁已依要求捨棄文字層、改用文字辨識,而文字辨識(OCR)沒有啟用,"
+                        "這一頁的文字尚未取出", n=no)
+        return md_t("第 {n} 頁已依要求捨棄文字層、改用文字辨識,也沒有辨識出文字", n=no)
+    if outcome == _UNRENDERABLE:
+        return md_t("第 {n} 頁抽不出文字層,而且無法渲染內容", n=no)
+    if outcome == _OCR_OFF:
+        return md_t("第 {n} 頁抽不出文字層,而文字辨識(OCR)沒有啟用,這一頁的文字尚未取出", n=no)
+    return md_t("第 {n} 頁抽不出文字層,也沒有辨識出文字", n=no)
 
 
 def _table_leftovers(page, table, rows: list[list[str]]) -> str:
@@ -657,7 +682,7 @@ def _text_page_blocks(page, levels: list[float], flat: bool) -> list[Block]:
         table_boxes.append(bbox)
         if rows:
             items.append((bbox[1], bbox[0], Table(
-                rows, has_header=True, caption=f"第 {page.number + 1} 頁的表格",
+                rows, has_header=True, caption=md_t("第 {n} 頁的表格", n=page.number + 1),
             )))
         # 表格吞掉但沒抽到的行要補回來,否則兩頭落空(見 _table_leftovers)。
         # 擺在表格正下方:它本來就是這張表裡的內容
@@ -768,7 +793,7 @@ def convert_pdf(
             whole_page = kind == "scan" or page.number in dropped
             # 平坦結構每頁都要標題;整頁 OCR 的頁即使推得出階層也需要一個錨點
             if flat or whole_page:
-                blocks.append(Heading(1, f"第 {no} 頁"))
+                blocks.append(Heading(1, md_t("第 {n} 頁", n=no)))
             if page.number in garbled:
                 blocks.extend(_ocr_page(page, assets, ocr_enabled, LAYER_GARBLED))
             elif page.number in forced:
@@ -779,7 +804,7 @@ def convert_pdf(
                 scanned += 1
                 blocks.extend(_ocr_page(page, assets, ocr_enabled))
             else:
-                blocks.append(Note(f"第 {no} 頁沒有可擷取的內容", docmd.KIND_BLANK_PAGE))
+                blocks.append(Note(md_t("第 {n} 頁沒有可擷取的內容", n=no), docmd.KIND_BLANK_PAGE))
             # 整頁 OCR 過的頁,不必再對頁內的圖重跑一次
             if not whole_page:
                 blocks.extend(_page_images(page, assets, seen_images, ocr_enabled, templates))
@@ -789,23 +814,31 @@ def convert_pdf(
         header: list[Block] = []
         if scanned:
             header.append(Note(
-                f"本文件共 {total} 頁,其中 {scanned} 頁抽不出文字層,已改用整頁文字辨識(OCR)",
+                md_t("本文件共 {total} 頁,其中 {n} 頁抽不出文字層,已改用整頁文字辨識(OCR)",
+                     total=total, n=scanned),
                 docmd.KIND_SCANNED_PAGE,
             ))
         if garbled:
             # 兩組頁互斥;上一行已報過總頁數時用「另有」,免得兩行都寫「共 N 頁,其中…」讀起來像互相矛盾
-            lead = "另有" if scanned else f"本文件共 {total} 頁,其中"
-            header.append(Note(
-                f"{lead} {len(garbled)} 頁的既有文字層判定為亂碼,"
-                + ("已捨棄並改用整頁文字辨識(OCR)" if ocr_enabled
-                   else "已捨棄,而文字辨識(OCR)沒有啟用,那幾頁的文字尚未取出"),
-                docmd.KIND_GARBLED_TEXT_LAYER,
-            ))
+            # (「另有/共 N 頁」× OCR 開關四句,各自整句翻)
+            n = len(garbled)
+            if scanned:
+                text = (md_t("另有 {n} 頁的既有文字層判定為亂碼,已捨棄並改用整頁文字辨識(OCR)", n=n)
+                        if ocr_enabled else
+                        md_t("另有 {n} 頁的既有文字層判定為亂碼,已捨棄,"
+                             "而文字辨識(OCR)沒有啟用,那幾頁的文字尚未取出", n=n))
+            else:
+                text = (md_t("本文件共 {total} 頁,其中 {n} 頁的既有文字層判定為亂碼,"
+                             "已捨棄並改用整頁文字辨識(OCR)", total=total, n=n)
+                        if ocr_enabled else
+                        md_t("本文件共 {total} 頁,其中 {n} 頁的既有文字層判定為亂碼,已捨棄,"
+                             "而文字辨識(OCR)沒有啟用,那幾頁的文字尚未取出", total=total, n=n))
+            header.append(Note(text, docmd.KIND_GARBLED_TEXT_LAYER))
         if forced:
             # 告知、不是失真:這是使用者自己要的,辨識的字另有 ocr 標記
             header.append(Note(
-                f"本文件依要求整份改用文字辨識(OCR):共 {total} 頁,"
-                f"其中 {len(forced)} 頁捨棄了原有的文字層",
+                md_t("本文件依要求整份改用文字辨識(OCR):共 {total} 頁,"
+                     "其中 {n} 頁捨棄了原有的文字層", total=total, n=len(forced)),
                 docmd.KIND_FORCED_OCR, lossy=False,
             ))
         blocks[0:0] = header

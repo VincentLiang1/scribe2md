@@ -47,7 +47,7 @@ from pathlib import Path
 import numpy as np
 
 from meeting_scribe import (
-    audio, cancel, diarize, diarproc, highlights, merge, pipeline, plat, power, punctuate,
+    audio, cancel, diarize, diarproc, highlights, i18n, merge, pipeline, plat, power, punctuate,
     transcribe, wavspan,
 )
 from meeting_scribe.types import UNKNOWN_SPEAKER, SpeakerTurn, SpokenSegment, TranscriptSegment
@@ -944,9 +944,21 @@ _FINISH_SPANS = {
 }
 
 
+def _finish_label(stage: str) -> str:
+    """收尾階段鍵 → 畫面上的名字(查表用鍵、交給畫面才翻,理由見 `pipeline._stage_label`)。"""
+    return {"轉錄收尾": t("轉錄收尾"), "講者分析": t("講者分析")}.get(stage, stage)
+
+
 def track_dest(out_dir: Path, stem: str, kind: str) -> Path:
-    """分軌檔放哪(雙軌合成失敗改交分軌、收尾沒做完保住音軌,兩處共用同一套檔名)。"""
-    return out_dir / f"{stem}_{'現場' if kind == 'mic' else '電腦'}.wav"
+    """分軌檔放哪(雙軌合成失敗改交分軌、收尾沒做完保住音軌,兩處共用同一套檔名)。
+
+    ⚠️ 後綴跟介面語言(英文介面的檔名不能有中文字,使用者 2026-11-07);只有寫、沒有人
+    照檔名回頭找,所以不必兩種都認。"""
+    if i18n.current() == i18n.EN:
+        suffix = "mic" if kind == "mic" else "system"
+    else:
+        suffix = "現場" if kind == "mic" else "電腦"
+    return out_dir / f"{stem}_{suffix}.wav"
 
 
 def _move_in_place(src: Path, dest: Path) -> None:
@@ -1063,10 +1075,10 @@ def run_live_finish(
     def report(stage: str, frac: float = 0.0) -> None:
         if on_stage:
             start, width = _FINISH_SPANS.get(stage, (1.0, 0.0))
-            on_stage(stage, min(start + width * frac, 1.0))
+            on_stage(_finish_label(stage), min(start + width * frac, 1.0))
 
     with power.keep_awake():
-        report(t("轉錄收尾"))
+        report("轉錄收尾")
         # **收尾階段的記錄**(2026-08-04 補):在此之前,從「按下停止」到
         # 成品落地之間記錄檔是一片空白——2026-08-04 那場 64 分鐘的錄音,
         # 停止之後 40 幾分鐘沒有任何一行,無從判斷是還在算、還是卡住了。
@@ -1156,10 +1168,10 @@ def run_live_finish(
             # 純 CPU:依序(同 pipeline 的排程理由——兩引擎同搶一顆 CPU
             # 只會過度訂閱,依序也壓低 8GB 基準機的峰值記憶體)
             segments = live.stop_and_flush(
-                final_lengths, progress=lambda f: report(t("轉錄收尾"), f),
+                final_lengths, progress=lambda f: report("轉錄收尾", f),
             )
-            report(t("講者分析"))
-            diarized = diarize_all(lambda f: report(t("講者分析"), f))
+            report("講者分析")
+            diarized = diarize_all(lambda f: report("講者分析", f))
         results = [
             TrackResult(t.kind, t.path, segments[t.kind], turns, vps, quality)
             for t, turns, vps, quality in diarized

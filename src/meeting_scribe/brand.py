@@ -9,8 +9,8 @@ r"""這支程式的**身分**:名字、用途那句話、工作列身分、落�
 也正是安裝腳本敢直接 import 它的理由:載它不會把 gradio、tkinter 或任何模型
 相依拉進安裝流程。
 
-⚠️ **顯示名稱與專案名不同,而且這個差別是刻意的**(2026-08-09 定名):對使用者
-顯示的是「AI 文件.MD 轉換器」,而專案/套件/資料夾名 `meeting-scribe` 不動——
+⚠️ **顯示名稱與專案名不同,而且這個差別是刻意的**(2026-08-09 定名,2026-11-07 改名):對使用者
+顯示的是「會議助手電腦版」(英文 Notetaker Desktop),而專案/套件/資料夾名 `meeting-scribe` 不動——
 使用者看不到它,而 `%LOCALAPPDATA%\meeting-scribe`、`uv run meeting-scribe`
 入口、doc2md Skill 的寫死路徑、GitHub repo 名全綁著它。要再改顯示名稱就
 `grep -rn` 全 repo,別照抄任何清單(沿革見 `docs/spec/01`)。
@@ -32,7 +32,29 @@ APP_ID = "VincentLiang.MeetingScribe"
 # 是落地位置(改了等於叫使用者重下 2-3 GB 的模型)。合併之後改標題就會順手把快取
 # 搬家——模型還在磁碟上、程式卻說沒有,而兩個位置都存在,連「檔案不見了」都不會
 # 發生。
+#
+# ⚠️ **2026-11-07 改名之後拆成兩種**(使用者:完整 App 叫「會議助手電腦版」/ Notetaker Desktop,
+# 是手機 App「會議助手」/ Notetaker 的電腦版;Scribe2MD 改當核心的名字):
+# - `APP_TITLE` 是**磁碟上的名字**:`.app` 資料夾名、捷徑名的舊值、換版小程式找自己的依據。
+#   ⚠️ **改它 = 改已裝副本在讀的契約**(`docs/dev/publish.md` §4.7),要跟換版流程一起改,所以
+#   在 Mac 資料夾改名那一階段之前維持舊值。
+# - `APP_NAME*` 是**顯示名**:視窗標題、頁首、選單列、捷徑、說明。畫面上的字一律走
+#   `t("會議助手電腦版")`(en.json 是 Notetaker Desktop),這裡的三個給讀不到 `t()` 的地方
+#   (Mac 的 `InfoPlist.strings`、捷徑名、啟動器)。
 APP_TITLE = "AI 文件.MD 轉換器"
+# Mac `.app` 的新資料夾名(使用者 2026-11-07 選照原計畫改)。⚠️ **ASCII、不跟語言變**:Finder 顯示的是
+# lproj 的在地化名稱(`make_mac_app.LOCALIZED`),資料夾名只出現在路徑。舊名 `APP_TITLE` 的 App 由
+# 換版小程式搬成這個名字(`plat_mac.apply_update`),Dock 裡指向舊路徑的釘選在新版第一次開時改指過來
+# (`plat_mac.migrate_dock`)
+APP_BUNDLE = "Notetaker Desktop"
+APP_NAME = "會議助手電腦版"
+APP_NAME_ZH_CN = "会议助手电脑版"
+APP_NAME_EN = "Notetaker Desktop"
+# 核心(文件、錄音轉 md 的引擎,`doc2md` 命令列)的名字。單獨安裝的那一份與技能都叫它
+CORE_NAME = "Scribe2MD"
+# 捷徑以前用過的名字:換版與重裝時認得它們、換成現在的名字(2026-11-07 前是 `APP_TITLE`,
+# 當天短暫用過 Scribe2MD 當英文名)
+LEGACY_NAMES = (APP_TITLE, CORE_NAME)
 
 # 視窗第一句:這支程式是做什麼的(標題列寫的是名字,名字說不出它做什麼)。
 APP_SUB = "把會議錄音與各種文件,在這台電腦上轉成繁體中文的 Markdown。"

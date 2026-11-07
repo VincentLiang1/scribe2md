@@ -654,6 +654,36 @@ def set_window_icon(window, ico_path, png_path):
     return _impl().set_window_icon(window, ico_path, png_path)
 
 
+def migrate_dock() -> bool:
+    r"""Dock 裡指向 App 舊路徑的釘選,改指現在這一份(回傳有沒有改)。
+
+    ⚠️ **這支存在的理由只在 macOS**(2026-11-07 改名實測):`.app` 從「AI 文件.MD 轉換器.app」改名成
+    「Notetaker Desktop.app」之後,Dock 只記路徑字串(這版 macOS 不存書籤),釘選就變成一個問號。
+    換版小程式把 App 搬到新名字,新版第一次開起來時由這裡改指。⚠️ **只改指向舊名的那幾項**,
+    別的釘選一項都不動;⚠️ **失敗不得有任何後果**(Dock 的設定讀不到就算了,頂多那一顆問號)。
+    Windows 的捷徑由換版那一步重建(`update.migrate_legacy_entries`),這裡什麼都不做。"""
+    return _impl().migrate_dock()
+
+
+def venv_bin_name() -> str:
+    """venv 裡放執行檔的資料夾名(Windows `Scripts`、其他 `bin`)。固定入口 `meeting-scribe/bin` 指向它(`entry`)。"""
+    return _impl().venv_bin_name()
+
+
+def executable_name(stem: str) -> str:
+    """命令列程式在這個平台的檔名(Windows 加 `.exe`)。"""
+    return _impl().executable_name(stem)
+
+
+def point_dir_link(link, target) -> None:
+    r"""把 `link` 換成指向資料夾 `target` 的連結(固定入口 `meeting-scribe/bin`,見 `entry`)。
+
+    ⚠️ **要是真的連結、不是轉接腳本**:wiki-agent 傳進來的檔名不完全可信,經過 cmd 或 shell 就有注入面。
+    Mac 是 symlink,先建暫存再 rename 蓋過去(原子);Windows 是目錄 junction(不需要管理員權限),不能原子
+    替換,刪掉到重建之間有極短的空窗。原本是真的資料夾(不是連結)時改名成 `.old` 留著,不刪。"""
+    return _impl().point_dir_link(link, target)
+
+
 def strip_default_menubar(window) -> None:
     """把這個平台自己掛上去的、我們用不到的預設選單列清掉。
 

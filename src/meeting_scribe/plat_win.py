@@ -538,7 +538,8 @@ def apply_update(staged, target, version: str) -> Outcome:
     flags = CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     for extra in (CREATE_BREAKAWAY_FROM_JOB, 0):
         try:
-            subprocess.Popen(argv, cwd=str(staged.parent), close_fds=True,
+            # 訊息跟介面語言:翻好放進環境變數交給小程式(`update.helper_texts`)
+            subprocess.Popen(argv, cwd=str(staged.parent), close_fds=True, env=update.helper_env(),
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, creationflags=flags | extra)
             return Outcome("ok")
@@ -561,6 +562,34 @@ def set_window_icon(window, ico_path, png_path):
     ⚠️ 回 `None`:這條路沒有需要留著參照的東西。"""
     window.iconbitmap(default=str(ico_path))
     return None
+
+
+def migrate_dock() -> bool:
+    """Windows 沒有 Dock;捷徑改名由 `update.migrate_legacy_entries` 做。"""
+    return False
+
+
+def venv_bin_name() -> str:
+    return "Scripts"
+
+
+def executable_name(stem: str) -> str:
+    return f"{stem}.exe"
+
+
+def point_dir_link(link, target) -> None:
+    """目錄 junction(見 `plat.point_dir_link`);不需要管理員權限,`os.symlink` 要。"""
+    import _winapi
+    import os
+    from pathlib import Path
+
+    link, target = Path(link), Path(target)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if os.path.isjunction(link) or link.is_symlink():
+        os.rmdir(link)                       # 只拿掉連結本身,不碰它指的那一頭
+    elif link.exists():
+        link.rename(link.with_name(f"{link.name}.old"))
+    _winapi.CreateJunction(str(target), str(link))
 
 
 def strip_default_menubar(window) -> None:

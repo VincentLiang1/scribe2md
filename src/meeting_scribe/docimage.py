@@ -16,8 +16,9 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from meeting_scribe import docmd, ocr, pipeline, plat
-from meeting_scribe.docmd import AssetsDir, Block, Heading, Image, Note, Para
+from meeting_scribe.docmd import AssetsDir, Block, Heading, Image, Note, Para, md_t
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ _MAX_FRAMES = 200
 def _ensure_pillow():
     global PIL
     if PIL is None:
-        docmd.lazy_import("PIL", "影像")
+        docmd.lazy_import("PIL", t("影像"))
         from PIL import Image as _im
         from PIL import ImageOps as _ops
         PIL = types.SimpleNamespace(Image=_im, ImageOps=_ops)
@@ -137,7 +138,8 @@ def ocr_image_bytes(data: bytes, label: str, ocr_enabled: bool = True) -> list[B
 
     `label` 是**來源的名稱**(「這張影像」「第 3 頁的圖片」),會被填進
     「以下文字由{label}辨識而來」——所以不要自帶「辨識」「的文字」
-    這類字眼,否則會出現「由影像辨識辨識而來」。"""
+    這類字眼,否則會出現「由影像辨識辨識而來」。⚠️ 呼叫端用 `md_t` 寫(它會進 md,
+    英文介面要是英文名詞片語:「the image on page 3」)。"""
     if not ocr_enabled or not data:
         return []
     mod = _ensure_pillow()
@@ -157,7 +159,7 @@ def ocr_image_bytes(data: bytes, label: str, ocr_enabled: bool = True) -> list[B
     if not text.strip():
         return []
     return [
-        Note(f"以下文字由{label}辨識而來,可能有誤", docmd.KIND_OCR),
+        Note(md_t("以下文字由{label}辨識而來,可能有誤", label=label), docmd.KIND_OCR),
         Para(text),
     ]
 
@@ -218,20 +220,21 @@ def _exif_blocks(im) -> list[Block]:
         when = _exif_datetime(sub.get(_TAG_DATETIME_ORIGINAL)
                               or exif.get(_TAG_DATETIME))
         if when:
-            lines.append(f"- 拍攝日期:{when}")
+            lines.append("- " + md_t("拍攝日期:{when}", when=when))
         gps = exif.get_ifd(_IFD_GPS) or {}
         lat = _gps_decimal(gps.get(_GPS_LAT), gps.get(_GPS_LAT_REF))
         lon = _gps_decimal(gps.get(_GPS_LON), gps.get(_GPS_LON_REF))
         if lat is not None and lon is not None:
-            lines.append(f"- 拍攝位置:緯度 {lat:.6f}、經度 {lon:.6f}")
+            lines.append("- " + md_t("拍攝位置:緯度 {lat}、經度 {lon}",
+                                     lat=f"{lat:.6f}", lon=f"{lon:.6f}"))
         camera = " ".join(str(exif.get(tag) or "").strip()
                           for tag in (_TAG_MAKE, _TAG_MODEL)).strip()
         if camera:
-            lines.append(f"- 拍攝裝置:{camera}")
+            lines.append("- " + md_t("拍攝裝置:{camera}", camera=camera))
     except Exception:  # noqa: BLE001
         logger.debug("EXIF 欄位解讀失敗", exc_info=True)
     # 標題讓這一塊被切出去之後仍然知道自己在講什麼(docmd.render 規則 3)
-    return [Para("**拍攝資訊**\n" + "\n".join(lines))] if lines else []
+    return [Para(md_t("**拍攝資訊**") + "\n" + "\n".join(lines))] if lines else []
 
 
 def _page_count(im, suffix: str) -> tuple[int, bool]:
@@ -253,15 +256,14 @@ def convert_image(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> lis
     留在原圖裡,人要核對時得看得到。"""
     mod = _ensure_pillow()
     if src.suffix.lower() in (".heic", ".heif") and not _ensure_heif():
-        raise UserFacingError(
-            f"無法開啟 HEIC 影像「{src.name}」:缺少解碼元件,"
-            f"{plat.reinstall_hint()},{plat.heic_workaround()}"
-        )
+        raise UserFacingError(t(
+            "無法開啟 HEIC 影像「{name}」:缺少解碼元件,{hint},{workaround}",
+            name=src.name, hint=plat.reinstall_hint(), workaround=plat.heic_workaround()))
     try:
         opened = mod.Image.open(src)
     except Exception as e:
         raise UserFacingError(
-            f"無法開啟影像「{src.name}」:檔案可能已損壞或格式不支援"
+            t("無法開啟影像「{name}」:檔案可能已損壞或格式不支援", name=src.name)
         ) from e
 
     blocks: list[Block] = []
@@ -271,7 +273,7 @@ def convert_image(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> lis
         blocks.extend(_exif_blocks(im))
         total, animated = _page_count(im, src.suffix.lower())
         if animated:
-            blocks.append(Note("這是動畫檔,只取第一格", docmd.KIND_IMAGE_ONLY))
+            blocks.append(Note(md_t("這是動畫檔,只取第一格"), docmd.KIND_IMAGE_ONLY))
         multi = total > 1
         # **邊 seek 邊處理,不先收集成清單**:多頁影像的每一頁共用同一個
         # Pillow 物件,`list(...)` 會在展開時把 seek 跑到最後,結果每一頁
@@ -282,7 +284,7 @@ def convert_image(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> lis
             except EOFError:  # n_frames 說謊的壞檔
                 break
             if multi:
-                blocks.append(Heading(1, f"第 {page_no} 頁"))
+                blocks.append(Heading(1, md_t("第 {n} 頁", n=page_no)))
             # copy() 讓這一頁脫離共用的解碼緩衝,下一次 seek 才不會改到它
             normalised = _normalise(im.copy() if multi else im)
             buf = io.BytesIO()
@@ -290,7 +292,8 @@ def convert_image(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> lis
             data = buf.getvalue()
             link = assets.add_bytes(data, ".png")
             if link:
-                blocks.append(Image(link, f"{src.stem} 第 {page_no} 頁" if multi else src.stem))
+                blocks.append(Image(link, md_t("{name} 第 {n} 頁", name=src.stem, n=page_no)
+                                         if multi else src.stem))
             # 這裡的「浪費」是刻意的,別順手優化掉:剛編好的 PNG 會被
             # ocr_image_bytes 解回來、原封不動再編一次到暫存檔(12MP 照片
             # 每張約 1~2 秒,未實測、量級推估)。省法是把 assets 落地的路徑
@@ -298,17 +301,18 @@ def convert_image(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> lis
             # 門檻與 OCR 前置邏輯從一處分成兩處,而且只有「整批都是照片」時
             # 才有感——內嵌圖只有位元組、走不到這條捷徑。使用者 2026-08-01
             # 權衡後決定不換,勿在無新指示下改回
-            found = ocr_image_bytes(data, "這張影像", ocr_enabled)
+            found = ocr_image_bytes(data, md_t("這張影像"), ocr_enabled)
             if found:
                 blocks.extend(found)
             elif ocr_enabled:
                 blocks.append(Note(
-                    f"這張影像沒有辨識出文字{'(第 %d 頁)' % page_no if multi else ''}",
+                    md_t("這張影像沒有辨識出文字(第 {n} 頁)", n=page_no) if multi
+                    else md_t("這張影像沒有辨識出文字"),
                     docmd.KIND_IMAGE_ONLY,
                 ))
             else:
                 blocks.append(Note(
-                    "文字辨識(OCR)沒有啟用,這張影像的內容尚未取出",
+                    md_t("文字辨識(OCR)沒有啟用,這張影像的內容尚未取出"),
                     docmd.KIND_IMAGE_ONLY,
                 ))
     return blocks

@@ -14,8 +14,9 @@ import urllib.parse
 from pathlib import Path
 
 from meeting_scribe import docmd
-from meeting_scribe.docmd import AssetsDir, Block, Note, Para, Raw, Table
+from meeting_scribe.docmd import AssetsDir, Block, Note, Para, Raw, Table, md_t
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ def encoding_note(enc: str) -> list[Block]:
     if enc != ENCODING_UNSURE:
         return []
     return [Note(
-        "本檔案的文字編碼無法確定,內容可能有亂碼,請對照原始檔案確認",
+        md_t("本檔案的文字編碼無法確定,內容可能有亂碼,請對照原始檔案確認"),
         docmd.KIND_ENCODING_GUESS,
     )]
 
@@ -185,18 +186,18 @@ def convert_csv(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list[
     text, enc = read_text_auto(src.read_bytes())
     blocks: list[Block] = encoding_note(enc)
     if not text.strip():
-        blocks.append(Note("這個檔案是空的", docmd.KIND_BLANK_PAGE, lossy=False))
+        blocks.append(Note(md_t("這個檔案是空的"), docmd.KIND_BLANK_PAGE, lossy=False))
         return blocks
     delim = _sniff_delimiter(text)
     try:
         rows = [row for row in csv.reader(io.StringIO(text, newline=""), delimiter=delim)]
     except csv.Error as e:
         raise UserFacingError(
-            f"CSV 格式有問題,無法解析「{src.name}」:{e}"
+            t("CSV 格式有問題,無法解析「{name}」:{e}", name=src.name, e=e)
         ) from e
     rows = [r for r in rows if any((c or "").strip() for c in r)]
     if not rows:
-        blocks.append(Note("這個檔案沒有任何資料列", docmd.KIND_BLANK_PAGE, lossy=False))
+        blocks.append(Note(md_t("這個檔案沒有任何資料列"), docmd.KIND_BLANK_PAGE, lossy=False))
         return blocks
     # 寬表要不要改逐筆區塊由 docmd.render 決定(渲染政策只有一個出處)
     table = Table(rows, has_header=True, caption=src.stem)
@@ -207,7 +208,7 @@ def convert_csv(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list[
     # ——那時這條會當場擋下來,而不是等使用者發現資料少了
     if len(table.rows) != len(rows):  # pragma: no cover - 回歸防線
         blocks.extend(docmd.extraction_gap_note(
-            [f"第 {i + 1} 列" for i in range(len(rows) - len(table.rows))], "資料列",
+            [md_t("第 {n} 列", n=i + 1) for i in range(len(rows) - len(table.rows))], rows=True,
         ))
     return blocks
 
@@ -304,7 +305,7 @@ def convert_markdown(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> 
     blocks: list[Block] = encoding_note(enc)
     if lost:
         blocks.append(Note(
-            f"這份 markdown 引用了 {lost} 張找不到的圖片,連結原樣保留",
+            md_t("這份 markdown 引用了 {n} 張找不到的圖片,連結原樣保留", n=lost),
             docmd.KIND_ASSET_FAILED,
         ))
     return blocks + [Raw(body.strip())]
@@ -323,11 +324,11 @@ def convert_rtf(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list[
         text = rtf_to_text(raw, errors="ignore")
     except Exception as e:
         raise UserFacingError(
-            f"無法解析 RTF 檔「{src.name}」:檔案可能已損壞"
+            t("無法解析 RTF 檔「{name}」:檔案可能已損壞", name=src.name)
         ) from e
     blocks: list[Block] = encoding_note(enc)
     blocks.append(Note(
-        "RTF 只擷取了文字,圖片與版面沒有保留", docmd.KIND_IMAGE_ONLY,
+        md_t("RTF 只擷取了文字,圖片與版面沒有保留"), docmd.KIND_IMAGE_ONLY,
     ))
     blocks.extend(_paragraphs(text))
     return blocks

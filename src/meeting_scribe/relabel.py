@@ -116,7 +116,9 @@ def parse(md_text: str) -> Transcript:
     """md 全文 → Transcript。找不到任何講者行就拋繁中錯誤。
 
     非講者行一律當成前一段的內文(逐字稿本體就是這樣:標籤一行、
-    內容跟在下面),frontmatter 與標題自然被前面沒有標籤的狀態忽略。"""
+    內容跟在下面),frontmatter 與標題自然被前面沒有標籤的狀態忽略。
+    格式比這一版新就先拋錯(`vocab.check_readable`):重設講者與核對都從這裡讀。"""
+    vocab.check_readable(md_text)
     blocks: list[Block] = []
     order: list[str] = []
     pending: list[str] = []
@@ -361,7 +363,7 @@ def rename(md_text: str, name_map: dict[str, str],
     (使用者講的話裡剛好出現某個名字是很正常的事)。"""
     rename_prose = export.diag_prose_renamer(name_map)
     auto = set(auto_named or ())
-    # 〔機器辨識〕與「名字來源」照**這份 md 的**會議語言寫(英文逐字稿是〔auto-named〕)
+    # 〔機器辨識〕與「名字來源」照**這份 md 的**會議語言寫(英文逐字稿是 [auto-named])
     v = vocab.detect(md_text)
     out = []
     in_diagnostics = False
@@ -374,13 +376,13 @@ def rename(md_text: str, name_map: dict[str, str],
             # ⚠️ **既有的標記要留著、而且新的排在前面**:那一行可能已經帶著
             # 〔身分存疑〕或〔多人交錯〕(轉檔當下標的),整段換掉就把它們弄丟了。
             # 順序照 export 那邊定的「名字來源 → 標籤可疑 → 這一輪交錯」
-            marks = [x for x in (m.group("marks") or "").split(export.MARK_SEP) if x]
+            marks = export.split_marks(m)
             if old in auto and v.mark_auto_name not in marks:
                 marks.insert(0, v.mark_auto_name)
             out.append(export.speaker_line(
                 name_map[old],
                 int(m.group("h")) * 3600 + int(m.group("m")) * 60 + int(m.group("s")),
-                marks,
+                marks, v.language,
             ))
             continue
         d = export.DIAG_ROW_RE.match(line)

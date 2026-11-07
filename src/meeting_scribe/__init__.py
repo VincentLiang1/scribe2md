@@ -1,4 +1,4 @@
-"""meeting-scribe(對使用者顯示的名稱是「AI 文件.MD 轉換器」):地端的逐字稿與文件轉檔工具。
+"""meeting-scribe(對使用者顯示的名稱是「會議助手電腦版」/ Notetaker Desktop,核心叫 Scribe2MD):地端的逐字稿與文件轉檔工具。
 
 匯入本套件時即關閉 OpenVINO 遙測——否則 Intel GPU 加速引擎(OpenVINO)在
 consent 檔不存在時,會對 www.google-analytics.com 送出用量統計 ping

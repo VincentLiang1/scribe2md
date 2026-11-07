@@ -21,8 +21,9 @@ import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from meeting_scribe import plat
+from meeting_scribe import i18n, plat
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,31 @@ KIND_CYCLE = "cycle"
 KIND_SCRIPT_DATA = "script_data"
 
 NOTE_OPEN, NOTE_CLOSE = "〔", "〕"
+
+
+def md_lang() -> str:
+    r"""轉出來的 md 裡,**我們自己寫的字**(〔〕標記、「第 N 頁」、逐筆區塊的欄名)用哪一種語言。
+
+    英文介面 → 英文;**兩種中文介面都是繁中**(使用者 2026-11-07:英文介面的 md 不得出現中文字
+    與全形標點)。⚠️ **簡中介面不用簡中**:這份 md 本來就整份繁化(`docpipe.traditionalize`,
+    兩個知識庫都硬性要求繁體),簡中的標記只會被 OpenCC 轉回去;更糟的是它們會參加
+    `convert.is_simplified_document` 的投票——一份繁體文件帶十幾個簡中標記就可能被判成簡體、
+    整份重跑 s2tw,「游○○ → 遊○○」那個錯就回來了。
+    ⚠️ 文件本身的內容(抽出來的字、附件檔名、圖表標題)永遠不翻。"""
+    return i18n.EN if i18n.current() == i18n.EN else i18n.SOURCE
+
+
+def md_t(text: str, /, **kw) -> str:
+    r"""寫進 md 的句子用這支,不用 `t()`:語言照 `md_lang()`(簡中介面也是繁中)。
+
+    ⚠️ 第一個參數同樣要是字串字面值(`tests/test_i18n.py` 把 `md_t` 當成 `t` 一起掃)。"""
+    return i18n.translate(text, md_lang(), **kw)
+
+
+def md_half_width() -> bool:
+    """md 裡的標記用半形 `[ ]`(英文)還是全形〔〕。"""
+    return md_lang() == i18n.EN
+
 
 # frontmatter 的 converter 欄位值,同時是「這份 md 是本工具產生的」的憑據
 # (target_md_path 靠它決定覆寫或改名)
@@ -172,6 +198,11 @@ class Note:
     text: str
     kind: str = ""
     lossy: bool = True
+    # 用半形 [ ] 還是全形〔〕(使用者 2026-11-07:英文的 md 不出現全形字)。
+    # `None`(預設)= 跟 md 的語言(`md_lang`,英文介面才半形)——文件轉檔的標記全走這條,
+    # 因為它們的字也是照 `md_t` 寫的;**明講 True/False 的只有音訊逐字稿那兩句**
+    # (`docaudio`),它們跟的是**會議語言**:英文介面轉繁中會議,那兩句是中文、要留〔〕
+    half_width: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -219,17 +250,21 @@ _LINK_RE = re.compile(r"\[((?:\\.|[^\]\n\\])*)\]\((?:<[^>\n]*>|[^)\n]*)\)")
 # 各兩段)會整段被誤報成沒轉出來
 _AUTOLINK_RE = re.compile(r"<([a-z][\w+.-]*:[^>\s]*)>", re.I)
 # 註腳記號:`[註3]`(見 note_marker)
-_MARK_RE = re.compile(r"\[(?:註|附註)\d+\]")
+# (英文介面寫成 `[Footnote 3]` `[Endnote 3]`,見 note_marker)
+_MARK_RE = re.compile(r"\[(?:註|附註|Footnote |Endnote )\d+\]")
 
 # 註腳/章節附註在內文裡的記號。**格式定在這裡**是因為 squash 要抹掉它
 # ——兩邊各寫一份的話,改了記號樣式就會讓稽核開始誤報整批文件
+# (這兩個值是**種類**的代號;md 裡實際寫什麼由 note_marker 照 md_lang 決定)
 FOOTNOTE_MARK = "註"
 ENDNOTE_MARK = "附註"
 
 
 def note_marker(mark: str, number: str) -> str:
-    """內文裡的註腳記號:`[註3]`。"""
-    return f"[{mark}{number}]"
+    """內文裡的註腳記號:`[註3]`(英文介面 `[Footnote 3]`)。⚠️ 改樣式要一起改 `_MARK_RE`。"""
+    if mark == ENDNOTE_MARK:
+        return md_t("[附註{n}]", n=number)
+    return md_t("[註{n}]", n=number)
 
 
 def squash(text: str) -> str:
@@ -284,22 +319,31 @@ def missing_from(originals: list[str], blocks: list) -> list[str]:
     ]
 
 
-def extraction_gap_note(missing: list[str], what: str = "文字") -> list:
+def extraction_gap_note(missing: list[str], rows: bool = False) -> list:
     """落差 → 給使用者看的標記(進 frontmatter 的 lossy_kinds)。
 
     **這是工具自己的 bug 的標記**,但寧可讓使用者看見、也不要安靜地少
     ——看得見才修得掉,而「某類節點沒被走訪」這種漏沒有其他症狀。"""
     if not missing:
         return []
-    examples = "、".join(
-        f"「{_WS_RE.sub(' ', m).strip()[:20]}」" for m in missing[:_GAP_EXAMPLES]
+    examples = md_t("、").join(
+        md_t("「{o}」", o=_WS_RE.sub(' ', m).strip()[:20]) for m in missing[:_GAP_EXAMPLES]
     )
-    more = f" 等 {len(missing)} 處" if len(missing) > _GAP_EXAMPLES else ""
-    return [Note(
-        f"原始檔有 {len(missing)} 段{what}沒有被轉換出來(例如 {examples}{more})"
-        "——這是轉檔工具的限制,請開啟原始檔查看那些內容",
-        KIND_EXTRACTION_GAP,
-    )]
+    n = len(missing)
+    # 「等 N 處」與「文字/資料列」都是整句換,不拼片段(英文的語序跟中文不同)
+    if rows:
+        text = (md_t("原始檔有 {n} 段資料列沒有被轉換出來(例如 {examples} 等 {n} 處)"
+                     "——這是轉檔工具的限制,請開啟原始檔查看那些內容", n=n, examples=examples)
+                if n > _GAP_EXAMPLES else
+                md_t("原始檔有 {n} 段資料列沒有被轉換出來(例如 {examples})"
+                     "——這是轉檔工具的限制,請開啟原始檔查看那些內容", n=n, examples=examples))
+    else:
+        text = (md_t("原始檔有 {n} 段文字沒有被轉換出來(例如 {examples} 等 {n} 處)"
+                     "——這是轉檔工具的限制,請開啟原始檔查看那些內容", n=n, examples=examples)
+                if n > _GAP_EXAMPLES else
+                md_t("原始檔有 {n} 段文字沒有被轉換出來(例如 {examples})"
+                     "——這是轉檔工具的限制,請開啟原始檔查看那些內容", n=n, examples=examples))
+    return [Note(text, KIND_EXTRACTION_GAP)]
 
 
 @dataclass(frozen=True)
@@ -332,7 +376,7 @@ def lazy_import(name: str, what: str):
         return __import__(name)
     except ImportError as e:
         raise UserFacingError(
-            f"缺少讀取{what}所需的元件,{plat.reinstall_hint()}"
+            t("缺少讀取{what}所需的元件,{hint}", what=what, hint=plat.reinstall_hint())
         ) from e
 
 
@@ -461,20 +505,24 @@ def render_records(header: list[str], rows: list[list[str]], context: str = "") 
     head = [str(h).strip() if h is not None else "" for h in (header or [])]
     total = len(rows)
     prefix = f"{context} · " if context else ""
+    colon = md_t(":")
     out: list[str] = []
     for i, row in enumerate(rows, start=1):
-        out.append(f"### {prefix}第 {i} 筆(共 {total} 筆)")
+        out.append(f"### {prefix}" + md_t("第 {i} 筆(共 {total} 筆)", i=i, total=total))
         out.append("")
         for j, value in enumerate(row):
-            name = head[j] if j < len(head) and head[j] else f"欄位 {j + 1}"
+            name = head[j] if j < len(head) and head[j] else md_t("欄位 {n}", n=j + 1)
             text = "" if value is None else str(value).strip()
             if text:
-                out.append(f"- {name}:{text}")
+                out.append(f"- {name}{colon}{text}")
         out.append("")
     return "\n".join(out).rstrip()
 
 
 def render_note(note: Note) -> str:
+    half = md_half_width() if note.half_width is None else note.half_width
+    if half:
+        return f"[{note.text}]"
     return f"{NOTE_OPEN}{note.text}{NOTE_CLOSE}"
 
 
@@ -535,7 +583,7 @@ def render(blocks: list[Block], meta: DocMeta) -> str:
                 out.append(text)
                 out.append("")
         elif isinstance(b, Image):
-            out.append(f"![{b.alt or '圖片'}]({b.rel_path})")
+            out.append(f"![{b.alt or md_t('圖片')}]({b.rel_path})")
             out.append("")
         elif isinstance(b, Note):
             out.append(render_note(b))
@@ -630,17 +678,16 @@ class AssetsDir:
             return
         if self.path.exists():
             if not (self.path / ASSETS_MARKER).exists():
-                raise UserFacingError(
-                    f"資料夾已存在,而且不是本工具建立的,為了安全不會動它:{self.path}"
-                    "——請先把它改名或移走,再重新轉檔。"
-                )
+                raise UserFacingError(t(
+                    "資料夾已存在,而且不是本工具建立的,為了安全不會動它:{path}"
+                    "——請先把它改名或移走,再重新轉檔。", path=self.path))
             import shutil
 
             shutil.rmtree(self.path, ignore_errors=True)
         self.path.mkdir(parents=True, exist_ok=True)
         (self.path / ASSETS_MARKER).write_text(
-            "本資料夾由「AI 文件.MD 轉換器」的文件轉檔功能建立,重新轉檔時會整個重建。\n"
-            "請不要把自己的檔案放在這裡。\n",
+            md_t("本資料夾由 Scribe2MD 的文件轉檔功能建立,重新轉檔時會整個重建。\n"
+                 "請不要把自己的檔案放在這裡。\n"),
             encoding="utf-8",
         )
         self._ready = True
@@ -711,8 +758,9 @@ class AssetsDir:
         if not self.failures:
             return []
         return [Note(
-            f"有 {self.failures} 個圖片或附件無法寫入「{self.name}」資料夾"
-            "(可能是資料夾唯讀、磁碟已滿或路徑過長),那些內容沒有保留",
+            md_t("有 {n} 個圖片或附件無法寫入「{name}」資料夾"
+                 "(可能是資料夾唯讀、磁碟已滿或路徑過長),那些內容沒有保留",
+                 n=self.failures, name=self.name),
             KIND_ASSET_FAILED,
         )]
 
@@ -789,15 +837,15 @@ def target_md_path(
     taken = claimed or set()
     dest = md_path_for(src, out_dir)
     if dest in taken:
-        return None, f"這一批已經有另一個檔案要輸出成「{dest.name}」"
+        return None, t("這一批已經有另一個檔案要輸出成「{name}」", name=dest.name)
     # **來源就是目標**:.md 檔在預設模式下必然如此(輸出擺在原檔旁邊)。
     # 這時走下面那句會說成「已經存在,要重轉請先刪掉」——聽起來像轉過了,
     # 而使用者刪掉的會是自己的原始檔。要 md 真的被處理請用 `--out-dir`
     # (知識庫攝入正是那個用法)
     if dest == src:
-        return None, "本身就是 markdown,不需要轉換"
+        return None, t("本身就是 markdown,不需要轉換")
     if dest.exists():
-        return None, f"「{dest.name}」已經存在(要重轉請先把它刪掉)"
+        return None, t("「{name}」已經存在(要重轉請先把它刪掉)", name=dest.name)
     return dest, ""
 
 
@@ -813,8 +861,7 @@ def write_md(text: str, dest: Path) -> Path:
         tmp.replace(dest)
     except OSError as e:
         tmp.unlink(missing_ok=True)
-        raise UserFacingError(
-            f"無法寫出檔案「{dest.name}」:請確認資料夾沒有唯讀、磁碟空間足夠,"
-            f"且檔案沒有被其他程式開啟({dest.parent})"
-        ) from e
+        raise UserFacingError(t(
+            "無法寫出檔案「{name}」:請確認資料夾沒有唯讀、磁碟空間足夠,"
+            "且檔案沒有被其他程式開啟({folder})", name=dest.name, folder=dest.parent)) from e
     return dest

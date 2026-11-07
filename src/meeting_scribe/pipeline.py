@@ -106,6 +106,15 @@ _STAGE_SPANS = {
     "輸出": (0.95, 0.05),
 }
 
+
+def _stage_label(stage: str) -> str:
+    r"""階段鍵(`_STAGE_SPANS` 的鍵)→ 畫面上的名字。
+
+    ⚠️ **查表用鍵、翻譯只在交給畫面那一刻做**:先 `t()` 再查表的話,英文與簡中介面
+    一個鍵都查不到,`get` 退回 (1.0, 0.0)、進度條一開始就停在 100%(2026-11-07 查到)。"""
+    return {"轉檔": t("轉檔"), "轉錄與講者分析": t("轉錄與講者分析"),
+            "輸出": t("輸出")}.get(stage, stage)
+
 # 平行階段內兩引擎的進度權重:轉錄是主要耗時者(標準機粗估 3:1)
 _TRANSCRIBE_WEIGHT = 0.75
 _DIARIZE_WEIGHT = 0.25
@@ -312,7 +321,7 @@ def _transcribe_and_diarize(
                     _TRANSCRIBE_WEIGHT * fracs["transcribe"]
                     + _DIARIZE_WEIGHT * fracs["diarize"]
                 )
-                report(t("轉錄與講者分析"), combined)
+                report("轉錄與講者分析", combined)
             # 落地成伺服器端狀態(鎖外:runstate 自己有鎖,而且心跳 log 會
             # 寫檔——不該把兩條引擎的回報卡在這裡等 I/O)。**兩段分開記**:
             # 畫面要能講出「轉錄 100%、講者分析 40%」,合成一個數字之後就
@@ -457,7 +466,7 @@ def run_pipeline(
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
             start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
-            on_stage(stage, min(start + width * inner_frac, 1.0))
+            on_stage(_stage_label(stage), min(start + width * inner_frac, 1.0))
 
     # 全程維持系統/螢幕喚醒:鎖定螢幕會觸發省電、壓抑 CPU 時脈拖慢轉檔。
     #
@@ -471,7 +480,7 @@ def run_pipeline(
         with tempfile.TemporaryDirectory(prefix=TMP_PREFIX) as tmp:
             # 持開存活鎖直到本檔處理結束(見 TMP_LOCK 註解)
             with plat.hold_temp_lock(Path(tmp) / TMP_LOCK):
-                report(t("轉檔"))
+                report("轉檔")
                 # 標點模型在此先下載載入:模型問題要在最初幾秒浮出,不能等
                 # 30 分鐘轉錄完才在輸出階段炸掉、整場白跑
                 punctuate.ensure_ready()
@@ -481,7 +490,7 @@ def run_pipeline(
                 # 把結果寫出比丟棄划算
                 cancel.check()
 
-                report(t("轉錄與講者分析"))
+                report("轉錄與講者分析")
                 # 分群特徵檔**跟著 md 走**(這條路是 output/)。relabel 是從
                 # md 出發找同層同名的東西,放到別處等於白存
                 segments, device, turns, voiceprints, quality = (
@@ -535,7 +544,7 @@ def transcribe_to_markdown(
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
             start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
-            on_stage(stage, min(start + width * inner_frac, 1.0))
+            on_stage(_stage_label(stage), min(start + width * inner_frac, 1.0))
 
     # 防睡眠與「不降主行程」的理由同 run_pipeline(那裡有完整說明);
     # 批次跑的時間只會更長,「轉檔時電腦還能用」與「介面要回應得動」
@@ -543,12 +552,12 @@ def transcribe_to_markdown(
     with power.keep_awake():
         with tempfile.TemporaryDirectory(prefix=TMP_PREFIX) as tmp:
             with plat.hold_temp_lock(Path(tmp) / TMP_LOCK):
-                report(t("轉檔"))
+                report("轉檔")
                 punctuate.ensure_ready()
                 wav = audio.to_wav16k(src, Path(tmp))
                 cancel.check()
 
-                report(t("轉錄與講者分析"))
+                report("轉錄與講者分析")
                 # 批次的 md 落在原檔旁邊,特徵檔跟著它。⚠️ **這條路更需要**:
                 # 這個分頁沒有「講者人數」可填、一律自動偵測,而使用者不會
                 # 逐份回頭看——分壞了,事後改人數是唯一的救
@@ -561,7 +570,7 @@ def transcribe_to_markdown(
                     language=language,
                 )
 
-        report(t("輸出"))
+        report("輸出")
         spoken = merge.assign_speakers(segments, turns)
         rendered = render_transcript(spoken, src.stem, quality, language)
     # 同 finalize:跳針是整條管線唯一會真的弄丟內容的地方,批次更沒有人
@@ -618,9 +627,9 @@ def finalize(
     def report(stage: str, inner_frac: float = 0.0) -> None:
         if on_stage:
             start, width = _STAGE_SPANS.get(stage, (1.0, 0.0))
-            on_stage(stage, min(start + width * inner_frac, 1.0))
+            on_stage(_stage_label(stage), min(start + width * inner_frac, 1.0))
 
-    report(t("輸出"))
+    report("輸出")
     t0 = time.monotonic()
     t_md = time.monotonic()
     rendered = render_transcript(spoken, stem, quality, language)

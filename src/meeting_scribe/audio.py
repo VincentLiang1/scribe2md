@@ -20,6 +20,7 @@ import numpy as np
 
 from meeting_scribe import plat
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,42 @@ def ffmpeg_path() -> str:
     `filelock` → `asyncio` 與 `requests`,量到 **390ms**,而那是**開窗時第二貴的
     一段**——`audio` 幾乎被每一支引擎模組 import,所以那 390ms 記在每一個進入點
     (原生視窗、網頁介面、命令列)的啟動時間上,卻要等到真的轉檔才用得到。"""
+    import contextlib
+    import sys
+
     from static_ffmpeg import run
 
-    exe, _probe = run.get_or_fetch_platform_executables_else_raise()
+    # ⚠️ 第一次會下載(2026-11-07 Windows 實測兩件事):
+    # (1) static_ffmpeg 把「Downloading …」「Extracting …」印在 **stdout**——命令列 doc2md 的 stdout 是契約,
+    #     只放 md 的路徑(wiki-agent 與技能把每一行當成路徑讀),所以這一段的輸出改去 stderr;
+    # (2) 那台的 IPv6 很慢:requests 預設先走 IPv6,9 MB 花了 270 秒、整段卡十分鐘,強制 IPv4 只要 1.8 秒。
+    #     下載這一段先只用 IPv4,失敗再照預設重試一次(只有 IPv6 的網路才走得到第二次)
+    with contextlib.redirect_stdout(sys.stderr):
+        try:
+            with _ipv4_only():
+                exe, _probe = run.get_or_fetch_platform_executables_else_raise()
+        except Exception:  # noqa: BLE001 - 第二次照預設,錯了就讓它照原樣拋
+            logger.info("ffmpeg 用 IPv4 下載失敗,改照預設再試一次", exc_info=True)
+            exe, _probe = run.get_or_fetch_platform_executables_else_raise()
     return exe
+
+
+def _ipv4_only():
+    """下載期間讓 requests(urllib3)只解析 IPv4(見 `ffmpeg_path`)。"""
+    import contextlib
+
+    @contextlib.contextmanager
+    def scope():
+        from urllib3.util import connection
+
+        saved = connection.HAS_IPV6
+        connection.HAS_IPV6 = False
+        try:
+            yield
+        finally:
+            connection.HAS_IPV6 = saved
+
+    return scope()
 
 
 # 同一檔案的解碼結果以「單槽弱參照」共享:OV(Intel GPU)路徑下轉錄與
@@ -107,7 +140,7 @@ def cut_clip(src: Path, dest: Path, start: float, end: float) -> Path:
     ]
     return _run_ffmpeg(
         cmd, dest, f"ffmpeg 剪試聽片段失敗({src.name})",
-        f"試聽片段剪輯失敗({src.name})",
+        t("試聽片段剪輯失敗({name})", name=src.name),
     )
 
 
@@ -148,7 +181,7 @@ def merge_stereo(left: Path, right: Path, dest: Path) -> Path:
     if longest:
         cmd += ["-t", f"{longest:.6f}"]
     cmd.append(str(dest))
-    return _run_ffmpeg(cmd, dest, "ffmpeg 合成雙聲道失敗", "錄音檔合成失敗(雙聲道)")
+    return _run_ffmpeg(cmd, dest, "ffmpeg 合成雙聲道失敗", t("錄音檔合成失敗(雙聲道)"))
 
 
 def to_wav16k(src: Path, out_dir: Path) -> Path:
@@ -162,5 +195,5 @@ def to_wav16k(src: Path, out_dir: Path) -> Path:
     ]
     return _run_ffmpeg(
         cmd, dest, f"ffmpeg 轉檔失敗({src.name})",
-        f"音訊轉檔失敗({src.name}):請確認檔案未損壞且為支援的音訊/影片格式",
+        t("音訊轉檔失敗({name}):請確認檔案未損壞且為支援的音訊/影片格式", name=src.name),
     )

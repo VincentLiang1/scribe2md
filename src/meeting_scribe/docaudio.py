@@ -119,23 +119,50 @@ def convert_audio(
         traditionalised=rendered.traditionalised,
         language=rendered.language,
     )]
+    lang = meetlang.parse(rendered.language)
+    notes, half = _NOTES[lang], lang == meetlang.EN
     if rendered.degenerate:
         lost = sum(s.end - s.start for s in rendered.degenerate)
         blocks.append(Note(
-            f"有 {len(rendered.degenerate)} 段語音(共 {lost:.0f} 秒)"
-            "轉錄時卡在重複迴圈、連重轉都救不回,已在逐字稿中以標記取代",
-            kind=KIND_TRANSCRIPT_GAP,
+            notes["gap"].format(n=len(rendered.degenerate), sec=f"{lost:.0f}"),
+            kind=KIND_TRANSCRIPT_GAP, half_width=half,
         ))
     if rendered.check_speakers:
         v = vocab.of(rendered.language)
-        names = "、".join(v.speaker_label(s) for s in rendered.check_speakers)
+        names = notes["sep"].join(v.speaker_label(s) for s in rendered.check_speakers)
         blocks.append(Note(
-            f"有 {len(rendered.check_speakers)} 個講者標籤({names})的"
-            "群內一致性明顯低於本場其他人,那些段落的「誰說的」建議對照原音"
-            "核對;詳見逐字稿檔尾的「講者辨識診斷」",
-            kind=KIND_SPEAKER_CHECK,
+            notes["check"].format(n=len(rendered.check_speakers), names=names),
+            kind=KIND_SPEAKER_CHECK, half_width=half,
         ))
     return blocks
+
+
+# 逐字稿檔頭那兩句〔〕註記:**跟會議語言、不跟介面語言**(同逐字稿本文,見 `vocab`)。
+# ⚠️ 英文那份不能有任何中文字或全形標點(使用者 2026-11-07);末句引的標題要跟
+# `vocab` 的 `diagnostic_heading` 同字,讀者才找得到。
+_NOTES = {
+    meetlang.ZH_TW: {
+        "gap": "有 {n} 段語音(共 {sec} 秒)轉錄時卡在重複迴圈、連重轉都救不回,已在逐字稿中以標記取代",
+        "check": "有 {n} 個講者標籤({names})的群內一致性明顯低於本場其他人,那些段落的「誰說的」"
+                 "建議對照原音核對;詳見逐字稿檔尾的「講者辨識診斷」",
+        "sep": "、",
+    },
+    meetlang.ZH_CN: {
+        "gap": "有 {n} 段语音(共 {sec} 秒)转录时卡在重复循环、连重转都救不回,已在逐字稿中以标记取代",
+        "check": "有 {n} 个讲者标签({names})的群内一致性明显低于本场其他人,那些段落的「谁说的」"
+                 "建议对照原音核对;详见逐字稿文件尾的「讲者识别诊断」",
+        "sep": "、",
+    },
+    meetlang.EN: {
+        "gap": "{n} stretch(es) of speech ({sec} s in total) got stuck in a repetition loop during "
+               "transcription and could not be recovered even by re-transcribing; they are replaced by a "
+               "mark in the transcript",
+        "check": "{n} speaker label(s) ({names}) are much less consistent than the others in this meeting; "
+                 "check who said what in those turns against the audio. See \"Speaker diagnostics\" at the "
+                 "end of the transcript",
+        "sep": ", ",
+    },
+}
 
 
 def _drop_leading_heading(md_text: str) -> str:

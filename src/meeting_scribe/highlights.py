@@ -257,8 +257,7 @@ def from_md(md_text: str) -> Highlights:
     prev: int | None = None
     for k, r in enumerate(rows):
         m = export.SPEAKER_LINE_RE.match(lines[r].strip())
-        if not any(vocab.is_highlight_mark(x)
-                   for x in (m.group("marks") or "").split(export.MARK_SEP)):
+        if not any(vocab.is_highlight_mark(x) for x in export.split_marks(m)):
             continue
         end = rows[k + 1] if k + 1 < len(rows) else len(lines)
         notes = []
@@ -322,7 +321,7 @@ def rewrite_md(md_text: str, h: Highlights) -> str:
     ⚠️ **先全部拆掉再照時間重算**,不是在舊的上面加減:舊標記講的是舊的講者歸屬。
     ⚠️ 單位是**一行講者行**:收尾時逐句切開的那幾行(手機版同樣會切)照樣留著,
     所以重算的粒度跟原本一樣細。"""
-    # ⚠️ 重標時照**這份 md 的**會議語言寫(英文逐字稿是〔highlight〕與「> Note: 」)
+    # ⚠️ 重標時照**這份 md 的**會議語言寫(英文逐字稿是 [highlight] 與「> Note: 」)
     v = vocab.detect(md_text)
     lines = _strip(md_text.splitlines())
     rows, units = _md_units(lines)
@@ -351,12 +350,11 @@ def rewrite_md(md_text: str, h: Highlights) -> str:
             continue
         open_k = k
         m = export.SPEAKER_LINE_RE.match(line.strip())
-        marks = [x for x in (m.group("marks") or "").split(export.MARK_SEP)
-                 if x and not vocab.is_highlight_mark(x)]
+        marks = [x for x in export.split_marks(m) if not vocab.is_highlight_mark(x)]
         if k in marked:
             marks.append(v.mark_highlight)
         secs = int(m.group("h")) * 3600 + int(m.group("m")) * 60 + int(m.group("s"))
-        out.append(export.speaker_line(m.group("name"), secs, marks))
+        out.append(export.speaker_line(m.group("name"), secs, marks, v.language))
     else:
         if open_k is not None:
             out = _flush_notes(out, notes_at.get(open_k, []), v)

@@ -194,13 +194,12 @@ def reassign(md_text: str, blocks: list[SpeechBlock], new_name: str) -> tuple[st
             # 〔身分存疑〕(原標籤混了人)講的都是**原標籤**的事,留在新名字
             # 旁邊等於把警告安到一個沒做過那件事的人頭上。而〔多人交錯〕是
             # 聲學事實(那個時間真的好幾個人在搶著講),不因改掛而消失
-            marks = [x for x in (m.group("marks") or "").split(export.MARK_SEP)
-                     if x in crosstalk]
+            marks = [x for x in export.split_marks(m) if x in crosstalk]
             out.append(export.speaker_line(
                 new_name,
                 int(m.group("h")) * 3600 + int(m.group("m")) * 60
                 + int(m.group("s")),
-                marks,
+                marks, v.language,
             ))
             changed += 1
         else:

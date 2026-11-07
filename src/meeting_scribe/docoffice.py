@@ -17,8 +17,9 @@ import zipfile
 from pathlib import Path
 
 from meeting_scribe import docimage, docmd
-from meeting_scribe.docmd import AssetsDir, Block, Heading, Image, Note, Para, Raw, Records, Table
+from meeting_scribe.docmd import AssetsDir, Block, Heading, Image, Note, Para, Raw, Records, Table, md_t
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +45,15 @@ _NS_DGM = "{http://schemas.openxmlformats.org/drawingml/2006/diagram}"
 # **資料一列都不截斷**,降級的只有 metadata 檢查
 _HUGE_CELLS = 2_000_000
 
-# 圖表型別的繁中說法(給人看的 caption;認不出來就不寫,不要硬翻)
-_CHART_KIND_ZH = {
-    "PIE": "圓餅圖", "DOUGHNUT": "環圈圖", "BAR": "長條圖",
-    "COLUMN": "直條圖", "LINE": "折線圖", "AREA": "面積圖",
-    "XY_SCATTER": "散佈圖", "RADAR": "雷達圖",
-}
+def _chart_kind_name(kind: str) -> str:
+    """圖表型別的說法(給人看的 caption,跟 `docmd.md_lang`;認不出來就不寫,不要硬翻)。
+
+    ⚠️ 寫成函式不寫成模組層的 dict:那會在 import 當下就把語言定死。"""
+    return {
+        "PIE": md_t("圓餅圖"), "DOUGHNUT": md_t("環圈圖"), "BAR": md_t("長條圖"),
+        "COLUMN": md_t("直條圖"), "LINE": md_t("折線圖"), "AREA": md_t("面積圖"),
+        "XY_SCATTER": md_t("散佈圖"), "RADAR": md_t("雷達圖"),
+    }.get(kind, "")
 
 # 單一合併範圍的展開上限:`A1:XFD1048576` 這種整表合併若照實展開會產生
 # 上百億個 key 直接把記憶體吃光(真實檔案中確實存在誤操作的巨大合併)
@@ -62,21 +66,21 @@ _MAX_SDT_DEPTH = 8
 def _ensure_docx():
     global docx
     if docx is None:
-        docx = docmd.lazy_import("docx", "Word 檔")
+        docx = docmd.lazy_import("docx", t("Word 檔"))
     return docx
 
 
 def _ensure_pptx():
     global pptx
     if pptx is None:
-        pptx = docmd.lazy_import("pptx", "PowerPoint 檔")
+        pptx = docmd.lazy_import("pptx", t("PowerPoint 檔"))
     return pptx
 
 
 def _ensure_openpyxl():
     global openpyxl
     if openpyxl is None:
-        openpyxl = docmd.lazy_import("openpyxl", "Excel 檔")
+        openpyxl = docmd.lazy_import("openpyxl", t("Excel 檔"))
     return openpyxl
 
 
@@ -351,9 +355,9 @@ def _images_from(
         data, suffix = docimage.to_displayable(data, suffix)
         link = assets.add_bytes(data, suffix)
         if link:
-            out.append(Image(link, "文件內嵌圖片"))
+            out.append(Image(link, md_t("文件內嵌圖片")))
         # 圖裡的文字才是給 AI 用的重點:只留連結等於什麼都沒給
-        out.extend(docimage.ocr_image_bytes(data, "文件裡的內嵌圖片", ocr_enabled))
+        out.extend(docimage.ocr_image_bytes(data, md_t("文件裡的內嵌圖片"), ocr_enabled))
     return out
 
 
@@ -524,11 +528,12 @@ def _header_footer_blocks(document) -> list[Block]:
     out: list[Block] = []
     seen: set[str] = set()
     for section in getattr(document, "sections", []) or []:
+        header, footer = md_t("頁首"), md_t("頁尾")
         for attr, label in (
-            ("first_page_header", "頁首"), ("even_page_header", "頁首"),
-            ("header", "頁首"),
-            ("first_page_footer", "頁尾"), ("even_page_footer", "頁尾"),
-            ("footer", "頁尾"),
+            ("first_page_header", header), ("even_page_header", header),
+            ("header", header),
+            ("first_page_footer", footer), ("even_page_footer", footer),
+            ("footer", footer),
         ):
             part = getattr(section, attr, None)
             element = getattr(part, "_element", None)
@@ -553,15 +558,20 @@ def _header_footer_blocks(document) -> list[Block]:
             if not key or key in seen or _is_page_furniture(text):
                 continue
             seen.add(key)
-            out.append(Para(f"{label}:{text}"))
+            out.append(Para(f"{label}{md_t(':')}{text}"))
     return out
 
 
-# 註腳與章節附註:(rels 的型別尾巴, 節點名, 內文記號, 章節標題)
+# 註腳與章節附註:(rels 的型別尾巴, 節點名, 內文記號)。章節標題見 `_note_part_title`
+# (寫成函式:模組層的字串會在 import 當下就把語言定死)
 _NOTE_PARTS = (
-    ("footnotes", "footnote", docmd.FOOTNOTE_MARK, "註腳"),
-    ("endnotes", "endnote", docmd.ENDNOTE_MARK, "章節附註"),
+    ("footnotes", "footnote", docmd.FOOTNOTE_MARK),
+    ("endnotes", "endnote", docmd.ENDNOTE_MARK),
 )
+
+
+def _note_part_title(mark: str) -> str:
+    return md_t("章節附註") if mark == docmd.ENDNOTE_MARK else md_t("註腳")
 
 
 def _related_part(part, tail: str):
@@ -594,7 +604,7 @@ def _note_blocks(document) -> list[Block]:
     from docx.oxml import parse_xml
 
     out: list[Block] = []
-    for tail, tag, mark, label in _NOTE_PARTS:
+    for tail, tag, mark in _NOTE_PARTS:
         part = _related_part(getattr(document, "part", None), tail)
         blob = getattr(part, "blob", None)
         if not blob:
@@ -619,7 +629,7 @@ def _note_blocks(document) -> list[Block]:
             # 「見前揭註」四個字本身看不出是誰的註腳
             items.append(Para(f"{docmd.note_marker(mark, wid)} {text}"))
         if items:
-            out.append(Heading(1, label))
+            out.append(Heading(1, _note_part_title(mark)))
             out.extend(items)
     return out
 
@@ -656,10 +666,9 @@ def convert_docx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
     try:
         document = mod.Document(str(src))
     except Exception as e:
-        raise UserFacingError(
-            f"無法開啟 Word 檔「{src.name}」:檔案可能已損壞,或其實是舊版 .doc 格式"
-            "(請用 Word 另存為 .docx)"
-        ) from e
+        raise UserFacingError(t(
+            "無法開啟 Word 檔「{name}」:檔案可能已損壞,或其實是舊版 .doc 格式"
+            "(請用 Word 另存為 .docx)", name=src.name)) from e
 
     from docx.table import Table as DocxTable
     from docx.text.paragraph import Paragraph
@@ -671,7 +680,7 @@ def convert_docx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
     # 刪除線的舊文字與新文字意思可能完全相反
     if body.find(f".//{_NS_W}ins") is not None or body.find(f".//{_NS_W}del") is not None:
         blocks.append(Note(
-            "本文件含追蹤修訂,以下內容是「接受所有修訂」後的最終版",
+            md_t("本文件含追蹤修訂,以下內容是「接受所有修訂」後的最終版"),
             docmd.KIND_TRACKED_CHANGES,
         ))
 
@@ -680,8 +689,8 @@ def convert_docx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
     n_numbered = _numbered_paragraphs(document, body)
     if n_numbered:
         blocks.append(Note(
-            f"本文件有 {n_numbered} 段使用 Word 的自動編號(數字清單或項目符號),"
-            "編號與清單階層沒有呈現在文字裡",
+            md_t("本文件有 {n} 段使用 Word 的自動編號(數字清單或項目符號),"
+                 "編號與清單階層沒有呈現在文字裡", n=n_numbered),
             docmd.KIND_NUMBERING,
         ))
 
@@ -706,7 +715,7 @@ def convert_docx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
                     blocks.append(Para(boxed))
             # SmartArt 的內容在另一個 part,一般走訪看不到(見 _diagram_texts)
             for dgm in _diagram_texts(child, document.part):
-                blocks.append(Para(f"SmartArt 圖形的文字:{dgm}"))
+                blocks.append(Para(md_t("SmartArt 圖形的文字:{text}", text=dgm)))
             blocks.extend(_para_images(para, document, assets, ocr_enabled))
         elif tag == "tbl":
             rows, nested = _docx_table_rows(DocxTable(child, document))
@@ -721,11 +730,11 @@ def convert_docx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
                 if boxed not in flat:
                     blocks.append(Para(boxed))
             for dgm in _diagram_texts(child, document.part):
-                blocks.append(Para(f"SmartArt 圖形的文字:{dgm}"))
+                blocks.append(Para(md_t("SmartArt 圖形的文字:{text}", text=dgm)))
 
     if nested_seen:
         blocks.append(Note(
-            "本文件有表格中的表格,內層表格已攤平成同一格內的文字",
+            md_t("本文件有表格中的表格,內層表格已攤平成同一格內的文字"),
             docmd.KIND_NESTED_TABLE,
         ))
     # 註腳收在正文之後、巨集大綱之前:它是內文的一部分,不是檔案層級的附註
@@ -984,9 +993,9 @@ def _slide_fill_images(
         data, suffix = docimage.to_displayable(data, suffix)
         link = assets.add_bytes(data, suffix)
         if link:
-            out.append(Image(link, f"投影片 {slide_no} 的背景/填滿圖片"))
+            out.append(Image(link, md_t("投影片 {n} 的背景/填滿圖片", n=slide_no)))
         out.extend(docimage.ocr_image_bytes(
-            data, f"投影片 {slide_no} 的背景圖片", ocr_enabled,
+            data, md_t("投影片 {n} 的背景圖片", n=slide_no), ocr_enabled,
         ))
     return out
 
@@ -997,10 +1006,9 @@ def convert_pptx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
     try:
         prs = mod.Presentation(str(src))
     except Exception as e:
-        raise UserFacingError(
-            f"無法開啟 PowerPoint 檔「{src.name}」:檔案可能已損壞,或其實是舊版 .ppt"
-            "格式(請用 PowerPoint 另存為 .pptx)"
-        ) from e
+        raise UserFacingError(t(
+            "無法開啟 PowerPoint 檔「{name}」:檔案可能已損壞,或其實是舊版 .ppt"
+            "格式(請用 PowerPoint 另存為 .pptx)", name=src.name)) from e
 
     blocks: list[Block] = []
     counts = {"chart": 0, "opaque": 0}
@@ -1023,7 +1031,8 @@ def convert_pptx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
                 title_id = getattr(title_shape, "shape_id", None)
         except Exception:
             logger.debug("投影片 %d 取不到標題", idx, exc_info=True)
-        blocks.append(Heading(1, f"投影片 {idx}" + (f":{title_text}" if title_text else "")))
+        blocks.append(Heading(1, md_t("投影片 {n}", n=idx)
+                              + (md_t(":") + title_text if title_text else "")))
 
         for shape in sorted(_flatten_shapes(slide.shapes), key=_shape_sort_key):
             if title_id is not None and getattr(shape, "shape_id", None) == title_id:
@@ -1054,31 +1063,31 @@ def convert_pptx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
         # `mc:AlternateContent` 裡,而 python-pptx 的 slide.shapes 根本不會
         # 列出那種元素——跟著 shape 找的話一個都抓不到(實測 0/5)
         for dgm in _diagram_texts(slide.element, slide.part):
-            blocks.append(Para(f"SmartArt 圖形的文字:{dgm}"))
+            blocks.append(Para(md_t("SmartArt 圖形的文字:{text}", text=dgm)))
 
         notes = getattr(slide, "notes_slide", None)
         # 備忘稿也走同一條:講稿常常就是一份條列
         note_frame = getattr(notes, "notes_text_frame", None)
         note_text = _frame_markdown(note_frame, False) if note_frame is not None else ""
         if note_text:
-            blocks.append(Para(f"**備忘稿**:{note_text}"))
+            blocks.append(Para(md_t("**備忘稿**:{text}", text=note_text)))
 
     if counts["opaque"]:
         blocks.append(Note(
-            f"有 {counts['opaque']} 個圖形(SmartArt、群組或特殊物件)的內容無法取出",
+            md_t("有 {n} 個圖形(SmartArt、群組或特殊物件)的內容無法取出", n=counts["opaque"]),
             docmd.KIND_SMARTART,
         ))
     if counts["chart"]:
         blocks.append(Note(
-            f"本簡報有 {counts['chart']} 個圖表讀不到底層資料,只留下標註",
+            md_t("本簡報有 {n} 個圖表讀不到底層資料,只留下標註", n=counts["chart"]),
             docmd.KIND_CHART,
         ))
     # 文字框的條列已經輸出成巢狀清單,只剩表格格子裡的攤平了
     n_bullets = _lost_bullets(prs)
     if n_bullets:
         blocks.append(Note(
-            f"表格儲存格裡有 {n_bullets} 段是條列,markdown 的表格一格塞不下"
-            "多行清單,已攤平成同一格的文字",
+            md_t("表格儲存格裡有 {n} 段是條列,markdown 的表格一格塞不下"
+                 "多行清單,已攤平成同一格的文字", n=n_bullets),
             docmd.KIND_NUMBERING,
         ))
     blocks.extend(_macro_blocks(src))
@@ -1136,7 +1145,7 @@ def _pptx_chart(chart, slide_no: int) -> list[Block]:
     (與 AI)從 433 這個數字看不出 40.5%。其他型別不加:長條/折線/散佈圖
     的數列彼此獨立,加總沒有意義,擅自算佔比是憑空捏造語意。"""
     title = _chart_title(chart)
-    label = f"投影片 {slide_no} 的圖表" + (f":{title}" if title else "")
+    label = md_t("投影片 {n} 的圖表", n=slide_no) + (md_t(":") + title if title else "")
     kind = str(getattr(chart, "chart_type", "") or "")
     try:
         plot = chart.plots[0]
@@ -1147,15 +1156,15 @@ def _pptx_chart(chart, slide_no: int) -> list[Block]:
         series = []
     if not series or not any(vals for _, vals in series):
         return [Note(
-            f"此處有圖表{(':' + title) if title else ''},"
-            "但讀不到底層資料,Markdown 無法呈現",
+            md_t("此處有圖表:{title},但讀不到底層資料,Markdown 無法呈現", title=title) if title
+            else md_t("此處有圖表,但讀不到底層資料,Markdown 無法呈現"),
             docmd.KIND_CHART,
         )]
 
     share = any(k in kind.upper() for k in _PART_OF_WHOLE) and len(series) == 1
-    header = ["項目", *(name or "數值" for name, _ in series)]
+    header = [md_t("項目"), *(name or md_t("數值") for name, _ in series)]
     if share:
-        header.append("佔比")
+        header.append(md_t("佔比"))
     total = sum(v for v in series[0][1] if isinstance(v, (int, float))) if share else 0
     rows = [header]
     for i, cat in enumerate(categories or [""] * len(series[0][1])):
@@ -1169,7 +1178,8 @@ def _pptx_chart(chart, slide_no: int) -> list[Block]:
                 if isinstance(v, (int, float)) and total else ""
             )
         rows.append(row)
-    caption = label + (f"({_CHART_KIND_ZH.get(kind.split()[0], '')})" if kind else "")
+    kind_name = _chart_kind_name(kind.split()[0]) if kind else ""
+    caption = label + (md_t("({kind})", kind=kind_name) if kind_name else "")
     return [Table(rows, has_header=True, caption=caption.replace("()", ""))]
 
 
@@ -1193,16 +1203,16 @@ def _pptx_shape(
     if getattr(shape, "has_table", False):
         rows = _pptx_table_rows(shape.table)
         # caption 讓表格被切塊後仍知道出處(docmd.render 規則 2)
-        return [Table(rows, has_header=True, caption=f"投影片 {slide_no} 的表格")] if rows else []
+        return [Table(rows, has_header=True, caption=md_t("投影片 {n} 的表格", n=slide_no))] if rows else []
     image = getattr(shape, "image", None)
     if image is not None:
         data = image.blob
         if seen is not None:
             seen.add(hashlib.sha1(data).hexdigest())  # noqa: S324 - 只當識別碼
         link = assets.add_bytes(data, f".{image.ext or 'png'}")
-        out = [Image(link, f"投影片 {slide_no} 的圖片")] if link else []
+        out = [Image(link, md_t("投影片 {n} 的圖片", n=slide_no))] if link else []
         out.extend(docimage.ocr_image_bytes(
-            data, f"投影片 {slide_no} 的圖片", ocr_enabled,
+            data, md_t("投影片 {n} 的圖片", n=slide_no), ocr_enabled,
         ))
         return out
     if getattr(shape, "has_text_frame", False):
@@ -1460,14 +1470,15 @@ def _comment_row(
         if thread:
             first, *rest = thread
             parts = [first[1]] + [
-                f"回覆({who}):{what}" if who else f"回覆:{what}" for who, what in rest
+                md_t("回覆({who}):{what}", who=who, what=what) if who
+                else md_t("回覆:{what}", what=what) for who, what in rest
             ]
-            return first[0], docmd.one_line(";".join(parts))
+            return first[0], docmd.one_line(md_t(";").join(parts))
         # 對不上 GUID:退回相容副本,剝掉那段英文說明、保留每一則的內文
         sections = _THREADED_SECTION_RE.split(text)[1:]
         bodies = [docmd.one_line(s) for s in sections if s.strip()]
         if bodies:
-            text = ";".join([bodies[0]] + [f"回覆:{b}" for b in bodies[1:]])
+            text = md_t(";").join([bodies[0]] + [md_t("回覆:{what}", what=b) for b in bodies[1:]])
         author = ""
     elif author:
         for sep in (":", "："):   # 半形、全形冒號
@@ -1495,12 +1506,18 @@ def _chart_notes(ws) -> list[Block]:
             ref = getattr(getattr(getattr(ser, "val", None), "numRef", None), "f", None)
             if ref:
                 refs.append(str(ref))
-        detail = f":{title}" if title else ""
-        source = f",資料來源 {'、'.join(refs[:5])}" if refs else ""
-        out.append(Note(
-            f"此處有圖表{detail}{source},Markdown 無法呈現圖形",
-            docmd.KIND_CHART,
-        ))
+        # 有沒有標題 × 有沒有資料來源,四句各自整句翻(英文的語序跟中文不同,不拼片段)
+        refs_text = md_t("、").join(refs[:5])
+        if title and refs:
+            text = md_t("此處有圖表:{title},資料來源 {refs},Markdown 無法呈現圖形",
+                        title=title, refs=refs_text)
+        elif title:
+            text = md_t("此處有圖表:{title},Markdown 無法呈現圖形", title=title)
+        elif refs:
+            text = md_t("此處有圖表,資料來源 {refs},Markdown 無法呈現圖形", refs=refs_text)
+        else:
+            text = md_t("此處有圖表,Markdown 無法呈現圖形")
+        out.append(Note(text, docmd.KIND_CHART))
     return out
 
 
@@ -1688,7 +1705,8 @@ def _layout_blocks(ws, rows: list[list[str]]) -> list[Block]:
             [cells.get(c, "") for c in range(1, max_col + 1)]
             for _r, cells in sorted(orphan.items())
         ]
-        out.append(Table(body, has_header=False, caption=f"{ws.title}(不屬於任何區塊的內容)"))
+        out.append(Table(body, has_header=False,
+                         caption=md_t("{sheet}(不屬於任何區塊的內容)", sheet=ws.title)))
     for i, (row_no, lo, hi, text) in enumerate(titles):
         # 只有「**第一列**那個更寬的標題」才算上層(分機表:表名底下才是各
         # 部門)。⚠️ 不可以認任何更寬的標題:版面中段跨好幾個區塊的標題是
@@ -1698,7 +1716,7 @@ def _layout_blocks(ws, rows: list[list[str]]) -> list[Block]:
         wider = row_no > first_title_row and any(
             o[1] <= lo and o[2] >= hi for o in top_titles
         )
-        name = text or f"第 {lo}–{hi} 欄"
+        name = text or md_t("第 {lo}–{hi} 欄", lo=lo, hi=hi)
         out.append(Heading(3 if wider else 2, name))
         cells = owned.get(i)
         if not cells:
@@ -1721,13 +1739,14 @@ def _comment_blocks(ws, comments, labels: dict[int, str], threaded) -> list[Bloc
     附屬內容,chunk 脫離上下文時才知道是哪一張表的註解。"""
     if not comments:
         return []
-    body = [["儲存格", "項目", "作者", "內容"]]
+    body = [[md_t("儲存格"), md_t("項目"), md_t("作者"), md_t("內容")]]
     for coord, row_no, author, text in comments:
         who, what = _comment_row(author, text, threaded)
         body.append([coord, docmd.one_line(labels.get(row_no, "")), who, what])
     return [
-        Heading(2, f"{ws.title}:儲存格註解"),
-        Table(body, has_header=True, caption=f"{ws.title} · 儲存格註解(共 {len(comments)} 則)"),
+        Heading(2, md_t("{sheet}:儲存格註解", sheet=ws.title)),
+        Table(body, has_header=True, caption=md_t("{sheet} · 儲存格註解(共 {n} 則)",
+                                                  sheet=ws.title, n=len(comments))),
     ]
 
 
@@ -1748,8 +1767,8 @@ def _sheet_blocks(
     tail: list[Block] = []     # 工作表末尾的附屬內容(註解),每條 return 都要帶
     if huge:
         blocks.append(Note(
-            "本工作表資料量龐大,已略過合併儲存格、底色、刪除線、儲存格註解與圖表的"
-            "檢查以節省記憶體(資料本身完整,一列都沒有省略)",
+            md_t("本工作表資料量龐大,已略過合併儲存格、底色、刪除線、儲存格註解與圖表的"
+                 "檢查以節省記憶體(資料本身完整,一列都沒有省略)"),
             docmd.KIND_HUGE_SHEET,
         ))
         rows = [[_fmt(v) for v in row] for row in ws.iter_rows(values_only=True)]
@@ -1806,44 +1825,46 @@ def _sheet_blocks(
                     line[c - 1] = markup
         if n_merged:
             blocks.append(Note(
-                f"本工作表有 {n_merged} 處合併儲存格,已展開成一般儲存格",
+                md_t("本工作表有 {n} 處合併儲存格,已展開成一般儲存格", n=n_merged),
                 docmd.KIND_MERGED_CELLS,
             ))
         if coloured:
-            extra = ";部分儲存格內有多段不同字色,請回原檔查看" if mixed else ""
             blocks.append(Note(
-                f"本工作表有 {coloured} 個儲存格以底色或字色標註,Markdown 無法呈現顏色{extra}",
+                md_t("本工作表有 {n} 個儲存格以底色或字色標註,Markdown 無法呈現顏色"
+                     ";部分儲存格內有多段不同字色,請回原檔查看", n=coloured) if mixed
+                else md_t("本工作表有 {n} 個儲存格以底色或字色標註,Markdown 無法呈現顏色", n=coloured),
                 docmd.KIND_CELL_COLOR,
             ))
         if struck:
             # ⚠️ 說明裡不寫出兩個波浪號本身:那幾個字放進段落裡會被當成刪除線
             # 記號(或殘留成字面的 `~~`),而這行正是要教人怎麼讀它
             blocks.append(Note(
-                f"本工作表有 {struck} 處文字加了刪除線(原檔裡被劃掉的字),"
-                "已用 Markdown 刪除線標示——那些字不是有效內容",
+                md_t("本工作表有 {n} 處文字加了刪除線(原檔裡被劃掉的字),"
+                     "已用 Markdown 刪除線標示——那些字不是有效內容", n=struck),
                 docmd.KIND_STRIKE,
             ))
         if comments:
             blocks.append(Note(
-                f"本工作表有 {len(comments)} 則儲存格註解,列於本工作表末尾",
+                md_t("本工作表有 {n} 則儲存格註解,列於本工作表末尾", n=len(comments)),
                 docmd.KIND_CELL_COMMENT,
                 lossy=False,
             ))
         tail = _comment_blocks(ws, comments, labels, threaded or {})
         blocks.extend(_chart_notes(ws))
         if getattr(ws, "_pivots", None):
-            blocks.append(Note("此處有樞紐分析表,Markdown 無法呈現", docmd.KIND_PIVOT))
+            blocks.append(Note(md_t("此處有樞紐分析表,Markdown 無法呈現"), docmd.KIND_PIVOT))
         cf = getattr(ws, "conditional_formatting", None)
         n_cf = len(list(cf)) if cf is not None else 0
         if n_cf:
-            blocks.append(Note(f"本工作表有 {n_cf} 組條件式格式規則未呈現", docmd.KIND_COND_FORMAT))
+            blocks.append(Note(md_t("本工作表有 {n} 組條件式格式規則未呈現", n=n_cf),
+                               docmd.KIND_COND_FORMAT))
         blocks.extend(_formula_blocks(ws, ws_formula, rows))
 
     # 尾端的整列空白剪掉:Excel 常把 max_row 撐得比實際資料遠
     while rows and not any(c.strip() for c in rows[-1]):
         rows.pop()
     if not rows:
-        blocks.append(Note("這個工作表是空的", docmd.KIND_BLANK_PAGE, lossy=False))
+        blocks.append(Note(md_t("這個工作表是空的"), docmd.KIND_BLANK_PAGE, lossy=False))
         return blocks + tail, False
 
     # 並排版面(為列印排的寬表)要先依區塊還原,否則同一列會把不同區塊的
@@ -1856,9 +1877,9 @@ def _sheet_blocks(
     layout = _layout_blocks(ws, rows) if not huge else []
     if huge and _detect_side_by_side(ws, rows) is not None:
         blocks.append(Note(
-            "本工作表看起來是為列印排的並排版面(數個區塊左右並排),但資料量"
-            "太大、這次沒有依區塊還原——**同一列的內容可能分屬不同區塊**,"
-            "不要當成同一筆資料",
+            md_t("本工作表看起來是為列印排的並排版面(數個區塊左右並排),但資料量"
+                 "太大、這次沒有依區塊還原——**同一列的內容可能分屬不同區塊**,"
+                 "不要當成同一筆資料"),
             docmd.KIND_SIDE_BY_SIDE,
         ))
     if layout:
@@ -1871,9 +1892,9 @@ def _sheet_blocks(
                     width = i + 1
                     break
         blocks.append(Note(
-            f"本工作表是為列印排的並排版面({width} 欄其實是數個左右並排的"
-            "區塊),已依區塊還原成各自獨立的小節——原檔同一列的內容分屬"
-            "不同區塊,不是同一筆資料",
+            md_t("本工作表是為列印排的並排版面({n} 欄其實是數個左右並排的"
+                 "區塊),已依區塊還原成各自獨立的小節——原檔同一列的內容分屬"
+                 "不同區塊,不是同一筆資料", n=width),
             docmd.KIND_SIDE_BY_SIDE,
             lossy=False,
         ))
@@ -1886,7 +1907,7 @@ def _sheet_blocks(
     # ⚠️ 要放在 `_formula_blocks` **之後**:那支拿 rows 當「第 N 列第 M 欄」
     # 的索引查快取值,先抽掉列會讓它對到別格
     rows = docmd.drop_blank_rows(rows)
-    caption = f"{ws.title}(共 {len(rows)} 列)"
+    caption = md_t("{sheet}(共 {n} 列)", sheet=ws.title, n=len(rows))
     # 跨欄的標題列(例如 A1:D1 合併成「第三季各區營收」)直接當表頭的話,
     # **真正的欄名會掉成第一列資料**——AI 之後引用欄位就全錯了。把它提升
     # 成表格說明,讓下一列當表頭。
@@ -1905,7 +1926,8 @@ def _sheet_blocks(
         widest = max((hi - lo + 1 for lo, hi in titles), default=0)
         if len(filled) > 1 and filled <= covered and widest * 2 > len(filled):
             names = [docmd.one_line(rows[0][lo - 1]) for lo, _hi in sorted(titles)]
-            caption = f"{ws.title} — {'、'.join(names)}(共 {len(rows) - 1} 列)"
+            caption = md_t("{sheet} — {names}(共 {n} 列)", sheet=ws.title,
+                           names=md_t("、").join(names), n=len(rows) - 1)
             rows = rows[1:]
 
     # 寬表要不要改逐筆區塊由 docmd.render 決定(渲染政策只有一個出處)
@@ -1940,13 +1962,16 @@ def _formula_blocks(ws, ws_formula, rows: list[list[str]]) -> list[Block]:
                     samples.append(f"{cell.coordinate}: {value}")
     if not n_missing:
         return []
-    shown = "、".join(samples)
-    more = f"(僅列出前 20 個,共 {n_missing} 個)" if n_missing > 20 else ""
-    return [Note(
-        f"本工作表有 {n_missing} 個公式沒有計算結果,檔案裡只存了公式本身"
-        f"——請用 Excel 開啟後另存新檔再轉一次,就會有數字。公式:{shown}{more}",
-        docmd.KIND_FORMULA_NO_CACHE,
-    )]
+    shown = md_t("、").join(samples)
+    if n_missing > 20:
+        text = md_t("本工作表有 {n} 個公式沒有計算結果,檔案裡只存了公式本身"
+                    "——請用 Excel 開啟後另存新檔再轉一次,就會有數字。公式:{shown}"
+                    "(僅列出前 20 個,共 {n} 個)", n=n_missing, shown=shown)
+    else:
+        text = md_t("本工作表有 {n} 個公式沒有計算結果,檔案裡只存了公式本身"
+                    "——請用 Excel 開啟後另存新檔再轉一次,就會有數字。公式:{shown}",
+                    n=n_missing, shown=shown)
+    return [Note(text, docmd.KIND_FORMULA_NO_CACHE)]
 
 
 def _sheet_drawing_texts(src: Path) -> dict[str, list[str]]:
@@ -2111,17 +2136,18 @@ def _vba_outline(src: Path) -> list[Block]:
 
     proc_count = sum(len(p) for _, p, _ in sections)
     out: list[Block] = [
-        Heading(1, "巨集(VBA)"),
-        Para(
-            f"本檔含巨集:{len(sections)} 個模組、{proc_count} 個程序,"
-            f"程式碼約 {total_chars // 1000} 千字元。"
-            "**以下只列出結構與說明,完整程式碼請開啟原始檔查看。**"
-        ),
+        Heading(1, md_t("巨集(VBA)")),
+        Para(md_t(
+            "本檔含巨集:{modules} 個模組、{procs} 個程序,"
+            "程式碼約 {kchars} 千字元。"
+            "**以下只列出結構與說明,完整程式碼請開啟原始檔查看。**",
+            modules=len(sections), procs=proc_count, kchars=total_chars // 1000,
+        )),
     ]
     for name, procs, comments in sections:
         out.append(Heading(2, name))
         if comments:
-            out.append(Para("模組註解:" + " / ".join(comments)))
+            out.append(Para(md_t("模組註解:{text}", text=" / ".join(comments))))
         if procs:
             out.append(Raw("\n".join(f"- {p}" for p in procs)))
     return out
@@ -2133,10 +2159,9 @@ def convert_xlsx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
     try:
         wb = mod.load_workbook(str(src), data_only=True)
     except Exception as e:
-        raise UserFacingError(
-            f"無法開啟 Excel 檔「{src.name}」:檔案可能已損壞、有密碼保護,"
-            "或其實是舊版 .xls 格式(請用 Excel 另存為 .xlsx)"
-        ) from e
+        raise UserFacingError(t(
+            "無法開啟 Excel 檔「{name}」:檔案可能已損壞、有密碼保護,"
+            "或其實是舊版 .xls 格式(請用 Excel 另存為 .xlsx)", name=src.name)) from e
 
     drawing_texts = _sheet_drawing_texts(src)
 
@@ -2179,13 +2204,13 @@ def convert_xlsx(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
         # 圖形/文字方塊裡的字 openpyxl 讀不到(見 _sheet_drawing_texts)
         shape_text = _clean(" ".join(drawing_texts.get(ws.title, [])))
         if shape_text:
-            extras.append(Para(f"工作表上圖形的文字:{shape_text}"))
+            extras.append(Para(md_t("工作表上圖形的文字:{text}", text=shape_text)))
         # 並排版面已經把工作表拆成一個個小節,這些**整張表**的附屬內容再
         # 直接接上去,就會變成「最後那一個區塊的東西」——機櫃圖正是重災區
         # (`_sheet_drawing_texts` 記著:有兩個機櫃編號只存在圖形裡)。給它
         # 們一個自己的小節,歸屬才不會被誤讀(2026-08-19 code review)
         if extras and split:
-            blocks.append(Heading(2, f"{ws.title}:整張工作表的圖片與圖形文字"))
+            blocks.append(Heading(2, md_t("{sheet}:整張工作表的圖片與圖形文字", sheet=ws.title)))
         blocks.extend(extras)
     # 巨集放最後:它是附屬內容,不該把工作表的資料擠到下面去
     blocks.extend(_macro_blocks(src))
@@ -2201,8 +2226,8 @@ def _macro_blocks(src: Path) -> list[Block]:
     if not _has_macros(src):
         return []
     return _vba_outline(src) or [Note(
-        "本檔含巨集(VBA),但程式碼讀不出來"
-        "——如果這份檔案的重點是那些程式,請直接開啟原始檔",
+        md_t("本檔含巨集(VBA),但程式碼讀不出來"
+             "——如果這份檔案的重點是那些程式,請直接開啟原始檔"),
         docmd.KIND_MACRO,
     )]
 
@@ -2218,8 +2243,8 @@ def _sheet_images(ws, assets: AssetsDir, ocr_enabled: bool = True) -> list[Block
             continue
         link = assets.add_bytes(data, ".png")
         if link:
-            out.append(Image(link, f"{ws.title} 的內嵌圖片"))
+            out.append(Image(link, md_t("{sheet} 的內嵌圖片", sheet=ws.title)))
         out.extend(docimage.ocr_image_bytes(
-            data, f"{ws.title} 的內嵌圖片", ocr_enabled,
+            data, md_t("{sheet} 的內嵌圖片", sheet=ws.title), ocr_enabled,
         ))
     return out

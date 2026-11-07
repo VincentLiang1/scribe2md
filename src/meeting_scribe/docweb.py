@@ -18,8 +18,9 @@ from email import message_from_bytes, policy
 from pathlib import Path
 
 from meeting_scribe import docimage, docmd, docscript, doctext
-from meeting_scribe.docmd import AssetsDir, Block, Heading, Image, Note, Para, Table
+from meeting_scribe.docmd import AssetsDir, Block, Heading, Image, Note, Para, Table, md_t
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ _MAX_EMBED_DEPTH = 3
 def _ensure_bs4():
     global bs4
     if bs4 is None:
-        bs4 = docmd.lazy_import("bs4", "網頁檔")
+        bs4 = docmd.lazy_import("bs4", t("網頁檔"))
         # epub 的內文是 XHTML,帶著 XML 宣告——bs4 會對「用 HTML 解析器讀
         # XML」印一大段英文警告。**用 HTML 解析器是刻意的**(XHTML 本來就
         # 是給瀏覽器讀的,而 `_html_blocks` 整套都建立在那個行為上),而黑
@@ -79,7 +80,7 @@ def _ensure_bs4():
 def _ensure_markdownify():
     global markdownify
     if markdownify is None:
-        markdownify = docmd.lazy_import("markdownify", "網頁檔")
+        markdownify = docmd.lazy_import("markdownify", t("網頁檔"))
     return markdownify
 
 
@@ -229,7 +230,7 @@ def _img_block(
         ) if (v or "").strip()),
         "",
     )
-    alt = (tag.get("alt") or "").strip() or "圖片"
+    alt = (tag.get("alt") or "").strip() or md_t("圖片")
     if not src:
         return [], False
 
@@ -237,7 +238,7 @@ def _img_block(
         """存進 assets 並把圖裡的文字也撈出來(給 AI 用時那才是重點)。"""
         link = assets.add_bytes(data, suffix)
         out: list[Block] = [Image(link, alt)] if link else []
-        out.extend(docimage.ocr_image_bytes(data, f"圖片「{alt}」", ocr_enabled))
+        out.extend(docimage.ocr_image_bytes(data, md_t("圖片「{alt}」", alt=alt), ocr_enabled))
         return out, False
 
     if src in resources:
@@ -295,7 +296,7 @@ def _script_blocks(
     def on_page(label: str, page: str) -> list[Block]:
         if depth + 1 > _MAX_EMBED_DEPTH:
             return [Note(
-                f"「{docmd.one_line(label)}」是網頁裡再內嵌的網頁,層數太深,沒有轉出來",
+                md_t("「{name}」是網頁裡再內嵌的網頁,層數太深,沒有轉出來", name=docmd.one_line(label)),
                 docmd.KIND_DEPTH_LIMIT,
             )]
         # 每一頁一個標題:RAG 切塊後才知道這段出自哪一頁(render 規則 2)
@@ -319,9 +320,9 @@ def _script_blocks(
         if key in embed.seen:
             first = embed.seen[key]
             blocks.append(Note(
-                f"網頁程式裡的資料「{lit.name}」與前面"
-                + (f"「{first}」那一頁" if first else "出現過的")
-                + "完全相同,不重複列出",
+                md_t("網頁程式裡的資料「{name}」與前面「{page}」那一頁完全相同,不重複列出",
+                     name=lit.name, page=first) if first else
+                md_t("網頁程式裡的資料「{name}」與前面出現過的完全相同,不重複列出", name=lit.name),
                 docmd.KIND_SCRIPT_DATA, lossy=False,
             ))
             continue
@@ -402,13 +403,13 @@ def _html_blocks(
     notes: list[Block] = []
     if remote:
         notes.append(Note(
-            f"本文件有 {remote} 張圖片來自網路,基於隱私原則沒有下載"
-            "(本工具除了首次下載 AI 模型之外不連外)",
+            md_t("本文件有 {n} 張圖片來自網路,基於隱私原則沒有下載"
+                 "(本工具除了首次下載 AI 模型之外不連外)", n=remote),
             docmd.KIND_REMOTE_IMAGE,
         ))
     if spanned_any:
         notes.append(Note(
-            "表格中的跨欄/跨列儲存格已展開成重複值", docmd.KIND_MERGED_CELLS,
+            md_t("表格中的跨欄/跨列儲存格已展開成重複值"), docmd.KIND_MERGED_CELLS,
         ))
     return notes + lead + blocks
 
@@ -483,8 +484,8 @@ def _epub_spine(opf_xml: bytes, opf_dir: str) -> tuple[list[str], dict[str, str]
         if href:
             order.append(f"{opf_dir}{href}" if opf_dir else href)
     meta: dict[str, str] = {}
-    for tag, label in (("title", "書名"), ("creator", "作者"),
-                       ("publisher", "出版"), ("date", "日期")):
+    for tag, label in (("title", md_t("書名")), ("creator", md_t("作者")),
+                       ("publisher", md_t("出版")), ("date", md_t("日期"))):
         node = soup.find(tag)
         text = (node.get_text(" ", strip=True) if node else "").strip()
         if text:
@@ -525,7 +526,7 @@ def convert_epub(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list
         raise
     except Exception as e:
         raise UserFacingError(
-            f"無法解析電子書「{src.name}」:檔案可能已損壞,或不是有效的 epub"
+            t("無法解析電子書「{name}」:檔案可能已損壞,或不是有效的 epub", name=src.name)
         ) from e
 
 
@@ -538,7 +539,8 @@ def _epub_blocks(
     if meta:
         # 書名/作者要在**內容裡**,不能只放 frontmatter:RAG 切塊後的
         # chunk 會脫離上下文(同 docmail._header_blocks 的理由)
-        blocks.append(Para("\n".join(f"- {k}:{v}" for k, v in meta.items())))
+        colon = md_t(":")
+        blocks.append(Para("\n".join(f"- {k}{colon}{v}" for k, v in meta.items())))
     for rel in order:
         doc = root / rel
         if not doc.is_file():
@@ -550,11 +552,11 @@ def _epub_blocks(
         except Exception:  # noqa: BLE001 - 一篇壞掉不該讓整本書轉不出來
             logger.info("epub 的 %s 解析失敗,略過", rel, exc_info=True)
             blocks.append(Note(
-                f"電子書的「{rel}」這一篇解析失敗,內容沒有取出",
+                md_t("電子書的「{name}」這一篇解析失敗,內容沒有取出", name=rel),
                 docmd.KIND_EXTRACTION_GAP,
             ))
     if not order:
-        blocks.append(Note("這本電子書沒有可讀的內文", docmd.KIND_BLANK_PAGE, lossy=False))
+        blocks.append(Note(md_t("這本電子書沒有可讀的內文"), docmd.KIND_BLANK_PAGE, lossy=False))
     return blocks
 
 
@@ -575,7 +577,7 @@ def convert_mht(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list[
         msg = message_from_bytes(src.read_bytes(), policy=policy.default)
     except Exception as e:
         raise UserFacingError(
-            f"無法解析網頁封存檔「{src.name}」:檔案可能已損壞"
+            t("無法解析網頁封存檔「{name}」:檔案可能已損壞", name=src.name)
         ) from e
 
     html = ""
@@ -605,7 +607,7 @@ def convert_mht(src: Path, assets: AssetsDir, ocr_enabled: bool = True) -> list[
 
     if not html:
         raise UserFacingError(
-            f"網頁封存檔「{src.name}」裡找不到網頁內容,可能不是有效的 .mht 檔"
+            t("網頁封存檔「{name}」裡找不到網頁內容,可能不是有效的 .mht 檔", name=src.name)
         )
     # 編碼標記與 convert_html 走同一份:mht 也可能是 Big5,判錯時
     # 一聲不吭正是本功能最不能接受的「無聲失真」

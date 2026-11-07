@@ -58,17 +58,26 @@ HIGHLIGHT_LEGEND = _TW.highlight_legend
 NOTE_PREFIX = _TW.note_prefix
 NOTE_LEGEND = _TW.note_legend
 # 多個標記之間的分隔。用全形頓號的變體「・」而不是「、」:後者在中文
-# 句子裡到處都是,標記串起來會看起來像內文的一部分
-MARK_SEP = "・"
+# 句子裡到處都是,標記串起來會看起來像內文的一部分。⚠️ 英文會議是「 · 」與 [ ]
+# (`vocab.Vocab.mark_sep`;使用者 2026-11-07),讀回時一律走 `split_marks`
+MARK_SEP = _TW.mark_sep
+_MARK_SPLIT = re.compile(r"\s*[・·]\s*")
 
 
-def mark_suffix(marks: list[str]) -> str:
+def mark_suffix(marks: list[str], language: str = "zh_TW") -> str:
     """標記清單 → 接在 `**名字**` 後面的那一段(沒有標記回空字串)。
 
     **只有這一份**:渲染(to_markdown)與解析(audit/relabel 的正則)必須
     對得起來,而三處各寫一次字串的話,改一個字就會有一邊失聯——症狀是
-    「改掛按了沒反應」而畫面上完全看不出為什麼(同 speaker_label 那條)。"""
-    return f"〔{MARK_SEP.join(marks)}〕" if marks else ""
+    「改掛按了沒反應」而畫面上完全看不出為什麼(同 speaker_label 那條)。
+    括號與分隔跟會議語言(英文是 ` [a · b] `)。"""
+    v = vocab.of(language)
+    return f"{v.mark_open}{v.mark_sep.join(marks)}{v.mark_close}" if marks else ""
+
+
+def split_marks(m: re.Match) -> list[str]:
+    """講者行(`SPEAKER_LINE_RE` 的 match)的標記串 → 清單。「・」「 · 」兩種分隔都認。"""
+    return [x for x in _MARK_SPLIT.split((m.group("marks") or "").strip()) if x]
 
 
 # 逐字稿的講者行:`**名字**〔標記〕(00:12:34)`,標記那一段是選擇性的。
@@ -85,16 +94,22 @@ def mark_suffix(marks: list[str]) -> str:
 # 選定的寫法:標記直接貼著時間戳):沒有標記時是 `**名字** (00:12:34)`、
 # 有標記時是 `**名字**〔機器辨識〕(00:12:34)`。寫成 `\s*` 放寬的話,
 # `**名字**(00:12:34)` 這種本工具不會產生的形狀也會被收下,而那正是
-# 「內文裡的粗體被當成講者標籤」的入口
+# 「內文裡的粗體被當成講者標籤」的入口。
+# ⚠️ 標記的括號有全形〔〕與半形 [ ] 兩種(英文會議 2026-11-07 起是後者,寫成
+# `**Speaker 1** [highlight] (00:12:34)`),**兩種都認、方括號前後的空白有無都容忍**:
+# 舊的英文逐字稿不重產,手機版寫的也會進來
 SPEAKER_LINE_RE = re.compile(
-    r"^\*\*(?P<name>.+?)\*\*(?:〔(?P<marks>[^〕]*)〕|\ )"
+    r"^\*\*(?P<name>.+?)\*\*(?:\ ?[〔\[](?P<marks>[^〕\]]*)[〕\]]\ ?|\ )"
     r"\((?P<h>\d+):(?P<m>[0-5]\d):(?P<s>[0-5]\d)\)$"
 )
 
 
-def speaker_line(name: str, seconds: float, marks: list[str] | None = None) -> str:
-    """組一行講者行。渲染與「套用名字時重建那一行」共用同一份組法。"""
-    suffix = mark_suffix(marks or [])
+def speaker_line(name: str, seconds: float, marks: list[str] | None = None,
+                 language: str = "zh_TW") -> str:
+    """組一行講者行。渲染與「套用名字時重建那一行」共用同一份組法。
+
+    `language` 是**這份 md 的**會議語言(改寫既有的 md 時傳 `vocab.detect` 的結果)。"""
+    suffix = mark_suffix(marks or [], language)
     return f"**{name}**{suffix or ' '}({_hms(seconds)})"
 
 
@@ -115,6 +130,29 @@ def _hms(seconds: float) -> str:
     # 負值防線:上游時間戳異常時 floor 除法會產出垃圾時間(如 -1:59:59)
     s = int(max(seconds, 0.0))
     return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
+
+
+def join_sentences(texts: list[str]) -> str:
+    r"""同一輪的幾句接成一段:中文直接接,**兩邊都不是中日韓文字時補一個空白**。
+
+    ⚠️ 2026-11-07 查到:一律 `"".join` 的話英文會議變成「garden.The quotes」——引擎給的每一句
+    頭尾空白都被修掉了。判準看接縫兩側的字元而不是會議語言:中文會議裡夾的英文詞照樣要空開,
+    英文會議裡偶爾出現的中文字也不會被硬塞空白。"""
+    out = ""
+    for s in texts:
+        s = s.strip()
+        if not s:
+            continue
+        if out and not (_is_cjk(out[-1]) or _is_cjk(s[0])):
+            out += " "
+        out += s
+    return out
+
+
+def _is_cjk(ch: str) -> bool:
+    """中日韓文字與全形標點(這些之間不加空白)。"""
+    return ("⺀" <= ch <= "鿿") or ("豈" <= ch <= "﫿") or ("＀" <= ch <= "￯") \
+        or ("　" <= ch <= "〿")
 
 
 def speech_blocks(spoken: list[SpokenSegment]) -> list[SpeechBlock]:
@@ -151,7 +189,7 @@ def speech_blocks(spoken: list[SpokenSegment]) -> list[SpeechBlock]:
             blocks.append([seg.speaker, seg.start, [seg.text], seg.end, is_marker,
                            seg.crosstalk, seg.pause_before, seg.highlight, seg.notes])
     return [
-        SpeechBlock(speaker=sp, start=st, end=en, text="".join(texts), is_marker=m,
+        SpeechBlock(speaker=sp, start=st, end=en, text=join_sentences(texts), is_marker=m,
                     crosstalk=ct, pause_before=pb, highlight=hl, notes=nt)
         for sp, st, texts, en, m, ct, pb, hl, nt in blocks
     ]
@@ -172,8 +210,7 @@ def pause_line(seconds: float, language: str = "zh_TW") -> str:
 
 
 def is_pause_line(line: str) -> bool:
-    s = line.strip()
-    return any(s.startswith(v.pause_head) and s.endswith("〕") for v in vocab.ALL)
+    return vocab.is_pause_line(line)
 
 
 def _group_by_speaker(
@@ -400,7 +437,7 @@ def to_markdown(
             marks.append(v.mark_crosstalk)
         if b.highlight:
             marks.append(v.mark_highlight)
-        lines.append(speaker_line(v.speaker_label(speaker), start, marks))
+        lines.append(speaker_line(v.speaker_label(speaker), start, marks, language))
         lines.append(done.get(i, text))
         lines += [v.note_prefix + n for n in b.notes]
         lines.append("")
@@ -442,6 +479,8 @@ def transcript_frontmatter(
         # 會議語言(同 iOS 的 `language:`,2026-10-21):讀回 md 的程式靠它知道正文是哪一套字串,
         # 不必猜標題。⚠️ **沒有這欄 = 繁體中文**(2026-10-21 以前的全部)
         f'language: "{language}"',
+        # 格式版本(`vocab.FORMAT_VERSION`,2026-11-07):讀的那一端比它舊就明講、不硬讀
+        f"format_version: {vocab.FORMAT_VERSION}",
         "---",
         # ⚠️ **兩個空字串 = frontmatter 與正文之間真的空一行**:`write_md`
         # 是 `"\n".join(...) + md_text`,少一個的話 `---` 會和 `## 會議逐字稿`

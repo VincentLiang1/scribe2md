@@ -1,4 +1,4 @@
-' Launch.vbs —— 開起轉換器的視窗，全程沒有黑框。
+' Launch.vbs —— 開起會議助手的視窗，全程沒有黑框。
 '
 ' 與「Troubleshooting\Launch-DEBUG.bat」的差別只在後者留一個主控台視窗顯示啟動訊息；
 ' 這一邊用 pythonw 啟動、並把主控台整個藏起來，所以桌面上只看得到程式自己的視窗。
@@ -29,10 +29,12 @@ Option Explicit
 
 ' MsgBox 大約 1024 個字元就會被截掉，而有用的部分（例外的最後幾行）在尾巴
 Const MAX_MSG = 900
-Const APP_TITLE = "AI 文件.MD 轉換器"
+Const APP_TITLE = "會議助手電腦版"
+Const APP_TITLE_EN = "Notetaker Desktop"
 
 Dim sh, fso, here, q, capPath, cmd, rc, out, msg, missing
 Dim usedFast, started, spent
+Dim uiEn, ind
 
 Set sh  = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -48,18 +50,35 @@ sh.CurrentDirectory = here
 ' 【注意】這裡列的路徑必須真的存在於專案裡，否則守門會在「正常的安裝」上誤報，
 ' 而畫面上那句話還信誓旦旦地說「請把整個專案資料夾完整複製過來」——使用者照做也
 ' 不會好。清單由 scripts/make_launcher.py 給，那一支旁邊有測試釘著這一條。
+' 【英文介面】跟程式自己同一套順序判斷介面語言（見檔尾的 UiEnglish）。英文介
+' 面的訊息框一個中文字都不准有，連全形空格也算，所以守門清單的縮排也跟著換。
+uiEn = UiEnglish(sh, fso)
+If uiEn Then
+    ind = "    "
+Else
+    ind = "　　"
+End If
+
 missing = ""
 If Not fso.FileExists(fso.BuildPath(here, "pyproject.toml")) Then
-    missing = missing & vbCrLf & "　　pyproject.toml"
+    missing = missing & vbCrLf & ind & "pyproject.toml"
 End If
 If Not fso.FileExists(fso.BuildPath(here, "src\meeting_scribe\desktop.py")) Then
-    missing = missing & vbCrLf & "　　src\meeting_scribe\desktop.py"
+    missing = missing & vbCrLf & ind & "src\meeting_scribe\desktop.py"
 End If
 If Not fso.FileExists(fso.BuildPath(here, "data-default\replace.txt")) Then
-    missing = missing & vbCrLf & "　　data-default\replace.txt"
+    missing = missing & vbCrLf & ind & "data-default\replace.txt"
 End If
 If Not fso.FileExists(fso.BuildPath(here, "winkit\pyproject.toml")) Then
-    missing = missing & vbCrLf & "　　winkit\pyproject.toml"
+    missing = missing & vbCrLf & ind & "winkit\pyproject.toml"
+End If
+If uiEn And Len(missing) > 0 Then
+    MsgBox "Some required files are missing from this folder:" & vbCrLf & missing & vbCrLf & vbCrLf & _
+           here & vbCrLf & vbCrLf & _
+           "Copy the whole project folder again, then run ""Install.bat"" once more." & vbCrLf & _
+               "(Paths starting with .. are the shared folder next to the project; copy it together with the project.)", _
+           vbCritical, APP_TITLE_EN
+    WScript.Quit 1
 End If
 If Len(missing) > 0 Then
     MsgBox "這個資料夾裡少了必要的檔案：" & vbCrLf & missing & vbCrLf & vbCrLf & _
@@ -94,6 +113,13 @@ On Error Resume Next
 started = Timer
 rc = sh.Run(cmd, 0, True)
 If Err.Number <> 0 Then
+    If uiEn Then
+        MsgBox "Could not start the program (" & Err.Description & ")." & vbCrLf & vbCrLf & _
+               "Make sure uv is installed (https://docs.astral.sh/uv/)," & vbCrLf & _
+               "then run ""Install.bat"" to set up the environment.", vbCritical, APP_TITLE_EN
+        Cleanup fso, capPath
+        WScript.Quit 1
+    End If
     MsgBox "無法啟動程式（" & Err.Description & "）。" & vbCrLf & vbCrLf & _
            "請先確認已安裝 uv（https://docs.astral.sh/uv/），" & vbCrLf & _
            "再執行「Install.bat」建立環境。", vbCritical, APP_TITLE
@@ -117,9 +143,22 @@ If usedFast And rc <> 0 Then
     End If
 End If
 
+If uiEn And rc <> 0 Then
+    out = Captured(fso, capPath)
+    msg = "Notetaker Desktop did not exit normally (exit code " & rc & ")." & vbCrLf & vbCrLf
+    If Len(out) > 0 Then
+        msg = msg & out
+    Else
+        msg = msg & "No message was captured. If this is the first run, run ""Install.bat"" first; " & _
+              "If it still happens, run ""Launch-DEBUG.bat"" in the ""Troubleshooting"" folder; the messages will show in that window."
+    End If
+    MsgBox msg, vbCritical, APP_TITLE_EN
+    Cleanup fso, capPath
+    WScript.Quit
+End If
 If rc <> 0 Then
     out = Captured(fso, capPath)
-    msg = "轉換器沒有正常結束（結束碼 " & rc & "）。" & vbCrLf & vbCrLf
+    msg = "會議助手沒有正常結束（結束碼 " & rc & "）。" & vbCrLf & vbCrLf
     If Len(out) > 0 Then
         msg = msg & out
     Else
@@ -169,6 +208,93 @@ Function NotNewer(fso, path, stamp)
     NotNewer = (fso.GetFile(path).DateLastModified <= stamp)
 End Function
 
+' 介面是不是英文：跟程式自己同一套順序——環境變數、使用者在程式裡選過的語言、
+' 系統的顯示語言。前兩項的值不認得就當沒設，往下一項問。
+' 【注意】任何一步讀不到都不可以讓這支啟動器停下來：它只決定訊息框用哪一種語言。
+Function UiEnglish(sh, fso)
+    Dim v, text, re, found
+    On Error Resume Next
+    v = sh.Environment("PROCESS")("MEETING_SCRIBE_UI_LANG")
+    If LangChoice(v) >= 0 Then
+        UiEnglish = (LangChoice(v) = 1)
+        Exit Function
+    End If
+    text = ReadUtf8(fso, sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\meeting-scribe\settings.json")
+    Set re = New RegExp
+    re.Pattern = """ui_language""\s*:\s*""([^""]*)"""
+    Set found = re.Execute(text)
+    If Err.Number = 0 And found.Count > 0 Then
+        v = found(0).SubMatches(0)
+        If LangChoice(v) >= 0 Then
+            UiEnglish = (LangChoice(v) = 1)
+            Exit Function
+        End If
+    End If
+    Err.Clear
+    UiEnglish = SystemEnglish(sh)
+End Function
+
+
+' 1 = 英文、0 = 中文、-1 = 不認得（當沒設）。
+Function LangChoice(v)
+    LangChoice = -1
+    Select Case v
+        Case "en"
+            LangChoice = 1
+        Case "zh_TW", "zh_CN"
+            LangChoice = 0
+    End Select
+End Function
+
+
+' 系統的顯示語言是不是英文。清單裡第一個 zh 或 en 勝出，一個都沒有就英文（日文、
+' 韓文的人看英文）。
+' 【注意】讀不到登錄檔就回 False（繁中）：那是加英文之前的行為，失效往舊的倒。
+' 【注意】問的是登錄檔，不是程式用的 GetUserPreferredUILanguages（VBScript 叫不
+' 到）：使用者改過顯示語言才有 PreferredUILanguages，沒有就看安裝時的語言。
+Function SystemEnglish(sh)
+    Dim langs, i, tag, seen
+    SystemEnglish = False
+    On Error Resume Next
+    langs = sh.RegRead("HKCU\Control Panel\Desktop\PreferredUILanguages")
+    If Err.Number <> 0 Or Not IsArray(langs) Then
+        Err.Clear
+        langs = sh.RegRead("HKCU\Control Panel\Desktop\MuiCached\MachinePreferredUILanguages")
+    End If
+    If Err.Number <> 0 Or Not IsArray(langs) Then Exit Function
+    seen = False
+    For i = LBound(langs) To UBound(langs)
+        tag = LCase(Replace(Trim(langs(i)), "_", "-"))
+        If Len(tag) > 0 Then
+            seen = True
+            If tag = "zh" Or Left(tag, 3) = "zh-" Then Exit Function
+            If tag = "en" Or Left(tag, 3) = "en-" Then
+                SystemEnglish = True
+                Exit Function
+            End If
+        End If
+    Next
+    SystemEnglish = seen
+End Function
+
+
+' 讀一個 UTF-8 文字檔（設定檔就是 UTF-8 寫的）；讀不到回空字串，等於「沒選過」。
+' 【注意】不共用上面那支 Captured：它只留最後 MAX_MSG 個字，設定檔裡別的值一長，
+' 語言那一項就被切掉了。
+Function ReadUtf8(fso, path)
+    Dim st
+    ReadUtf8 = ""
+    If Not fso.FileExists(path) Then Exit Function
+    On Error Resume Next
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 2 : st.Charset = "utf-8" : st.Open
+    st.LoadFromFile path
+    ReadUtf8 = st.ReadText
+    st.Close
+    If Err.Number <> 0 Then ReadUtf8 = ""
+    Err.Clear
+End Function
+
 
 ' 讀回攔到的訊息。優先用 ADODB.Stream 解 UTF-8（子行程就是用 UTF-8 寫的）；
 ' 那個元件被停用時退回 FileSystemObject —— 中文會變亂碼，但 traceback 的骨架
@@ -198,6 +324,11 @@ Function Captured(fso, path)
     On Error GoTo 0
 
     text = Trim(text)
+    If uiEn And Len(text) > MAX_MSG Then
+        Captured = "(The message is long; only the last " & MAX_MSG & " characters are shown.)" & _
+                   vbCrLf & vbCrLf & Right(text, MAX_MSG)
+        Exit Function
+    End If
     If Len(text) > MAX_MSG Then
         text = "（訊息很長，以下只顯示最後 " & MAX_MSG & " 個字）" & _
                vbCrLf & vbCrLf & Right(text, MAX_MSG)

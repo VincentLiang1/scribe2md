@@ -1,4 +1,4 @@
-# Scribe2MD User Guide
+# Notetaker Desktop User Guide
 
 **English** | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md)
 
@@ -6,13 +6,13 @@ Turns **audio, documents and images** into **Markdown that AI reads well** (to s
 
 Supports **Windows 10/11 (x64)** and **Apple Silicon Macs on macOS 14.2 or later** (M1 onwards). ⚠️ Intel Macs are untested and unsupported; Linux is unsupported too. For the differences between the two platforms, see chapter 5, “System requirements”.
 
-📥 **Download (free): [latest version](https://github.com/VincentLiang1/scribe2md/releases/latest)**: open it and pick your platform in the `Assets` section at the bottom: **Windows: `scribe2md-win.zip`, Mac: `scribe2md-mac.zip`**. The files are small on purpose (just over 2 MB for Windows, about 30 MB for Mac, mostly the Python bundled in the App); the runtime and the AI models are downloaded automatically on first start (about 3–6 GB in total, see chapter 5).
+📥 **Download (free): [latest version](https://github.com/VincentLiang1/notetaker-desktop/releases/latest)**: open it and pick your platform in the `Assets` section at the bottom: **Windows: `notetaker-desktop-win.zip`, Mac: `notetaker-desktop-mac.zip`**. The files are small on purpose (just over 2 MB for Windows, about 30 MB for Mac, mostly the Python bundled in the App); the runtime and the AI models are downloaded automatically on first start (about 3–6 GB in total, see chapter 5).
 
 ![Audio→MD: record live or transcribe existing recordings into a transcript with speaker separation](docs/screenshot-audio.en.png)
 
 ![Docs→MD: convert Word, PowerPoint, Excel, PDF, web pages, scans, photos and email to Markdown in batches](docs/screenshot-doc.en.png)
 
-> If something goes wrong, check chapter 4, “FAQ and troubleshooting”, first. If that doesn't solve it, contact whoever gave you this tool, or [open an issue](https://github.com/VincentLiang1/scribe2md/issues) on the project's GitHub page.
+> If something goes wrong, check chapter 4, “FAQ and troubleshooting”, first. If that doesn't solve it, contact whoever gave you this tool, or [open an issue](https://github.com/VincentLiang1/notetaker-desktop/issues) on the project's GitHub page.
 
 The interface follows your computer's language (繁體中文 / 简体中文 / English) and can be switched with the “🌐” at the top right of the window. Installer messages follow your computer's language too; the Mac App's name is in Chinese only.
 
@@ -55,7 +55,7 @@ In a hurry? This is enough; details follow in the chapters below.
 
 ### Step 1: Unzip
 
-Right-click the zip → “Extract All”. You get a `scribe2md` folder containing `Install.bat` (install), `Launch.vbs` (start), this guide (`README.md`) and some program files.
+Right-click the zip → “Extract All”. You get a `notetaker-desktop` folder containing `Install.bat` (install), `Launch.vbs` (start), this guide (`README.md`) and some program files.
 
 Put it anywhere; **a folder name in Chinese is fine** (tested in Chinese paths: installation, document conversion and transcripts all work). One suggestion: **keep it shallow**: the desktop or under `C:\` (for example `C:\Tools`) is best. Don't bury it in deeply nested folders: paths get close to Windows' length limit and conversions are more likely to run into trouble.
 
@@ -80,7 +80,7 @@ From then on, double-click the desktop icon (or `Launch.vbs`) whenever you want 
 
 ### Installing on a Mac
 
-1. On the download page, click **`scribe2md-mac.zip`** under `Assets` and double-click to unzip it; you get the App (its name is in Chinese; look for the Scribe2MD icon). Dragging it into “**Applications**” makes it easier to open from Launchpad or the Dock (double-clicking it in “Downloads” works too).
+1. On the download page, click **`notetaker-desktop-mac.zip`** under `Assets` and double-click to unzip it; you get the App (it shows as “Notetaker Desktop” when your Mac is set to English). Dragging it into “**Applications**” makes it easier to open from Launchpad or the Dock (double-clicking it in “Downloads” works too).
 2. **Double-click it.** macOS may first ask whether to open an App downloaded from the internet; choose “Open” (the App is notarized by Apple, so it only asks the first time).
 3. A **Terminal window** then builds the runtime automatically (first installing uv, a Python environment manager, then downloading dependencies), in about 3–10 minutes. When you see “**Done. Starting...**” the tool's window opens by itself; the Terminal window **doesn't close by itself**: when it stops at “`[Process completed]`” it is finished and you can close it. If you see `[Error]`, check the network and double-click the App again.
 4. From then on it opens directly with a double-click, **with no Terminal** (it appears once more only after an update).
@@ -128,8 +128,8 @@ Double-click the desktop icon and the tool's window opens. “What to do” star
 - Three recording setups: in person, online (**echo removed automatically**, speakers are fine, no headset needed), system audio only; **it always starts at “In person”**
 - Transcribes while the meeting goes on, so there is almost no wait afterwards; with a graphics chip even speaker separation is done during the recording
 - The audio file is a result too (a `.wav` named with the date and time; online meetings are stereo: left = room, right = computer)
-- “‖ Pause” / “● Resume”: nothing is recorded while paused and it isn't counted in the transcript's time; the seam is marked 〔Recording paused here…〕
-- “★ Highlight” (or ⌘B/Ctrl+B): press it when you hear something important, and type a note on the spot if you like; the transcript marks it 〔highlight〕 with the note under that turn (same format as the phone app), and the minutes draft gets a section for them
+- “‖ Pause” / “● Resume”: nothing is recorded while paused and it isn't counted in the transcript's time; the seam is marked [Recording paused here…]
+- “★ Highlight” (or ⌘B/Ctrl+B): press it when you hear something important, and type a note on the spot if you like; the transcript marks it [highlight] with the note under that turn (same format as the phone app), and the minutes draft gets a section for them
 - Closing the window while recording asks first; the computer doesn't sleep while recording
 - “Speakers” can be changed at any time while recording
 - “Meeting language”: Traditional Chinese / Simplified Chinese / English (for files too); the transcript is recognized and written in it, in the same format as the phone app
@@ -161,7 +161,7 @@ Double-click the desktop icon and the tool's window opens. “What to do” star
 - **Text in images is recognized automatically (OCR)**, including images embedded in documents
 - Simplified Chinese is converted to Traditional, hyperlinks keep their URLs, Word footnotes go to the end, photos get their shooting details
 - Email attachments are converted recursively (nested messages up to 3 levels)
-- What can't be converted is marked “〔 〕” in place and summarized at the top of the file; **nothing is ever dropped silently**
+- What can't be converted is marked in place (“[ ]” with the English interface, “〔 〕” with a Chinese one) and summarized at the top of the file; **nothing is ever dropped silently**
 - If an `.md` with the same name exists it is skipped, so the same folder can safely be run again
 - Results are saved next to the original documents; “📂 Output…” jumps right there
 
@@ -260,7 +260,7 @@ One known exception to watch for: **the integrated graphics of some older comput
 
 With 0, the tool keeps speakers who talk enough and sound clearly different from the others, merging only “very short noise fragments” and “drift from one person's volume or distance changing”. Recording quality (distance from the microphone, background noise) affects the result directly too, and matters more than any setting. Also, the “Speaker diagnostics” section at the end of the transcript lists each label's turns, time and cohesion, and names the few most worth checking first; to judge whether a transcript was separated well, looking there is much faster than listening to it all again.
 
-**Q: How do I update to a new version?** **On Windows you usually don't need to do anything**: when a new version exists, a window appears as the tool opens; “Update now” downloads it, swaps it in and reopens by itself (you can also click “🔄 Check for updates” at the very bottom of “❓ Help”). Only when the automatic update can't run (a Mac, or no write permission on the tool folder) do it by hand: download the latest version from the [Releases page](https://github.com/VincentLiang1/scribe2md/releases/latest) (that address always points to the latest version, so there's nothing to pick). **Windows**: download `scribe2md-win.zip` (called `scribe2md.zip` up to v0.9.20, same content), unzip it **over** your current tool folder (when File Explorer asks whether to replace, choose replace), then double-click `Install.bat` once more; it's the same zip as the first installation. **Mac**: download `scribe2md-mac.zip`, let the unzipped App **replace** the old one, then double-click it; the first time it opens, a Terminal window updates the runtime and then the tool opens by itself.
+**Q: How do I update to a new version?** **On Windows you usually don't need to do anything**: when a new version exists, a window appears as the tool opens; “Update now” downloads it, swaps it in and reopens by itself (you can also click “🔄 Check for updates” at the very bottom of “❓ Help”). Only when the automatic update can't run (a Mac, or no write permission on the tool folder) do it by hand: download the latest version from the [Releases page](https://github.com/VincentLiang1/notetaker-desktop/releases/latest) (that address always points to the latest version, so there's nothing to pick). **Windows**: download `notetaker-desktop-win.zip` (called `scribe2md-win.zip` up to v1.11, `scribe2md.zip` up to v0.9.20; same content), unzip it **over** your current tool folder (when File Explorer asks whether to replace, choose replace), then double-click `Install.bat` once more; it's the same zip as the first installation. **Mac**: download `notetaker-desktop-mac.zip`, let the unzipped App **replace** the old one, then double-click it; the first time it opens, a Terminal window updates the runtime and then the tool opens by itself.
 
 **Everything you had is kept**: transcripts in `output`, voiceprints, the people list and word lists in `data`, and the AI models already downloaded (stored in `%LOCALAPPDATA%\meeting-scribe\models` on Windows and `~/Library/Application Support/meeting-scribe/models` on a Mac, not in the tool folder, so updates can't touch them). `data-default` in the tool folder is the factory default, only used to fill in what's missing from `data`; it never touches your data.
 

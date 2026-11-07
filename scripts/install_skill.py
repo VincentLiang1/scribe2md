@@ -23,7 +23,10 @@ import shutil
 import sys
 from pathlib import Path
 
-PLACEHOLDER = "{{MEETING_SCRIBE_DIR}}"
+# 範本裡的佔位符 → 固定入口 `meeting-scribe/bin/doc2md` 的絕對路徑(2026-11-07 起;之前是
+# `uv run --directory "<工具資料夾>"`)。只裝核心或裝了會議助手電腦版都是同一個入口(見 `entry`),
+# 所以技能不必知道裝在哪
+PLACEHOLDER = "{{DOC2MD}}"
 ROOT = Path(__file__).resolve().parents[1]
 
 # ⚠️ **標記檔的用途是「這個資料夾是本工具建的,清得掉」**(2026-09-26 加):
@@ -61,6 +64,14 @@ def skills_root() -> Path:
     return Path.home() / ".claude" / "skills"
 
 
+def default_entry() -> Path:
+    """固定入口(`entry.bin_dir()` 底下的 doc2md)。"""
+    sys.path.insert(0, str(ROOT / "src"))
+    from meeting_scribe import entry
+
+    return entry.bin_dir() / entry.entry_name()
+
+
 def render(template: str, install_dir: Path) -> str:
     r"""把範本裡的佔位符換成這台機器上的實際路徑。
 
@@ -75,6 +86,44 @@ def render(template: str, install_dir: Path) -> str:
     (README 教使用者解壓到「桌面或 C:\ 底下」,而桌面路徑本來就可能有空格)。
     """
     return template.replace(PLACEHOLDER, install_dir.as_posix())
+
+
+def _sha(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _recorded(dest: Path) -> dict[str, str]:
+    """標記檔裡記著的「我們寫進去的那份」雜湊(`sha256 <相對路徑> <雜湊>`;舊版標記沒有這幾行)。"""
+    try:
+        lines = (dest / MARKER).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    return {parts[1]: parts[2] for parts in (ln.split(" ", 2) for ln in lines)
+            if len(parts) == 3 and parts[0] == "sha256"}
+
+
+def _edited(dest: Path, marked: bool) -> list[str]:
+    r"""使用者改過(或不是我們裝)的 `.md`:有標記而雜湊對不上,或根本沒有標記卻已經有檔。
+    舊版標記(沒記雜湊)當成我們裝的、沒人改過——那時候的技能指令已經不能用,蓋掉才對。"""
+    if not dest.is_dir():
+        return []
+    recorded = _recorded(dest)
+    out = []
+    for path in sorted(dest.rglob("*.md")):
+        rel = path.relative_to(dest).as_posix()
+        if not marked or (rel in recorded and recorded[rel] != _sha(path)):
+            out.append(rel)
+    return out
+
+
+def backup_dir() -> Path:
+    """改過的技能備份到哪(⚠️ **在 `.claude` 外面**:放在 skills 底下會被 Claude Code 當成第二個技能載入)。"""
+    sys.path.insert(0, str(ROOT / "src"))
+    from meeting_scribe import paths
+
+    return paths.appdata_root() / "skill-backup"
 
 
 def _prune(dest: Path, wanted: set[Path]) -> None:
@@ -134,6 +183,15 @@ def install_one(src_dir: Path, dest_root: Path, install_dir: Path) -> Path:
     # 就是 `wanted`,`_prune` 一個檔都刪不到(實測回傳空清單),所以 `if marked:`
     # 與 `if 新建 or marked:` 逐位元組等價
     marked = (dest / MARKER).exists()
+    # 使用者改過的先備份再蓋(2026-11-07:技能指令換成固定入口,不蓋就壞;備份讓改動不會消失)
+    edited = _edited(dest, marked)
+    if edited:
+        import datetime
+
+        saved = backup_dir() / f"{src_dir.name}-{datetime.datetime.now():%Y%m%d-%H%M%S}"
+        shutil.copytree(dest, saved, ignore=shutil.ignore_patterns(MARKER))
+        print(_say(f"你改過的技能已備份到:{saved}", f"你改过的技能已备份到:{saved}",
+                   f"Your edited Skill was backed up to: {saved}"))
     dest.mkdir(parents=True, exist_ok=True)
     # ⚠️ 標記檔本來就是「該留下的檔」之一,放進 `wanted` 比在 `_prune` 裡開一個
     # 特例乾淨(而且那個特例其實是空轉的:下面無條件重寫標記,刪了也馬上回來)
@@ -153,7 +211,9 @@ def install_one(src_dir: Path, dest_root: Path, install_dir: Path) -> Path:
             shutil.copy2(path, target)
     if marked:
         _prune(dest, wanted)
-    (dest / MARKER).write_text(MARKER_TEXT, encoding="utf-8")
+    hashes = "".join(f"sha256 {p.relative_to(dest).as_posix()} {_sha(p)}\n"
+                     for p in sorted(dest.rglob("*.md")))
+    (dest / MARKER).write_text(MARKER_TEXT + hashes, encoding="utf-8")
     return dest
 
 
@@ -169,7 +229,15 @@ def _say(zh_tw: str, zh_cn: str, en: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    install_dir = Path(args[0]).resolve() if args else ROOT
+    # `--entry <路徑>`:核心的安裝程式明給固定入口;沒給就照這台的固定位置算(`default_entry`)。
+    # ⚠️ 舊的位置參數(工具資料夾)不再用:技能叫的是固定入口,不是某一份安裝
+    install_dir = Path(args[args.index("--entry") + 1]) if "--entry" in args else default_entry()
+    if "--entry" not in args:
+        # 從電腦版的 Install-Skill 來的:先把這一份記下來、指好固定入口——使用者可能還沒開過 App,
+        # 那時 `bin` 還不存在,技能一叫就找不到(開發用的資料夾 `register_desktop` 自己會略過)
+        from meeting_scribe import entry
+
+        entry.register_desktop(ROOT)
     sources = sorted(p for p in (ROOT / "skills").iterdir() if p.is_dir())
     if not sources:
         print(_say("找不到任何要安裝的 Skill(skills/ 是空的)。",
@@ -180,8 +248,8 @@ def main(argv: list[str] | None = None) -> int:
     for src in sources:
         dest = install_one(src, dest_root, install_dir)
         print(_say(f"已安裝 Skill:{dest}", f"已安装 Skill:{dest}", f"Installed Skill: {dest}"))
-    print(_say(f"工具位置已填入:{install_dir}", f"工具位置已填入:{install_dir}",
-               f"Tool location filled in: {install_dir}"))
+    print(_say(f"技能叫用的入口:{install_dir}", f"技能调用的入口:{install_dir}",
+               f"The Skill runs: {install_dir}"))
     # 不在這裡講「重開 Claude Code」:兩個入口(`Install-Skill.bat`/`.command`)收尾那句已經講了,
     # 這裡再講一次就是同一件事連說兩遍(2026-10-23 使用者)
     return 0

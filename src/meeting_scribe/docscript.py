@@ -30,7 +30,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from meeting_scribe import docmd
-from meeting_scribe.docmd import Block, Note, Para
+from meeting_scribe.docmd import Block, Note, Para, md_t
 
 # ---- 詞法 ----
 
@@ -555,18 +555,19 @@ def _list_lines(value, depth: int, label: str, deferred: list[_Deferred]) -> lis
     多行的文字接在項目底下縮排;整頁網頁與整份 markdown 放不進清單(裡面有
     標題),先記進 deferred,由呼叫端接在這一筆後面。"""
     pad = "  " * depth
+    colon = md_t(":")
     out: list[str] = []
     keyed = isinstance(value, dict)
     items = list(value.items()) if keyed else list(enumerate(value, 1))
     for k, v in items:
         if v is SKIPPED or v is None:
             continue
-        head = f"{pad}- {k}:" if keyed else f"{pad}- "
-        where = f"{label} · {k}" if keyed else f"{label} · 第 {k} 項"
+        head = f"{pad}- {k}{colon}" if keyed else f"{pad}- "
+        where = f"{label} · {k}" if keyed else f"{label} · " + md_t("第 {n} 項", n=k)
         if _is_page(v) or _is_md_doc(v):
             deferred.append(_Deferred(where, v, _is_page(v)))
-            what = "一整頁網頁,內容" if _is_page(v) else "一份文件,全文"
-            out.append(f"{head}({what}接在下方)")
+            out.append(head + (md_t("(一整頁網頁,內容接在下方)") if _is_page(v)
+                               else md_t("(一份文件,全文接在下方)")))
         elif _is_scalar(v):
             lines = _scalar_text(v).split("\n")
             if not lines[0]:
@@ -582,13 +583,13 @@ def _list_lines(value, depth: int, label: str, deferred: list[_Deferred]) -> lis
         ):
             texts = [t for t in (_scalar_text(x) for x in v) if t]
             if texts:
-                out.append(head + "、".join(texts))
+                out.append(head + md_t("、").join(texts))
         else:
             # 只有一個元素的清單不另起「第 1 項」那一層:那一行只是雜訊
             inner = v[0] if isinstance(v, list) and len(v) == 1 and isinstance(v[0], (dict, list)) else v
             sub = _list_lines(inner, depth + 1, where, deferred)
             if sub:
-                out.append(head.rstrip() if keyed else f"{pad}- 第 {k} 項")
+                out.append(head.rstrip() if keyed else f"{pad}- " + md_t("第 {n} 項", n=k))
                 out.extend(sub)
     return out
 
@@ -605,7 +606,8 @@ def _records(name: str, value) -> list[tuple[str, object]]:
     if isinstance(value, list):
         items = [v for v in value if v is not SKIPPED and v is not None]
         if any(big(v) for v in items):
-            return [(f"{name} · 第 {i} 筆(共 {len(items)} 筆)", v) for i, v in enumerate(items, 1)]
+            return [(f"{name} · " + md_t("第 {i} 筆(共 {total} 筆)", i=i, total=len(items)), v)
+                    for i, v in enumerate(items, 1)]
     if isinstance(value, dict):
         items = [(k, v) for k, v in value.items() if v is not SKIPPED and v is not None]
         if items and all(big(v) for _, v in items):
@@ -639,8 +641,8 @@ def literal_blocks(
         return out + _lost_note(lit.name, lost)
 
     out = [Note(
-        f"以下是網頁程式裡的資料「{lit.name}」:原本由程式放到畫面上"
-        "(有些要點選或停在上面才看得到),這裡照資料原樣列出",
+        md_t("以下是網頁程式裡的資料「{name}」:原本由程式放到畫面上"
+             "(有些要點選或停在上面才看得到),這裡照資料原樣列出", name=lit.name),
         docmd.KIND_SCRIPT_DATA, lossy=False,
     )]
     for label, value in _records(lit.name, lit.value):
@@ -674,10 +676,11 @@ def _lost_note(name: str, lost: list[str]) -> list[Block]:
     安靜地消失。"""
     if not lost:
         return []
-    examples = "、".join(f"「{docmd.one_line(s)[:20]}」" for s in lost[:3])
+    examples = md_t("、").join(md_t("「{o}」", o=docmd.one_line(s)[:20]) for s in lost[:3])
     return [Note(
-        f"網頁程式裡的資料「{name}」有 {len(lost)} 段文字夾在程式碼裡、"
-        f"沒有轉出來(例如 {examples})——請開啟原始檔查看",
+        md_t("網頁程式裡的資料「{name}」有 {n} 段文字夾在程式碼裡、"
+             "沒有轉出來(例如 {examples})——請開啟原始檔查看",
+             name=name, n=len(lost), examples=examples),
         docmd.KIND_SCRIPT_DATA,
     )]
 
@@ -691,4 +694,4 @@ def _page_leaves(label: str, value):
             yield from _page_leaves(f"{label} · {k}", v)
     elif isinstance(value, list):
         for i, v in enumerate(value, 1):
-            yield from _page_leaves(f"{label} · 第 {i} 項", v)
+            yield from _page_leaves(f"{label} · " + md_t("第 {n} 項", n=i), v)

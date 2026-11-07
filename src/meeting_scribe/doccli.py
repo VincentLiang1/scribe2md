@@ -201,6 +201,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     stdio.force_utf8(sys.stdout, sys.stderr)
+    argv = sys.argv[1:] if argv is None else argv
+    # `--version`(給人看)與 `--version --json`(給 wiki-agent 看,`entry.version_info`):**在建記錄檔、
+    # 解析其他參數之前就回**——wiki-feeder 每一輪都會叫一次,這條路不載模型、不連網、不留記錄檔。
+    # ⚠️ 舊版沒有這個選項:argparse 會因為缺「路徑」報錯、離開碼 2(wiki-feeder 靠這個分辨新舊)
+    if "--version" in argv:
+        import json
+
+        from meeting_scribe import entry
+
+        info = entry.version_info()
+        print(json.dumps(info, ensure_ascii=False) if "--json" in argv
+              else f"{info['name']} {info['version']} ({info['build']}, {info['stamp']})")
+        return 0
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
     args = _build_parser().parse_args(argv)
 
@@ -212,6 +225,9 @@ def main(argv: list[str] | None = None) -> int:
         tee=False, device=filelog.DEVICE_SKIPPED, stream=sys.stderr,
         console_level=logging.WARNING,
     )
+    # 語言無關的機器標記(wiki-agent 的契約,`entry` 模組 docstring):中文那行「執行記錄:」照樣在
+    # (舊版 wiki-feeder 只認它、而且它不翻),這一行給新版找
+    print(f"SCRIBE2MD-LOG: {log_path}", file=sys.stderr)
     logger.info("doc2md 啟動:%s", " ".join(sys.argv[1:]))
 
     # 兩個開關互相矛盾:「每頁都辨識」與「都不辨識」。不挑一個默默贏——

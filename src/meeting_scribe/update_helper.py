@@ -35,7 +35,7 @@ from pathlib import Path
 
 #: ⚠️ 與 `update.NEVER_TOUCH` 同一份(這支 import 不到那邊,測試釘著兩份一致)
 NEVER_TOUCH = ("data", ".venv", "logs", "output", ".git")
-TITLE = "AI 文件.MD 轉換器"
+TITLE = "會議助手電腦版"
 CREATE_NO_WINDOW = 0x08000000
 #: 本程式關掉要多久:收尾(保存錄音、停子行程)正常是一兩秒,給寬一點
 WAIT_EXIT_SEC = 120
@@ -45,6 +45,37 @@ SYNC_TIMEOUT_SEC = 20 * 60
 COPY_RETRIES = 5
 
 _log_file = None
+
+#: 訊息的繁中預設(鍵 = 環境變數 `UPD_` 後面那段)。⚠️ **本程式會把翻好的放進 `UPD_<鍵>`**
+#: (`update.helper_texts`,跟介面語言;使用者 2026-11-07:英文介面不出現中文字),讀不到才用這份。
+#: 這份與那邊的原文由 `tests/test_update.py` 釘成一致
+DEFAULT_TEXT = {
+    "TITLE": TITLE,
+    "PROGRESS": "正在換上 v{version},完成後會自動重新開啟…",
+    "RELAUNCH_FAILED": "更新完成,但沒能自動重新開啟。請自己開啟「{title}」。",
+    "MANUAL": ("請到 GitHub 下載最新版,解壓縮後覆蓋到工具資料夾,再雙擊「Install.bat」:\n"
+               "https://github.com/VincentLiang1/notetaker-desktop/releases/latest"),
+    "NOT_CLOSED": ("更新沒有進行:程式沒有關掉。請關掉它之後,再從「❓ 使用說明」"
+                   "最底下按一次「檢查更新」。"),
+    "SYNC_FAILED": "執行環境更新失敗(多半是網路或防毒軟體)",
+    "SWAP_FAILED": "換檔失敗({e})",
+    "ROLLED_BACK": ("更新到 v{version} 沒有成功:{reason}。\n\n已經還原成原本的版本,"
+                    "可以照常使用。詳情在工具資料夾的 logs 裡(update_ 開頭的那份)。"),
+    "STUCK": "更新到 v{version} 沒有成功,而且有 {n} 個檔沒能還原。\n\n{manual}",
+    "UNEXPECTED": "更新時發生未預期的錯誤。\n\n{manual}",
+}
+
+
+def text(key: str, **kw) -> str:
+    """一句訊息:環境變數 `UPD_<鍵>`(本程式翻好的),沒有或填不進參數就用繁中預設。"""
+    kw.setdefault("manual", os.environ.get("UPD_MANUAL") or DEFAULT_TEXT["MANUAL"])
+    for s in (os.environ.get(f"UPD_{key}"), DEFAULT_TEXT[key]):
+        if s:
+            try:
+                return s.format(**kw)
+            except (KeyError, IndexError, ValueError):
+                log(f"訊息 {key} 填不進參數,改用預設")
+    return DEFAULT_TEXT[key]
 
 
 def log(msg: str) -> None:
@@ -57,14 +88,14 @@ def log(msg: str) -> None:
             pass
 
 
-def message(text: str, error: bool = True) -> None:
-    """繁中訊息框(不用 Tk 的 messagebox:它的按鈕字會是英文,見 `desktop._ask_close`)。"""
+def message(body: str, error: bool = True) -> None:
+    """訊息框(不用 Tk 的 messagebox:它的按鈕字會是英文,見 `desktop._ask_close`)。"""
     try:
         flags = 0x10 if error else 0x40          # MB_ICONERROR / MB_ICONINFORMATION
         # MB_SETFOREGROUND | MB_TOPMOST:本程式已經關了,沒有父視窗可以掛
-        ctypes.windll.user32.MessageBoxW(None, text, TITLE, flags | 0x10000 | 0x40000)
+        ctypes.windll.user32.MessageBoxW(None, body, text("TITLE"), flags | 0x10000 | 0x40000)
     except Exception:  # noqa: BLE001
-        log(f"訊息框開不起來:{text}")
+        log(f"訊息框開不起來:{body}")
 
 
 def wait_for_exit(pid: int, timeout: float = WAIT_EXIT_SEC) -> bool:
@@ -163,7 +194,11 @@ def uv_sync(target: Path) -> bool:
     kw = {"creationflags": CREATE_NO_WINDOW} if sys.platform == "win32" else {}
     for attempt in range(2):
         try:
-            r = subprocess.run([uv, "sync"], cwd=target, capture_output=True,
+            # ⚠️ `--frozen`(使用者 2026-11-07):照包裡的 uv.lock 裝、不在使用者那台重新解析相依——重新
+            # 解析要上網抓相依資訊,公司網路下要等好幾分鐘而畫面上沒有進度(Windows 實測 4 分半)。
+            # 包裡的鎖檔一定跟 pyproject 對得上:發佈流程先改版號、再 `uv lock`、打包前 `uv lock --check`
+            # (`package.lock_problem`)
+            r = subprocess.run([uv, "sync", "--frozen"], cwd=target, capture_output=True,
                                text=True, encoding="utf-8", errors="replace",
                                timeout=SYNC_TIMEOUT_SEC, **kw)
         except (OSError, subprocess.TimeoutExpired) as e:
@@ -195,11 +230,7 @@ def relaunch(target: Path) -> None:
         log("已重新開啟")
     except Exception as e:  # noqa: BLE001
         log(f"重新開啟失敗:{e}")
-        message(f"更新完成,但沒能自動重新開啟。請自己開啟「{TITLE}」。", error=False)
-
-
-MANUAL = ("請到 GitHub 下載最新版,解壓縮後覆蓋到工具資料夾,再雙擊「Install.bat」:\n"
-          "https://github.com/VincentLiang1/scribe2md/releases/latest")
+        message(text("RELAUNCH_FAILED", title=text("TITLE")), error=False)
 
 
 def run(staged: Path, target: Path, pid: int, version: str) -> tuple[int, str, bool]:
@@ -211,8 +242,7 @@ def run(staged: Path, target: Path, pid: int, version: str) -> tuple[int, str, b
     log(f"開始更新到 v{version}:{staged} → {target}")
     if not wait_for_exit(pid):
         log("本程式沒有結束,放棄更新")
-        return 1, ("更新沒有進行:程式沒有關掉。請關掉它之後,再從「❓ 使用說明」"
-                   "最底下按一次「檢查更新」。"), False
+        return 1, text("NOT_CLOSED"), False
     backup = staged.parent / "backup"
     shutil.rmtree(backup, ignore_errors=True)
     swap = Swap(staged, target, backup)
@@ -222,9 +252,9 @@ def run(staged: Path, target: Path, pid: int, version: str) -> tuple[int, str, b
         log(f"覆蓋了 {len(swap.done)} 個檔")
         synced = True
         ok = uv_sync(target)
-        reason = "" if ok else "執行環境更新失敗(多半是網路或防毒軟體)"
+        reason = "" if ok else text("SYNC_FAILED")
     except Exception as e:  # noqa: BLE001
-        ok, reason = False, f"換檔失敗({e})"
+        ok, reason = False, text("SWAP_FAILED", e=e)
         log(reason)
     if ok:
         shutil.rmtree(staged, ignore_errors=True)
@@ -236,11 +266,9 @@ def run(staged: Path, target: Path, pid: int, version: str) -> tuple[int, str, b
         if synced:
             uv_sync(target)                  # 環境也回到舊版那一份(失敗也只能這樣)
         log("已還原成舊版")
-        return 1, (f"更新到 v{version} 沒有成功:{reason}。\n\n已經還原成原本的版本,"
-                   "可以照常使用。詳情在工具資料夾的 logs 裡(update_ 開頭的那份)。"), True
+        return 1, text("ROLLED_BACK", version=version, reason=reason), True
     log(f"還原不完全:{stuck}")
-    return 2, (f"更新到 v{version} 沒有成功,而且有 {len(stuck)} 個檔沒能還原。\n\n"
-               + MANUAL), False
+    return 2, text("STUCK", version=version, n=len(stuck)), False
 
 
 def _progress_window(version: str):
@@ -254,13 +282,13 @@ def _progress_window(version: str):
         from tkinter import ttk
 
         root = tk.Tk()
-        root.title(TITLE)
+        root.title(text("TITLE"))
         root.resizable(False, False)
         root.attributes("-topmost", True)
         root.protocol("WM_DELETE_WINDOW", lambda: None)   # 換到一半不准關
         frame = ttk.Frame(root, padding=24)
         frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text=f"正在換上 v{version},完成後會自動重新開啟…").pack(anchor="w")
+        ttk.Label(frame, text=text("PROGRESS", version=version)).pack(anchor="w")
         bar = ttk.Progressbar(frame, mode="indeterminate", length=360)
         bar.pack(fill="x", pady=(12, 0))
         bar.start(15)
@@ -291,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
         _log_file = None
 
     root = _progress_window(args.version)
-    result: dict = {"out": (1, "更新時發生未預期的錯誤。\n\n" + MANUAL, False)}
+    result: dict = {"out": (1, text("UNEXPECTED"), False)}
 
     def work() -> None:
         try:
@@ -311,9 +339,9 @@ def main(argv: list[str] | None = None) -> int:
         root.after(200, poll)
         root.mainloop()
     worker.join()
-    code, text, again = result["out"]
-    if text:
-        message(text, error=code != 0)
+    code, body, again = result["out"]
+    if body:
+        message(body, error=code != 0)
     if again:
         relaunch(target)
     if _log_file is not None:

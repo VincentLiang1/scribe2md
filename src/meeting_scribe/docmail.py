@@ -19,8 +19,9 @@ from email import message_from_bytes, policy
 from pathlib import Path
 
 from meeting_scribe import docmd, pipeline
-from meeting_scribe.docmd import AssetsDir, Block, Heading, Note, Para
+from meeting_scribe.docmd import AssetsDir, Block, Heading, Note, Para, md_t
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +37,23 @@ _MAX_TOTAL_BYTES = 2 * 1024**3
 # 單一附件的大小上限:再大就不該用郵件寄了,而且讀進記憶體會出事
 _MAX_ONE_ATTACHMENT = 512 * 1024**2
 
-_HEADER_LABELS = [
-    ("from", "寄件者"), ("to", "收件者"), ("cc", "副本"),
-    ("date", "日期"), ("subject", "主旨"),
-]
+_HEADER_KEYS = ("from", "to", "cc", "date", "subject")
+
+
+def _header_label(key: str) -> str:
+    """標頭欄位在 md 裡的名字(跟 `docmd.md_lang`)。
+
+    ⚠️ **不寫成模組層的 dict**:那會在 import 當下就把語言定死(測試切英文介面時拿到的還是繁中)。"""
+    return {
+        "from": md_t("寄件者"), "to": md_t("收件者"), "cc": md_t("副本"),
+        "date": md_t("日期"), "subject": md_t("主旨"),
+    }[key]
 
 
 def _ensure_extract_msg():
     global extract_msg
     if extract_msg is None:
-        extract_msg = docmd.lazy_import("extract_msg", "Outlook 郵件")
+        extract_msg = docmd.lazy_import("extract_msg", t("Outlook 郵件"))
     return extract_msg
 
 
@@ -79,10 +87,11 @@ def _header_blocks(get) -> list[Block]:
     RAG 切塊後的 chunk 會脫離上下文,所以寄件者/日期/主旨要在**內容裡**,
     不能只放在 frontmatter(那是整份檔案層級的)。"""
     lines = []
-    for key, label in _HEADER_LABELS:
+    colon = md_t(":")
+    for key in _HEADER_KEYS:
         value = str(get(key) or "").strip()
         if value:
-            lines.append(f"- {label}:{value}")
+            lines.append(f"- {_header_label(key)}{colon}{value}")
     return [Para("\n".join(lines))] if lines else []
 
 
@@ -117,7 +126,7 @@ def _eml_parts(raw: bytes) -> tuple[str, list[_Attachment], dict]:
                 body = re.sub(r"<[^>]+>", " ", part.get_content())
             except Exception:
                 body = ""
-    return body, attachments, {k: msg.get(k) for k, _ in _HEADER_LABELS}
+    return body, attachments, {k: msg.get(k) for k in _HEADER_KEYS}
 
 
 # 宣告的內碼解不開時,依序換這些再試。**cp950 排第一**是因為使用者在
@@ -145,7 +154,7 @@ def _msg_attachments(message) -> tuple[list[_Attachment], int]:
             name = str(
                 getattr(att, "longFilename", None)
                 or getattr(att, "shortFilename", None)
-                or "附件"
+                or md_t("附件")
             )
             data = getattr(att, "data", None)
         except Exception:  # noqa: BLE001 - 逐個容錯:壞一個不該連累其他
@@ -183,7 +192,6 @@ def _msg_read(message) -> tuple[str, list[_Attachment], dict, list[str]]:
     的話,一個檔名解不開同樣會把讀得好好的本文帶走。"""
     headers: dict[str, str] = {}
     unreadable: list[str] = []
-    labels = dict(_HEADER_LABELS)
     for key, attr in (("from", "sender"), ("to", "to"), ("cc", "cc"),
                       ("date", "date"), ("subject", "subject")):
         try:
@@ -191,15 +199,15 @@ def _msg_read(message) -> tuple[str, list[_Attachment], dict, list[str]]:
         except Exception:  # noqa: BLE001 - 少一個欄位遠好過整封信報廢
             logger.info("郵件標頭 %s 解不開,略過", attr, exc_info=True)
             headers[key] = ""
-            unreadable.append(labels[key])
+            unreadable.append(_header_label(key))
     try:
         body = str(getattr(message, "body", "") or "")
     except Exception:  # noqa: BLE001
         logger.info("郵件本文解不開", exc_info=True)
-        body, _ = "", unreadable.append("本文")
+        body, _ = "", unreadable.append(md_t("本文"))
     attachments, lost = _msg_attachments(message)
     if lost:
-        unreadable.append(f"{lost} 個附件")
+        unreadable.append(md_t("{n} 個附件", n=lost))
     return body, attachments, headers, unreadable
 
 
@@ -221,7 +229,7 @@ def _msg_parts(src: Path) -> tuple[str, list[_Attachment], dict, list[str]]:
                 last = e
                 continue
             raise UserFacingError(
-                f"無法開啟 Outlook 郵件「{src.name}」:檔案可能已損壞"
+                t("無法開啟 Outlook 郵件「{name}」:檔案可能已損壞", name=src.name)
             ) from e
         try:
             return _msg_read(message)
@@ -235,7 +243,7 @@ def _msg_parts(src: Path) -> tuple[str, list[_Attachment], dict, list[str]]:
             except Exception:
                 pass
     raise UserFacingError(
-        f"無法讀取 Outlook 郵件「{src.name}」的內容:檔案可能已損壞或編碼有誤"
+        t("無法讀取 Outlook 郵件「{name}」的內容:檔案可能已損壞或編碼有誤", name=src.name)
     ) from last
 
 
@@ -274,37 +282,38 @@ def convert_mail(
     if unreadable:
         # 本文救回來了,但這幾樣是真的沒了——不能安靜地少
         blocks.append(Note(
-            f"這封郵件的 {'、'.join(unreadable)} 讀不出來(郵件自報的編碼有誤)",
+            md_t("這封郵件的 {items} 讀不出來(郵件自報的編碼有誤)",
+                 items=md_t("、").join(unreadable)),
             docmd.KIND_ENCODING_GUESS,
         ))
     text = (body or "").strip()
     if text:
         blocks.append(Para(text))
     elif not attachments:
-        blocks.append(Note("這封郵件沒有內容", docmd.KIND_BLANK_PAGE, lossy=False))
+        blocks.append(Note(md_t("這封郵件沒有內容"), docmd.KIND_BLANK_PAGE, lossy=False))
 
     if not attachments:
         return blocks + _body_gaps(body, blocks, _depth)
     if not mail_attachments:
         blocks.append(Note(
-            f"這封郵件有 {len(attachments)} 個附件,設定為不轉換附件",
+            md_t("這封郵件有 {n} 個附件,設定為不轉換附件", n=len(attachments)),
             docmd.KIND_ATTACHMENT,
         ))
         return blocks + _body_gaps(body, blocks, _depth)
     if _depth >= _MAX_DEPTH:
         blocks.append(Note(
-            f"郵件附件已達 {_MAX_DEPTH} 層上限,更深的附件沒有展開",
+            md_t("郵件附件已達 {n} 層上限,更深的附件沒有展開", n=_MAX_DEPTH),
             docmd.KIND_DEPTH_LIMIT,
         ))
         return blocks + _body_gaps(body, blocks, _depth)
 
-    blocks.append(Heading(1, f"附件({len(attachments)} 個)"))
+    blocks.append(Heading(1, md_t("附件({n} 個)", n=len(attachments))))
     for att in attachments:
         blocks.extend(_attachment_blocks(
             att, assets, ocr_enabled, _depth, _seen, budget,
         ))
     if budget.notes:
-        blocks.append(Note("、".join(dict.fromkeys(budget.notes)), docmd.KIND_ATTACHMENT))
+        blocks.append(Note(md_t("、").join(dict.fromkeys(budget.notes)), docmd.KIND_ATTACHMENT))
     return blocks + _body_gaps(body, blocks, _depth)
 
 
@@ -333,23 +342,24 @@ def _attachment_blocks(
     在更上面就 return 了。)
 
     附件的內容會整體下推 `_ATTACHMENT_HEADING_SHIFT` 層,見 _shift_headings。"""
-    name = docmd.sanitize_name(att.name, "附件")
+    name = docmd.sanitize_name(att.name, md_t("附件"))
     if len(att.data) > _MAX_ONE_ATTACHMENT:
-        return [Note(f"附件「{name}」太大({len(att.data) // 1024**2} MB),未處理",
+        return [Note(md_t("附件「{name}」太大({mb} MB),未處理",
+                          name=name, mb=len(att.data) // 1024**2),
                      docmd.KIND_ATTACHMENT)]
     if not budget.take(len(att.data)):
-        budget.notes.append("附件數量或總大小超過上限,其餘附件未處理")
+        budget.notes.append(md_t("附件數量或總大小超過上限,其餘附件未處理"))
         return []
 
     digest = hashlib.sha256(att.data).hexdigest()
     if digest in seen:
         return [Note(
-            f"附件「{name}」的內容與上層郵件相同(自我包含),已略過",
+            md_t("附件「{name}」的內容與上層郵件相同(自我包含),已略過", name=name),
             docmd.KIND_CYCLE,
         )]
 
     link = assets.add_bytes(att.data, Path(name).suffix or ".bin", filename=name)
-    blocks: list[Block] = [Heading(2, f"附件:{name}")]
+    blocks: list[Block] = [Heading(2, md_t("附件:{name}", name=name))]
     if link:
         blocks.append(Para(f"[{name}]({link})"))
 
@@ -360,7 +370,7 @@ def _attachment_blocks(
         blocks.extend(_shift_headings(inner, _ATTACHMENT_HEADING_SHIFT))
     else:
         blocks.append(Note(
-            f"附件「{name}」不是可轉換的格式,已原樣存放", docmd.KIND_ATTACHMENT,
+            md_t("附件「{name}」不是可轉換的格式,已原樣存放", name=name), docmd.KIND_ATTACHMENT,
         ))
     return blocks
 
@@ -423,7 +433,7 @@ def _convert_attachment(
                 )
             return list(reader(inner_src, assets, ocr_enabled=ocr_enabled))
         except UserFacingError as e:
-            return [Note(f"附件「{name}」轉換失敗:{e}", docmd.KIND_ATTACHMENT)]
+            return [Note(md_t("附件「{name}」轉換失敗:{e}", name=name, e=e), docmd.KIND_ATTACHMENT)]
         except Exception:
             logger.exception("附件轉換失敗:%s", name)
-            return [Note(f"附件「{name}」轉換失敗", docmd.KIND_ATTACHMENT)]
+            return [Note(md_t("附件「{name}」轉換失敗", name=name), docmd.KIND_ATTACHMENT)]

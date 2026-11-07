@@ -132,10 +132,12 @@ def translate(text: str, lang: str, /, **kw) -> str:
     return out.format(**kw) if kw else out
 
 
-def t(text: str, /, **kw) -> str:
+def t(text: str, /, *, in_: str | None = None, **kw) -> str:
     r"""把繁中原文換成目前介面語言的那一句;帶參數就順手 `format`。
 
     ⚠️ **第一個參數一定要是字串字面值**:`tests/test_i18n.py` 用 AST 掃全 repo 的 `t("…")`
     比對 `locales/en.json`,傳變數進來就逃過檢查,英文版那一句會安靜地變回中文。
-    ⚠️ **沒有參數就不 `format`**:原文裡本來就可能有 `{` `}`(例如說明文字講 JSON)。"""
-    return translate(text, current(), **kw)
+    ⚠️ **沒有參數就不 `format`**:原文裡本來就可能有 `{` `}`(例如說明文字講 JSON)。
+    `in_`:指定語言、不看介面(會議紀錄草稿整頁跟**會議語言**,使用者 2026-11-07;會議語言與
+    介面語言的代碼相同)。空字串或 None = 介面語言。"""
+    return translate(text, in_ or current(), **kw)

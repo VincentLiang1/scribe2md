@@ -38,7 +38,7 @@ import sys
 import time
 from pathlib import Path
 
-from meeting_scribe import paths
+from meeting_scribe import brand, paths
 
 # 目錄覆寫(測試用):不設就寫進專案底下的 logs\。沒有這個開關的話,每跑
 # 一次測試就會在原始碼樹裡長出記錄檔。
@@ -223,7 +223,7 @@ def header(
         hint = device
     return [
         "=" * 72,
-        f"AI 文件.MD 轉換器 執行記錄  開始 {now:%Y-%m-%d %H:%M:%S}",
+        f"{brand.APP_NAME} 執行記錄  開始 {now:%Y-%m-%d %H:%M:%S}",
         f"  程式版本:{code_version()}",
         f"  記錄檔:{path}",
         f"  Python:{sys.version.split()[0]}  平台:{sys.platform}",

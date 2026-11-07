@@ -214,6 +214,35 @@ def set_window_icon(window, ico_path, png_path):
     return None
 
 
+def migrate_dock() -> bool:
+    """沒有 Dock 這回事。"""
+    return False
+
+
+def venv_bin_name() -> str:
+    return "bin"
+
+
+def executable_name(stem: str) -> str:
+    return stem
+
+
+def point_dir_link(link, target) -> None:
+    """symlink,先建暫存再 rename 蓋過去(見 `plat.point_dir_link`)。"""
+    import os
+    from pathlib import Path
+
+    link, target = Path(link), Path(target)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    tmp = link.with_name(f".{link.name}.tmp")
+    if tmp.is_symlink() or tmp.exists():
+        tmp.unlink()
+    tmp.symlink_to(target, target_is_directory=True)
+    if link.exists() and not link.is_symlink():
+        link.rename(link.with_name(f"{link.name}.old"))
+    os.replace(tmp, link)
+
+
 def strip_default_menubar(window) -> None:
     """不知道這個平台會不會自己掛選單列;什麼都不做(有的話也只是外觀)。"""
     return None

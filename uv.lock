@@ -616,7 +616,7 @@ wheels = [
 
 [[package]]
 name = "meeting-scribe"
-version = "1.10.1"
+version = "1.11.0"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -627,7 +627,6 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "lxml" },
     { name = "markdownify" },
-    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy" },
     { name = "oletools" },
     { name = "opencc" },
@@ -642,7 +641,6 @@ dependencies = [
     { name = "rapidocr" },
     { name = "sherpa-onnx" },
     { name = "sherpa-onnx-core", marker = "sys_platform == 'darwin'" },
-    { name = "soundcard" },
     { name = "static-ffmpeg" },
     { name = "striprtf" },
     { name = "truststore" },
@@ -650,6 +648,10 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+desktop = [
+    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "soundcard" },
+]
 dev = [
     { name = "markdown-it-py" },
     { name = "playwright" },
@@ -668,7 +670,6 @@ requires-dist = [
     { name = "huggingface-hub", specifier = ">=0.20" },
     { name = "lxml", specifier = ">=5" },
     { name = "markdownify", specifier = ">=0.13" },
-    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.32" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "oletools", specifier = ">=0.60" },
     { name = "opencc", specifier = ">=1.1.9" },
@@ -683,7 +684,6 @@ requires-dist = [
     { name = "rapidocr", specifier = ">=3.10" },
     { name = "sherpa-onnx", specifier = ">=1.12.0" },
     { name = "sherpa-onnx-core", marker = "sys_platform == 'darwin'", specifier = "==1.13.4" },
-    { name = "soundcard", specifier = ">=0.4.6" },
     { name = "static-ffmpeg", specifier = ">=2.13" },
     { name = "striprtf", specifier = ">=0.0.26" },
     { name = "truststore", specifier = ">=0.10" },
@@ -691,6 +691,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+desktop = [
+    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.32" },
+    { name = "soundcard", specifier = ">=0.4.6" },
+]
 dev = [
     { name = "markdown-it-py", specifier = ">=3.0" },
     { name = "playwright", specifier = ">=1.62.0" },

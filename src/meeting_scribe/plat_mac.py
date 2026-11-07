@@ -538,7 +538,7 @@ def update_restart_note() -> str | None:
 
 
 def update_manual_note() -> str | None:
-    return (t("要手動更新:到下載頁下載 scribe2md-mac.zip,解壓縮出來的 App 取代「應用程式」"
+    return (t("要手動更新:到下載頁下載 notetaker-desktop-mac.zip,解壓縮出來的 App 取代「應用程式」"
               "裡原本那一個,再雙擊它即可,你的聲紋與名單不會被蓋掉。"))
 
 
@@ -625,7 +625,7 @@ def stage_update(zip_path, version: str, into):
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise ValueError(t("解壓縮失敗({v})", v=r.stderr.strip() or r.returncode))
-    app = into / update.MAC_APP
+    app = next((into / n for n in update.MAC_APPS if (into / n).is_dir()), into / update.MAC_APP)
     if not app.is_dir():
         raise ValueError(t("解壓縮之後找不到 {MAC_APP}", MAC_APP=update.MAC_APP))
     r = subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)],  # noqa: S603,S607
@@ -649,6 +649,17 @@ set -u
 NEW="$1"; TARGET="$2"; BACKUP="$3"; LOG="$4"; TITLE="$5"; shift 5
 
 log() { print -r -- "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG" }
+# 訊息:本程式翻好放在環境變數 UPD_<鍵>(`update.helper_texts`,跟介面語言),沒有就用第二個參數的繁中預設;
+# {backup} 換成備份的位置
+msg() {
+    local name="UPD_$1"
+    local s="${(P)name:-$2}"
+    print -r -- "${s//\{backup\}/$BACKUP}"
+}
+TITLE="${UPD_TITLE:-$TITLE}"
+# 新版放在哪(2026-11-07 起 App 改名 `Notetaker Desktop.app`:舊名的換掉之後放在同一個資料夾的新名字下);
+# 沒給就是原地換。還原一律放回原本的 TARGET
+DEST="${UPD_DEST:-$TARGET}"
 alert() {
     log "訊息框:$1"
     osascript - "$TITLE" "$1" >/dev/null 2>&1 <<'OSA'
@@ -667,7 +678,7 @@ for pid in "$@"; do
         sleep 0.2
         n=$((n + 1))
         if (( n > 600 )); then
-            alert "舊版沒有在兩分鐘內關閉,這次沒有更新,原本的版本都還在。請重新打開工具再試一次。"
+            alert "$(msg MAC_TIMEOUT "舊版沒有在兩分鐘內關閉,這次沒有更新,原本的版本都還在。請重新打開工具再試一次。")"
             exit 1
         fi
     done
@@ -677,29 +688,29 @@ log "本程式已結束"
 if [[ -e "$BACKUP" ]]; then rm -rf "$BACKUP"; fi
 mkdir -p "${BACKUP:h}"
 if ! mv "$TARGET" "$BACKUP" 2>>"$LOG"; then
-    alert "沒辦法換掉原本的 App(可能沒有權限),這次沒有更新,原本的版本都還在。可以到下載頁手動更新。"
+    alert "$(msg MAC_NOPERM "沒辦法換掉原本的 App(可能沒有權限),這次沒有更新,原本的版本都還在。可以到下載頁手動更新。")"
     open "$TARGET"
     exit 1
 fi
-if [[ -e "$TARGET" ]] || ! mv "$NEW" "$TARGET" 2>>"$LOG"; then
+if [[ -e "$DEST" ]] || ! mv "$NEW" "$DEST" 2>>"$LOG"; then
     log "放上新版失敗,還原"
     if [[ ! -e "$TARGET" ]] && mv "$BACKUP" "$TARGET" 2>>"$LOG"; then
-        alert "新版放不上去,已還原成原本的版本。可以到下載頁手動更新。"
+        alert "$(msg MAC_PUT_RESTORED "新版放不上去,已還原成原本的版本。可以到下載頁手動更新。")"
         open "$TARGET"
     else
-        alert "新版放不上去,原本的 App 也搬不回去,它現在在:$BACKUP 請把它拖回「應用程式」資料夾,或到下載頁重新下載。"
+        alert "$(msg MAC_PUT_STUCK "新版放不上去,原本的 App 也搬不回去,它現在在:{backup} 請把它拖回「應用程式」資料夾,或到下載頁重新下載。")"
     fi
     exit 1
 fi
-log "已換上新版,重新開啟"
-if ! open "$TARGET" 2>>"$LOG"; then
+log "已換上新版,重新開啟:$DEST"
+if ! open "$DEST" 2>>"$LOG"; then
     log "新版打不開,還原"
-    rm -rf "$TARGET"
+    rm -rf "$DEST"
     if mv "$BACKUP" "$TARGET" 2>>"$LOG"; then
         open "$TARGET"
-        alert "新版打不開,已還原成原本的版本。可以到下載頁手動更新。"
+        alert "$(msg MAC_OPEN_RESTORED "新版打不開,已還原成原本的版本。可以到下載頁手動更新。")"
     else
-        alert "新版打不開,原本的 App 也搬不回去,它現在在:$BACKUP 請把它拖回「應用程式」資料夾,或到下載頁重新下載。"
+        alert "$(msg MAC_OPEN_STUCK "新版打不開,原本的 App 也搬不回去,它現在在:{backup} 請把它拖回「應用程式」資料夾,或到下載頁重新下載。")"
     fi
     exit 1
 fi
@@ -719,7 +730,7 @@ def apply_update(staged, target, version: str) -> Outcome:
     import subprocess
     from pathlib import Path
 
-    from meeting_scribe import brand, filelog
+    from meeting_scribe import brand, filelog, update
 
     app = _running_bundle()
     if app is None:
@@ -728,6 +739,10 @@ def apply_update(staged, target, version: str) -> Outcome:
     work = staged.parent.parent
     helper = work / "update_helper_mac.zsh"
     backup = work / "backup" / app.name
+    # 新版放回同一個資料夾,但用新的資料夾名(舊名 `AI 文件.MD 轉換器.app` 換成 `Notetaker Desktop.app`;
+    # 已經是新名的就原地換)。⚠️ 名字一換,Dock 裡記著舊路徑的釘選就變問號,新版開起來時改指
+    # (`migrate_dock`)
+    dest = app.parent / update.MAC_APP
     logs = filelog.log_dir()
     try:
         logs.mkdir(parents=True, exist_ok=True)
@@ -742,7 +757,8 @@ def apply_update(staged, target, version: str) -> Outcome:
     argv = ["/bin/zsh", str(helper), str(staged), str(app), str(backup), str(log),
             brand.APP_TITLE, *pids]
     try:
-        subprocess.Popen(argv, cwd=str(work), close_fds=True,  # noqa: S603 - 固定命令
+        subprocess.Popen(argv, cwd=str(work), close_fds=True,  # noqa: S603
+                         env={**update.helper_env(), "UPD_DEST": str(dest)},
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
     except OSError as e:
@@ -931,6 +947,81 @@ def set_window_icon(window, ico_path, png_path):
     img = tk.PhotoImage(master=window, file=str(png_path))
     window.iconphoto(True, img)
     return img
+
+
+def migrate_dock(app=None, run=None) -> bool:
+    r"""Dock 釘選裡指向舊名 App 的,改指現在這一份(見 `plat.migrate_dock`)。
+
+    讀寫走 `defaults export/import com.apple.dock -`(Dock 自己的偏好設定,XML plist 經 stdin/stdout),
+    改了才 `killall Dock` 讓它重讀。判準是**檔名**:`_CFURLString` 指到某個資料夾底下的舊名 App
+    (`update.LEGACY_MAC_APP`),而現在這一份在同一個資料夾、用新名字——兩個條件都成立才改。
+    ⚠️ **只改路徑字串不夠,`book` 與 `file-label` 要一起拿掉**(2026-11-07 實測):Dock 釘選一陣子之後會
+    補一份書籤(`book`),它認的是**舊的那個檔**——光改 `_CFURLString`,Dock 重開時照書籤讀回舊路徑,
+    改了等於沒改。兩個鍵拿掉,Dock 重開會自己照新路徑重建書籤,標籤也換成 Finder 顯示的在地化名稱。
+    `app`、`run` 給測試用(預設是正在跑的這一份 bundle 與 `subprocess.run`)。"""
+    import plistlib
+    import subprocess
+    from pathlib import Path
+    from urllib.parse import unquote, urlparse
+
+    from meeting_scribe import update
+
+    run = run or subprocess.run
+    try:
+        app = Path(app) if app is not None else _running_bundle()
+        if app is None or app.name != update.MAC_APP:
+            return False
+        r = run(["defaults", "export", "com.apple.dock", "-"], capture_output=True)
+        if r.returncode != 0:
+            return False
+        prefs = plistlib.loads(r.stdout)
+        changed = False
+        for item in prefs.get("persistent-apps") or []:
+            data = (item.get("tile-data") or {}).get("file-data") or {}
+            url = data.get("_CFURLString") or ""
+            path = Path(unquote(urlparse(url).path))
+            if url.startswith("file://") and path.name == update.LEGACY_MAC_APP \
+                    and path.parent == app.parent:
+                data["_CFURLString"] = app.as_uri() + "/"
+                item["tile-data"].pop("book", None)
+                item["tile-data"].pop("file-label", None)
+                changed = True
+        if not changed:
+            return False
+        r = run(["defaults", "import", "com.apple.dock", "-"], input=plistlib.dumps(prefs),
+                capture_output=True)
+        if r.returncode != 0:
+            return False
+        run(["killall", "Dock"], capture_output=True)
+        logger.info("Dock 的釘選改指 %s", app)
+        return True
+    except Exception:  # noqa: BLE001 - 見 `plat.migrate_dock`:失敗不得有任何後果
+        logger.info("Dock 的釘選沒能改指", exc_info=True)
+        return False
+
+
+def venv_bin_name() -> str:
+    return "bin"
+
+
+def executable_name(stem: str) -> str:
+    return stem
+
+
+def point_dir_link(link, target) -> None:
+    """symlink,先建暫存再 rename 蓋過去(見 `plat.point_dir_link`)。"""
+    import os
+    from pathlib import Path
+
+    link, target = Path(link), Path(target)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    tmp = link.with_name(f".{link.name}.tmp")
+    if tmp.is_symlink() or tmp.exists():
+        tmp.unlink()
+    tmp.symlink_to(target, target_is_directory=True)
+    if link.exists() and not link.is_symlink():
+        link.rename(link.with_name(f"{link.name}.old"))
+    os.replace(tmp, link)
 
 
 def strip_default_menubar(window) -> None:

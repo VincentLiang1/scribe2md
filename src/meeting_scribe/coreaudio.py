@@ -32,6 +32,7 @@ import ctypes.util
 import logging
 import os
 import threading
+from meeting_scribe.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +182,7 @@ def open_source() -> SystemAudio:
     objc, ca = _load()
     cls = objc.objc_getClass(b"CATapDescription")
     if not cls:
-        raise OSError("這台 macOS 沒有 Core Audio Process Tap(需要 14.2 以上)")
+        raise OSError(t("這台 macOS 沒有 Core Audio Process Tap(需要 14.2 以上)"))
 
     empty = _obj(objc, objc.objc_getClass(b"NSArray"), b"array")
     desc = _obj(objc, _obj(objc, cls, b"alloc"),
@@ -196,7 +197,7 @@ def open_source() -> SystemAudio:
     tap = ctypes.c_uint32(0)
     st = ca.AudioHardwareCreateProcessTap(ctypes.c_void_p(desc), ctypes.byref(tap))
     if st != 0:
-        raise OSError(f"建立系統聲音擷取失敗(OSStatus {st})")
+        raise OSError(t("建立系統聲音擷取失敗(OSStatus {st})", st=st))
 
     try:
         uid = _tap_uid(ca, objc, tap.value)

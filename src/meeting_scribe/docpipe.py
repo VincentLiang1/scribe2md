@@ -30,6 +30,7 @@ from meeting_scribe import (
     pipeline,
     power,
     soffice,
+    vocab,
 )
 from meeting_scribe.docmd import AssetsDir, Block, DocMeta, Records, Table
 from meeting_scribe.errors import UserFacingError
@@ -104,7 +105,7 @@ def _convert_legacy(
     目錄帶 TMP_PREFIX,下次啟動的 cleanup_stale_temp 會掃掉。"""
     if _is_encrypted_office(src):
         raise UserFacingError(
-            f"「{src.name}」有開啟密碼,請先用 Office 開啟後另存一份沒有密碼的再轉換"
+            t("「{name}」有開啟密碼,請先用 Office 開啟後另存一份沒有密碼的再轉換", name=src.name)
         )
     with tempfile.TemporaryDirectory(
         prefix=pipeline.TMP_PREFIX + "lo-", ignore_cleanup_errors=True,
@@ -114,13 +115,13 @@ def _convert_legacy(
         )
         route = _ROUTES.get(upgraded.suffix.lower())
         if route is None:  # pragma: no cover - _FILTERS 與 _ROUTES 對不上才會發生
-            raise UserFacingError(f"升級後的格式無法解析:{upgraded.name}")
+            raise UserFacingError(t("升級後的格式無法解析:{name}", name=upgraded.name))
         blocks = list(route.read(upgraded, assets, ocr_enabled=ocr_enabled))
     # 提示要說出**實際的**來源與目標:這條路現在也走 ODF 與 Visio,
     # 寫死「舊版 Office」會讓一份 .odt 的說明變成假的
     return [docmd.Note(
-        f"這是 {(source_ext or src.suffix).lstrip('.')} 格式,已先用 LibreOffice 轉成 "
-        f"{upgraded.suffix.lstrip('.')} 再解析,版面可能與原檔略有出入",
+        docmd.md_t("這是 {src} 格式,已先用 LibreOffice 轉成 {dst} 再解析,版面可能與原檔略有出入",
+                   src=(source_ext or src.suffix).lstrip("."), dst=upgraded.suffix.lstrip(".")),
         docmd.KIND_LEGACY_UPGRADE, lossy=False,
     ), *blocks]
 
@@ -317,7 +318,7 @@ def traditionalize(blocks: list[Block], simplified: bool = True) -> list[Block]:
         elif isinstance(b, docmd.Para):
             out.append(docmd.Para(_tw(b.text, simplified)))
         elif isinstance(b, docmd.Note):
-            out.append(docmd.Note(_tw(b.text, simplified), b.kind, b.lossy))
+            out.append(docmd.Note(_tw(b.text, simplified), b.kind, b.lossy, b.half_width))
         elif isinstance(b, docmd.Table):
             out.append(docmd.Table(
                 [[_tw(c, simplified) for c in row] for row in b.rows],
@@ -409,7 +410,7 @@ def convert_file(
     suffix = detected or src.suffix.lower()
     route = _ROUTES.get(suffix)
     if route is None:
-        raise UserFacingError(f"不支援的格式「{src.suffix}」:{src.name}")
+        raise UserFacingError(t("不支援的格式「{ext}」:{name}", ext=src.suffix, name=src.name))
     reader = route.read
 
     # assets 跟著**產出**走而不是跟著來源走:預設兩者同目錄、行為完全一樣,
@@ -492,9 +493,12 @@ def convert_file(
 
 
 def _transcript_language(blocks) -> dict:
-    """音訊逐字稿的會議語言(有就回 {"language": …},不是逐字稿回空 dict,frontmatter 不多一欄)。"""
+    """音訊逐字稿的會議語言與格式版本(不是逐字稿回空 dict,frontmatter 不多欄)。
+
+    格式版本同單檔那條路(`export.transcript_frontmatter`、`vocab.FORMAT_VERSION`):批次轉出來的逐字稿
+    一樣會被讀回去(重設講者、會議紀錄草稿)。"""
     lang = next((b.language for b in blocks if isinstance(b, docmd.Raw) and b.language), "")
-    return {"language": lang} if lang else {}
+    return {"language": lang, "format_version": vocab.FORMAT_VERSION} if lang else {}
 
 
 def convert_batch(
@@ -541,7 +545,7 @@ def convert_batch(
         # 刻意不接——缺元件是整批都做不了,該讓它往上拋
         try:
             cancel.check()
-            report("準備中", 0.0)
+            report(t("準備中"), 0.0)
             ensure_engines_ready(files, ocr_enabled)
             plan = plan_outputs(files, out_dir)
             total = len(plan)
@@ -571,14 +575,14 @@ def convert_batch(
                 except Exception:
                     logger.exception("轉換失敗(未預期):%s", src.name)
                     results.append(FileResult(
-                        src=src, error="發生未預期的錯誤,詳情見終端機視窗",
+                        src=src, error=t("發生未預期的錯誤,詳情見終端機視窗"),
                     ))
         except cancel.Cancelled:
             cancelled = True
         finally:
             # 子行程要收掉:留著會一直佔住幾百 MB(下一批會再起一支)
             ocr.shutdown()
-        report("完成", 1.0)
+        report(t("完成"), 1.0)
 
     return BatchReport(
         results=results,
@@ -589,30 +593,31 @@ def convert_batch(
 
 
 def report_markdown(report: BatchReport) -> str:
-    """批次報告 → 顯示在結果框的繁中文字。"""
+    """批次報告 → 顯示在結果框的文字(跟著介面語言)。"""
     ok, failed = report.ok, report.failed
     lines: list[str] = []
     if report.cancelled:
-        lines.append(f"**已停止**。已完成 {len(ok)} 個檔案,其餘未處理。")
+        lines.append(t("**已停止**。已完成 {n} 個檔案,其餘未處理。", n=len(ok)))
     elif not ok and not failed:
         # 全部略過時不能說「成功 0 個」——那看起來像出了什麼事,
         # 但實情是「本來就沒有需要做的」(通常是同名 .md 都已存在)
-        lines.append(f"**沒有需要轉換的檔案**({len(report.skipped)} 個都略過了)。")
+        lines.append(t("**沒有需要轉換的檔案**({n} 個都略過了)。", n=len(report.skipped)))
     else:
-        lines.append(f"**轉換完成**:成功 {len(ok)} 個" + (f",失敗 {len(failed)} 個" if failed else "") + "。")
+        lines.append(t("**轉換完成**:成功 {ok} 個,失敗 {failed} 個。", ok=len(ok), failed=len(failed))
+                     if failed else t("**轉換完成**:成功 {ok} 個。", ok=len(ok)))
     lines.append("")
 
     if ok:
-        lines.append("已產生的檔案:")
+        lines.append(t("已產生的檔案:"))
         lines.extend(f"- {r.out.name}" for r in ok)
         lines.append("")
     if failed:
-        lines.append("**沒有轉成功的檔案**:")
-        lines.extend(f"- 「{r.src.name}」:{r.error}" for r in failed)
+        lines.append(t("**沒有轉成功的檔案**:"))
+        lines.extend(t("- 「{name}」:{why}", name=r.src.name, why=r.error) for r in failed)
         lines.append("")
     if report.skipped:
-        lines.append("略過的項目:")
-        lines.extend(f"- 「{p.name}」:{reason}" for p, reason in report.skipped)
+        lines.append(t("略過的項目:"))
+        lines.extend(t("- 「{name}」:{why}", name=p.name, why=reason) for p, reason in report.skipped)
         lines.append("")
     if ok:
         # 把完整路徑寫在報告裡(不只放在會消失的 toast):Windows 的前景
@@ -620,7 +625,7 @@ def report_markdown(report: BatchReport) -> str:
         # 從這裡複製路徑自己去(2026-08-01 使用者兩度回報「按了沒反應」)
         dirs = report.out_dirs
         if dirs:
-            lines.append("輸出位置:")
+            lines.append(t("輸出位置:"))
             shown = dirs[:3]
             # 路徑**獨佔一行、前面不加任何字元**(使用者 2026-08-01 兩次
             # 指定):結果框是純文字 Textbox 不是 Markdown,反引號會原樣
@@ -628,16 +633,15 @@ def report_markdown(report: BatchReport) -> str:
             # 總管就不能用了——這幾行的用途就是給人複製
             lines.extend(str(d) for d in shown)
             if len(dirs) > len(shown):
-                lines.append(f"(另有 {len(dirs) - len(shown)} 個資料夾)")
+                lines.append(t("(另有 {n} 個資料夾)", n=len(dirs) - len(shown)))
             lines.append("")
         # 收尾那句要講**這一批**的失真長什麼樣子:對一批錄音講「圖表、
         # 儲存格底色」是假的,而使用者正是照這句去理解 〔 〕 的
         audio_only = all(
             r.src.suffix.lower() in docaudio.supported_types() for r in ok
         )
-        examples = "轉錄跳針" if audio_only else "圖表、儲存格底色"
-        lines.append(
-            f"檔案就放在原始檔案的旁邊。內容裡的 〔 〕 是轉檔時無法完整呈現的地方"
-            f"(例如{examples}),檔頭也有一份清單。"
-        )
+        examples = t("轉錄跳針") if audio_only else t("圖表、儲存格底色")
+        lines.append(t(
+            "檔案就放在原始檔案的旁邊。內容裡的 〔 〕 是轉檔時無法完整呈現的地方"
+            "(例如{examples}),檔頭也有一份清單。", examples=examples))
     return "\n".join(lines).strip()

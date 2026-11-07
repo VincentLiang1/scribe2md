@@ -426,7 +426,7 @@ def highlighted_turns(md: str) -> list[MarkedTurn]:
             continue
         m = export.SPEAKER_LINE_RE.match(line)
         if m:
-            on = any(vocab.is_highlight_mark(x) for x in (m["marks"] or "").split(export.MARK_SEP))
+            on = any(vocab.is_highlight_mark(x) for x in export.split_marks(m))
             rows.append([m["name"], f"{int(m['h']):02d}:{m['m']}:{m['s']}", on, [], [], paused])
             paused = False
         elif export.is_pause_line(line):
@@ -1536,8 +1536,11 @@ def render(md_path: Path, body: str) -> str:
 
 
 def save(md_path: Path, text: str) -> Path:
-    """寫進 `drafts_dir()`,檔名跟著逐字稿;同一份重做就蓋掉(舊草稿沒有保留的價值)。"""
-    out = drafts_dir() / f"{md_path.stem}_會議紀錄草稿.md"
+    """寫進 `drafts_dir()`,檔名跟著逐字稿;同一份重做就蓋掉(舊草稿沒有保留的價值)。
+
+    ⚠️ 檔名後綴跟**介面語言**(使用者 2026-11-07:使用者看得到的檔名跟介面語言;英文是
+    `_minutes-draft.md`)。沒有程式讀回這兩個檔,所以不必新舊都認。"""
+    out = drafts_dir() / (md_path.stem + t("_會議紀錄草稿") + ".md")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     return out
@@ -1561,7 +1564,7 @@ def layout_text(md_path: Path, md_text: str, body: str) -> str:
 def save_layout(md_path: Path, text: str) -> Path:
     r"""排好的那一份另存(使用者 2026-11-07 選「多存一份新格式」):`save` 那一份照舊,評分工具
     (`scripts/minutes_score.py`)與各平台都照它的「- 事項｜負責人:…」比對;這一份是給人看、拿去用的。"""
-    out = drafts_dir() / f"{md_path.stem}_會議紀錄.md"
+    out = drafts_dir() / (md_path.stem + t("_會議紀錄") + ".md")   # 後綴跟介面語言(見 `save`)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     return out
@@ -2184,6 +2187,7 @@ def generate(md: str, progress: ProgressFn | None = None, engine: str | None = N
     `title` 是逐字稿檔名(名詞對照表的分組照它挑);`corrections` 給了就不讀聲紋同步資料夾那一份
     (評測與測試用)。"""
     global _used_engine
+    vocab.check_readable(md)   # 格式比這一版新就明講,不硬讀(漏掉重點、講者也不會有任何症狀)
     can = capability()
     if not can.ok:
         raise UserFacingError(t("無法產生會議紀錄草稿:{reason}", reason=can.reason))

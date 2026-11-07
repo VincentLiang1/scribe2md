@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from meeting_scribe import models
 from meeting_scribe.errors import UserFacingError
+from meeting_scribe.i18n import t
 
 # 惰性載入(_ensure_sherpa,委給 diarize 統一處理 DLL 預載;首次使用
 # 才 import,啟動不付原生庫成本)。測試 monkeypatch 本屬性換假貨
@@ -93,8 +94,7 @@ def _get_punctuator() -> "sherpa_onnx.OfflinePunctuation":
             punct = so.OfflinePunctuation(config)
         except Exception as e:
             raise UserFacingError(
-                "標點模型載入失敗,模型檔可能已損壞:"
-                f"{models.redownload_hint()}"
+                t("標點模型載入失敗,模型檔可能已損壞:{hint}", hint=models.redownload_hint())
             ) from e
         _PUNCT_CACHE.append(punct)
         return punct
