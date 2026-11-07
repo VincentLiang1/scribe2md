@@ -39,6 +39,7 @@ import threading
 import time
 import unicodedata
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -46,7 +47,7 @@ from meeting_scribe import (cancel, convert, errors, export, models, namefix, pa
                             power, settings, srcfile)
 from meeting_scribe.errors import UserFacingError
 from meeting_scribe.i18n import t
-from meeting_scribe import draftvocab, vocab
+from meeting_scribe import draftlayout, draftvocab, vocab
 from meeting_scribe.plat import Outcome
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ CALL_TIMEOUT_SEC = 90.0
 #: 43 分鐘的會 86 秒、3 時 34 分的長會 507 秒(46 段、重問 7 次)≈ 每分鐘錄音 2.4 秒
 SECONDS_PER_RECORDED_MINUTE = 2.4
 #: 這麼短的會不提醒(幾十秒就好)
-WAIT_HINT_MIN_SEC = 20 * 60
+WAIT_HINT_MIN_SEC = 10 * 60
 #: 五段比三段多花的倍數(`wait_hint`;上面幾個秒數都是三段量的)。2026-11-04 在 M5 上同一版程式、
 #: 3 時 34 分那場長會各跑一次:Apple 552 → 867 秒、Qwen 501 → 732 秒、Gemma 657 → 1037 秒。
 #: Windows(Core Ultra 7 258V 內顯)同一場、電腦閒著、每種之間歇 5 分鐘:Qwen 4B 588 → 787 秒、
@@ -136,6 +137,8 @@ _SUMMARY_INSTRUCTIONS = _ZH.summary_instructions
 WHOLE_TIMEOUT_FACTOR = 3
 #: 這一場出不出五段(`generate` 開頭照 `five_sections()` 定好,整場不變)
 _five = True
+#: 這一場只有 1 位講者(`generate` 開頭照逐字稿檔頭定好):只出摘要與主要議題(使用者 2026-11-07,同 iOS `solo`)
+_solo = False
 #: 這一場用哪一份(`generate` 開頭依逐字稿挑;`render` / `draft_notice` 也看它)
 _draft: draftvocab.DraftVocab = _ZH
 #: 這一場的專有名詞(名詞對照表換過之後逐字稿裡有的正確寫法):每次問都接在指示最後(`_call`;
@@ -1540,15 +1543,40 @@ def save(md_path: Path, text: str) -> Path:
     return out
 
 
+def layout_header(md_path: Path, md_text: str) -> draftlayout.Header:
+    """排版用的表頭(`draftlayout.header`):長度用最後一句的時間、開始時間沒有就用逐字稿的修改時間。"""
+    try:
+        modified = datetime.fromtimestamp(md_path.stat().st_mtime)
+    except OSError:
+        modified = None
+    return draftlayout.header(md_text, md_path.stem, duration_sec(md_text), modified)
+
+
+def layout_text(md_path: Path, md_text: str, body: str) -> str:
+    """另存的那一份的全文:警語 + 照 Claude 會議紀錄排好的 Markdown(`draftlayout.markdown`)。
+    ⚠️ 警語照樣放第一行:這一份才是使用者會在 Finder 裡單獨打開的(理由同 `DRAFT_NOTICE`)。"""
+    return f"{draft_notice()}\n\n{draftlayout.markdown(body, layout_header(md_path, md_text))}\n"
+
+
+def save_layout(md_path: Path, text: str) -> Path:
+    r"""排好的那一份另存(使用者 2026-11-07 選「多存一份新格式」):`save` 那一份照舊,評分工具
+    (`scripts/minutes_score.py`)與各平台都照它的「- 事項｜負責人:…」比對;這一份是給人看、拿去用的。"""
+    out = drafts_dir() / f"{md_path.stem}_會議紀錄.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    return out
+
+
 def wait_hint(recording_sec: float, engine: str | None = None) -> str | None:
-    """按之前先說大概要等多久(使用者 2026-10-11 選);20 分鐘以下的會不提醒。
+    """按之前先說大概要等多久(使用者 2026-10-11 選);10 分鐘以下的會不提醒(2026-11-07 從 20 改,同 iOS `c093061`)。
+    字同 iOS `2f88b51`:「會議 N 分鐘,產生草稿約要 M 分鐘。」,第一次要下載的那句直接接在後面、不換行。
     `engine` 是這一場要用的那個;不給就照記住的(不探測)。"""
     engine = engine or _preferred()   # ⚠️ 不探測:這一支在主執行緒上、按下去的當下問
     rate, first_time = _rate(engine, five_sections())
     if recording_sec < WAIT_HINT_MIN_SEC:
-        return first_time.lstrip(";") or None
+        return first_time or None
     minutes = max(1, round(recording_sec / 60 * rate / 60))
-    return t("這場 {v} 分鐘,估計約要 {minutes} 分鐘{first_time}", v=int(recording_sec // 60), minutes=minutes, first_time=first_time)
+    return t("會議 {v} 分鐘,產生草稿約要 {minutes} 分鐘。", v=int(recording_sec // 60), minutes=minutes) + first_time
 
 
 def _rate(engine: str | None, five: bool) -> tuple[float, str]:
@@ -1560,19 +1588,19 @@ def _rate(engine: str | None, five: bool) -> tuple[float, str]:
         size, device = _ov_plan()
         rate = OV_SECONDS_PER_RECORDED_MINUTE[(size, device)]
         if not models.llm_cached(size):
-            first_time = t(";第一次要先下載 AI 模型,約 {v} GB", v=models.LLM_DOWNLOAD_GB[size])
+            first_time = t("第一次要先下載 AI 模型,約 {v} GB。", v=models.LLM_DOWNLOAD_GB[size])
     elif engine == ENGINE_GEMMA and _backend() == "apple":
         rate = GEMMA_MLX_SECONDS_PER_RECORDED_MINUTE
         if not models.gemma_mlx_cached():
-            first_time = t(";第一次要先下載 AI 模型,約 {v} GB", v=models.GEMMA_MLX_DOWNLOAD_GB)
+            first_time = t("第一次要先下載 AI 模型,約 {v} GB。", v=models.GEMMA_MLX_DOWNLOAD_GB)
     elif engine == ENGINE_GEMMA:
         rate = GEMMA_OV_SECONDS_PER_RECORDED_MINUTE
         if not models.gemma_ov_cached():
-            first_time = t(";第一次要先下載 AI 模型,約 {v} GB", v=models.GEMMA_OV_DOWNLOAD_GB)
+            first_time = t("第一次要先下載 AI 模型,約 {v} GB。", v=models.GEMMA_OV_DOWNLOAD_GB)
     elif engine == ENGINE_QWEN:
         rate = MLX_SECONDS_PER_RECORDED_MINUTE
         if not models.mlx_llm_cached():
-            first_time = t(";第一次要先下載 AI 模型,約 {MLX_LLM_DOWNLOAD_GB} GB", MLX_LLM_DOWNLOAD_GB=models.MLX_LLM_DOWNLOAD_GB)
+            first_time = t("第一次要先下載 AI 模型,約 {MLX_LLM_DOWNLOAD_GB} GB。", MLX_LLM_DOWNLOAD_GB=models.MLX_LLM_DOWNLOAD_GB)
     if five:
         rate *= (FIVE_FACTOR_GEMMA_OV if engine == ENGINE_GEMMA and _backend() == "openvino"
                  else FIVE_FACTOR.get(engine or ENGINE_APPLE, 1.0))
@@ -2166,8 +2194,13 @@ def generate(md: str, progress: ProgressFn | None = None, engine: str | None = N
     if mine is None or not mine.ok:
         raise UserFacingError(t("無法產生會議紀錄草稿:{v}", v=mine.reason if mine else can.reason))
     _used_engine = engine
-    global _five, _whole_on, _chunk_whole_on
+    global _five, _whole_on, _chunk_whole_on, _solo
     _five = five_sections() if five is None else five
+    # 1 位講者(自言自語、影片、演講;使用者 2026-11-07:「不是會議卻硬套會議紀錄的格式反而奇怪」):
+    # 不問決議、未決,不走一次問的五段,只存摘要與主要議題(分段那一問的待辦欄位是共用的格式,寫了也不放進草稿)
+    _solo = draftlayout.speakers(md) == 1
+    if _solo:
+        _five = False
     _whole_on = whole
     _chunk_whole_on = chunk_whole
     _whole_drops.clear()
@@ -2334,6 +2367,8 @@ def _compose(parts: list[list[TimedLine]], report: ProgressFn, t0: float) -> str
     marked_text = f"\n\n{v.highlights_heading}\n{marked}" if marked else ""
     # 與我相關放在草稿最上面(手機版改版 F);沒有就整節不出現
     about = f"{v.about_me_heading}\n" + "\n".join(mine) + "\n\n" if mine else ""
+    if _solo:
+        return f"{v.summary_heading}\n{summary}{marked_text}\n\n{v.topics_heading}\n{topics}\n"
     if not _five:
         return (f"{about}{v.summary_heading}\n{summary}{marked_text}\n\n{v.topics_heading}\n{topics}"
                 f"\n\n{v.todos_heading}\n{todo_text}\n")

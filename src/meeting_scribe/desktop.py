@@ -63,6 +63,7 @@ from meeting_scribe import meetlang
 from meeting_scribe import vocab
 from meeting_scribe import transcribe_apple
 from meeting_scribe import minutes
+from meeting_scribe import draftlayout
 from meeting_scribe import export
 from meeting_scribe import highlights
 from meeting_scribe.types import SpeechBlock
@@ -4377,6 +4378,8 @@ class App(tk.Tk):
             self._taskbar(frac)
         elif kind == "run_preview":
             self._run_set_preview(payload)
+        elif kind == "minutes_preview":
+            self._minutes_set_preview(*payload)
         elif kind == "outcome":
             # 「跑完了,但不乾淨」(目前只有批次:有檔案**轉失敗**)。⚠️ **略過的不算**:
             # `BatchReport.skipped` 混了「格式不支援」與「已經有同名 md、不重做」兩種,
@@ -6079,8 +6082,8 @@ class App(tk.Tk):
         self._run_dirs = [str(minutes.drafts_dir())]   # 要在 `_run_lock(True)` 之後,它會歸零
         # (Windows 的等待提示要問有沒有內顯,`minutes._ov_plan`:背景偵測上面已經等過了)
         hint = minutes.wait_hint(minutes.duration_sec(md_text), engine)
-        first = (t("{name}:整理中…", name=md_path.name)
-                 + (t("({hint})", hint=hint) if hint else ""))
+        # 預估時間接在後面、不換行(同 iOS `f855cc9`;電腦版沒有「切走會停」的限制,只留預估時間)
+        first = t("{name}:整理中…", name=md_path.name) + (hint or "")
         self._stage(first)
         self._run_set_preview("")
         self._run_job(lambda say: self._minutes_work(md_path, md_text, first, say, engine),
@@ -6094,9 +6097,16 @@ class App(tk.Tk):
         # 檔名給名詞對照表挑分組(同手機版:會議名稱裡有分組名才加套)
         body = minutes.generate(md_text, lambda f: say(("run_stage", (first, f))), engine=engine,
                                 title=md_path.stem)
-        text = minutes.render(md_path, body)
-        out = minutes.save(md_path, text)
-        say(("run_preview", text))
+        # ⚠️ 按了停止還是可能「成功」回來:有些段失敗會略過接著跑,停在最後一段之後就是一份殘缺的
+        # (同 iOS `000fb3e`)。停下來的結果一律丟掉、不存半成品,原本的舊草稿不動
+        cancel.check()
+        # 兩份(使用者 2026-11-07 選「多存一份新格式」):舊格式那份給評分工具與跨平台比對,
+        # 照 Claude 會議紀錄排好的那份(`draftlayout`)給人看;畫面上畫的、完成那一行指的都是後者
+        minutes.save(md_path, minutes.render(md_path, body))
+        header = minutes.layout_header(md_path, md_text)
+        out = minutes.save_layout(md_path, minutes.layout_text(md_path, md_text, body))
+        say(("minutes_preview", (minutes.draft_notice(), draftlayout.lines(body, header),
+                                 out.read_text(encoding="utf-8"))))
         say(("run_stage", (t("完成。草稿存在:{out}", out=out), 1.0)))
 
     def _minutes_done(self, error) -> None:
@@ -6111,6 +6121,7 @@ class App(tk.Tk):
             return
         self._run_bar.configure(value=0)
         if isinstance(error, Cancelled):
+            logger.info("會議紀錄草稿:使用者停止產生(ai_summary_stopped)")
             self._stage(t("已依要求停止。"))
         else:
             self._stage("")
@@ -8748,8 +8759,89 @@ class App(tk.Tk):
         self._preview_md = text or ""
         self._run_preview.configure(state="normal")
         self._run_preview.delete("1.0", "end")
+        for child in self._run_preview.winfo_children():   # 會議紀錄草稿嵌進去的待辦表格
+            child.destroy()
         self._run_preview.insert("1.0", helpmd.flatten(text))
         self._run_preview.configure(state="disabled")
+
+    def _minutes_set_preview(self, notice: str, rows: list, md: str) -> None:
+        r"""會議紀錄草稿畫進右邊的預覽:照 Claude 會議紀錄的樣子(`draftlayout.lines`;同 iOS `DetailView`)。
+
+        ⚠️ **待辦是真的三欄表格**(負責人｜事項｜期限):Text 的定位點遇到事項折行就對不齊
+        (`_render_table` 那種只適合說明頁一行一格的短表),所以表格是嵌進去的一組 Label,
+        事項那欄照預覽框當下的寬度折行;約略時間用灰色小字放在事項下面。
+        `_preview_md` 存排好的 Markdown(就是另存的那一份)。"""
+        self._preview_md = md
+        box = self._run_preview
+        pal, fam = self.pal, self.fam
+        box.tag_configure("mt_title", font=(fam, 12, "bold"), spacing3=self.px(SP_XS))
+        box.tag_configure("mt_h", font=(fam, 10, "bold"), spacing1=self.px(SP_SM), spacing3=self.px(SP_XS))
+        box.tag_configure("mt_b", font=(fam, 9, "bold"))
+        box.tag_configure("mt_dim", foreground=pal["muted"], font=(fam, 8))
+        box.configure(state="normal")
+        box.delete("1.0", "end")
+        for child in box.winfo_children():
+            child.destroy()
+        # 警語在檔案裡是引用(「> ⚠ AI 草稿…」),`helpmd.flatten` 不剝「> 」(Windows 2026-11-07 實拍)
+        box.insert("end", helpmd.flatten(notice).removeprefix("> ") + "\n\n", "mt_dim")
+        # 表格要撐滿框:框寬扣掉 Text 自己的左右留白(`padx`)
+        wide = max(box.winfo_width() - 2 * int(str(box.cget("padx"))) - self.px(4), self.px(240))
+        for row in rows:
+            kind = row[0]
+            if kind == "title":
+                box.insert("end", row[1] + "\n", "mt_title")
+            elif kind == "field":
+                box.insert("end", row[1] + t("："), "mt_b")
+                box.insert("end", row[2] + "\n")
+            elif kind == "note":
+                box.insert("end", row[1] + "\n", "mt_dim")
+            elif kind == "divider":
+                box.insert("end", "\u2500" * 24 + "\n", "mt_dim")
+            elif kind == "heading":
+                box.insert("end", row[1] + "\n", "mt_h")
+            elif kind in ("topic", "item"):     # 議題也不粗體(使用者 2026-11-07)
+                box.insert("end", f"{row[1]}. {row[2]}\n")
+            elif kind == "sub":
+                box.insert("end", f"\u3000・{row[1]}\n")
+            elif kind == "bullet":
+                box.insert("end", f"・{row[1]}\n")
+            elif kind == "todos":
+                box.window_create("end", window=self._minutes_todo_table(box, row[1], wide))
+                box.insert("end", "\n")
+            else:
+                box.insert("end", row[1] + "\n")
+        box.configure(state="disabled")
+
+    def _minutes_todo_table(self, parent, todos: list, wide: int) -> tk.Frame:
+        """待辦的三欄表格(`_minutes_set_preview`)。沒填的寫「待確認」,同 iOS `TodoTable`。"""
+        pal, fam = self.pal, self.fam
+        grid = tk.Frame(parent, bg=pal["card_line"], bd=0)
+        tbc = t("待確認")
+        side = self.px(84)
+        cells = [(t("負責人"), t("事項"), t("期限"), None)] + [
+            (x.owner or tbc, x.task, x.deadline or tbc, x.time) for x in todos]
+        for r, (owner, task, due, when) in enumerate(cells):
+            font = (fam, 9, "bold") if r == 0 else (fam, 9)
+            for c, text in enumerate((owner, task, due)):
+                cell = tk.Frame(grid, bg=pal["field"])
+                cell.grid(row=r, column=c, sticky="nsew", padx=(0 if c == 0 else 1, 0),
+                          pady=(0 if r == 0 else 1, 0))
+                tk.Label(cell, text=text, font=font, bg=pal["field"], fg=pal["ink"], justify="left",
+                         anchor="w", wraplength=max(wide - side * 2, self.px(120)) if c == 1 else side
+                         ).pack(anchor="w", padx=self.px(SP_XS), pady=(self.px(2), 0))
+                if c == 1 and when:
+                    tk.Label(cell, text=when, font=(fam, 8), bg=pal["field"], fg=pal["muted"],
+                             anchor="w").pack(anchor="w", padx=self.px(SP_XS))
+        grid.columnconfigure(1, weight=1)
+        # ⚠️ 嵌進 Text 的 Frame 不會自己撐滿(Windows 150% 實拍:框 831 px、表格 694 px),
+        # 差多少就補給事項那欄
+        grid.update_idletasks()
+        short = wide - grid.winfo_reqwidth()
+        if short > 0:
+            # (量格子要的寬度:還沒畫出來時 `grid_bbox` 是 0)
+            col = max(w.winfo_reqwidth() for w in grid.grid_slaves(column=1))
+            grid.columnconfigure(1, minsize=col + short)
+        return grid
 
     def _run_lock(self, running: bool, outcome: int = winui.TBPF_NOPROGRESS) -> None:
         r"""鎖住/放開「檔案轉檔」這條路的按鈕;`outcome` 是收工時留在工作列上的顏色。
